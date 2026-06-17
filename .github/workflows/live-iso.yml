@@ -1,0 +1,70 @@
+name: live-iso
+
+on:
+  workflow_dispatch:
+    inputs:
+      edition:
+        description: "console or desktop"
+        default: "console"
+  push:
+    paths:
+      - "os/iso/live-build.sh"
+      - ".github/workflows/live-iso.yml"
+
+jobs:
+  build:
+    name: live ISO (x86_64, ${{ github.event.inputs.edition || 'console' }})
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config \
+            libzstd-dev libsodium-dev libsqlite3-dev build-essential \
+            mmdebstrap squashfs-tools xorriso mtools \
+            grub-pc-bin grub-efi-amd64-bin grub-common \
+            qemu-system-x86 ovmf
+
+      - name: Build salt
+        run: |
+          cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target salt
+
+      - name: Build live ISO
+        run: |
+          sudo env \
+            SALT_BIN="$PWD/build/src/salt/salt" \
+            REPO_DIR="$PWD" \
+            EDITION="${{ github.event.inputs.edition || 'console' }}" \
+            VERSION="0.1.0" \
+            OUT="$PWD/out-iso" \
+            bash os/iso/live-build.sh x86_64
+          sudo chown -R "$USER" out-iso
+
+      - name: Boot test (QEMU)
+        run: |
+          ISO=$(ls out-iso/*.iso | head -1)
+          echo "boot-testing $ISO"
+          set +e
+          timeout 420 qemu-system-x86_64 \
+            -machine pc -m 2560 -display none -serial stdio -no-reboot \
+            -cdrom "$ISO" -boot d > qemu.log 2>&1
+          set -e
+          echo "----- qemu serial tail -----"
+          tail -n 60 qemu.log || true
+          if grep -q "SALTOS_BOOT_OK" qemu.log; then
+            echo "BOOT OK: saltOS reached runit stage 2 and salt is present"
+          else
+            echo "BOOT FAILED: marker not found"
+            exit 1
+          fi
+
+      - name: Upload ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: saltos-live-x86_64-${{ github.event.inputs.edition || 'console' }}
+          path: out-iso/*.iso
+          if-no-files-found: error
