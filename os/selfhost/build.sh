@@ -153,6 +153,7 @@ ln -sf /etc/runit/sv/getty-tty1 "$ROOTFS/etc/runit/runsvdir/current/getty-tty1"
 
 ln -sf /sbin/runit-init "$ROOTFS/init"
 
+mkdir -p "$ROOTFS/etc/salt"
 cat > "$ROOTFS/etc/salt/repo.conf" <<'EOF'
 repo = "current"
 source = ""
