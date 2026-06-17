@@ -15,6 +15,14 @@ recipes, and a simple full-system rollback model built on Btrfs snapshots.
 
 ### Current status
 
+A **bootable saltOS live ISO is produced by GitHub Actions and verified to boot
+in QEMU** (the `live-iso` workflow): runit comes up as PID 1 and `salt` is
+present on the running system. Download the `.iso` from the workflow run's
+artifacts. The image uses a glibc base provisioned on the runner as a bootstrap
+substrate while the from-source recipe bootstrap (`os/bootstrap`) matures; the
+`console` edition boots to a runit console, the `desktop` edition adds LXQt +
+SDDM and the Calamares graphical installer.
+
 Verified working (built and tested in CI on both x86_64 and aarch64):
 
 - `salt` package manager: builds clean and passes the unit suite plus an

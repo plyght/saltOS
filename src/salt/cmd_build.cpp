@@ -76,7 +76,7 @@ static int run_shell(const std::string &workdir, const std::string &script,
   if (salt_write_file(tmp.c_str(), full.c_str(), full.size(), 0755) != SALT_OK) return SALT_ERR;
   std::string cmd;
   for (auto &e : env) cmd += e + " ";
-  cmd += "sh -e " + tmp;
+  cmd += "sh -e .salt-build.sh";
   std::string run = "cd '" + workdir + "' && " + cmd;
   int rc = system(run.c_str());
   return rc == 0 ? SALT_OK : SALT_ERR;
