@@ -70,10 +70,13 @@ echo "===== static busybox ====="
 ( cd "busybox-${BUSYBOX_VER}"
   make defconfig
   sed -i 's/^# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
+  sed -i 's/^CONFIG_PIE=y/# CONFIG_PIE is not set/' .config 2>/dev/null || true
   sed -i 's/^CONFIG_TC=y/# CONFIG_TC is not set/' .config 2>/dev/null || true
   sed -i 's/^CONFIG_FEATURE_TC_INGRESS=y/# CONFIG_FEATURE_TC_INGRESS is not set/' .config 2>/dev/null || true
   make oldconfig </dev/null
+  grep -q '^CONFIG_STATIC=y' .config || { echo "FATAL: busybox CONFIG_STATIC was dropped"; exit 1; }
   make -j"$JOBS"
+  file busybox | grep -q 'statically linked' || { echo "FATAL: busybox is not static"; exit 1; }
   make CONFIG_PREFIX="$WORK/bb-install" install )
 
 echo "===== static runit ====="
