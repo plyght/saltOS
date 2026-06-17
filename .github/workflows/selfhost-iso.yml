@@ -24,9 +24,16 @@ jobs:
             grub-pc-bin grub-efi-amd64-bin grub-common xorriso mtools \
             qemu-system-x86
 
+      - name: Cache compiled kernel
+        uses: actions/cache@v4
+        with:
+          path: .kcache
+          key: selfhost-kernel-6.6.52-${{ hashFiles('os/selfhost/kernel-x86_64.config') }}
+
       - name: Build from-source self-hosted ISO
         run: |
           env REPO_DIR="$PWD" OUT="$PWD/out-iso" VERSION="0.1.0" \
+            KCACHE="$PWD/.kcache" \
             bash os/selfhost/build.sh x86_64
 
       - name: Boot test (QEMU)

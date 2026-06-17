@@ -128,13 +128,13 @@ chmod +x "$ROOTFS"/etc/runit/1 "$ROOTFS"/etc/runit/2 "$ROOTFS"/etc/runit/3
 mkdir -p "$ROOTFS/etc/runit/sv/boot-check"
 cat > "$ROOTFS/etc/runit/sv/boot-check/run" <<'EOF'
 #!/bin/sh
-exec 2>&1
-echo "----------------------------------------" > /dev/console
-cat /etc/os-release > /dev/console
-if salt --version > /dev/console 2>&1; then
-  echo "SALTOS_SELFHOST_OK kernel+busybox+runit+salt, all from source, no Debian" > /dev/console
+exec >/dev/console 2>&1
+echo "----------------------------------------"
+cat /etc/os-release
+if salt --version; then
+  echo "SALTOS_SELFHOST_OK kernel+busybox+runit+salt, all from source, no Debian"
 else
-  echo "SALTOS_SELFHOST_FAIL salt did not run" > /dev/console
+  echo "SALTOS_SELFHOST_FAIL salt did not run"
 fi
 exec sleep infinity
 EOF
@@ -143,7 +143,6 @@ chmod +x "$ROOTFS/etc/runit/sv/boot-check/run"
 mkdir -p "$ROOTFS/etc/runit/sv/getty-tty1"
 cat > "$ROOTFS/etc/runit/sv/getty-tty1/run" <<'EOF'
 #!/bin/sh
-exec 2>&1
 exec setsid sh -c 'exec sh </dev/ttyS0 >/dev/ttyS0 2>&1'
 EOF
 chmod +x "$ROOTFS/etc/runit/sv/getty-tty1/run"
@@ -160,40 +159,39 @@ source = ""
 key = ""
 EOF
 
-echo "===== build kernel with embedded initramfs ====="
-cd "$SRC/linux-${KERNEL_VER}"
-make defconfig
-cat >> .config <<EOF
-CONFIG_BLK_DEV_INITRD=y
-CONFIG_INITRAMFS_SOURCE="$ROOTFS"
-CONFIG_INITRAMFS_COMPRESSION_GZIP=y
-CONFIG_DEVTMPFS=y
-CONFIG_DEVTMPFS_MOUNT=y
-CONFIG_SERIAL_8250=y
-CONFIG_SERIAL_8250_CONSOLE=y
-CONFIG_BINFMT_ELF=y
-CONFIG_BINFMT_SCRIPT=y
-CONFIG_TMPFS=y
-CONFIG_PROC_FS=y
-CONFIG_SYSFS=y
-CONFIG_TTY=y
-CONFIG_VT=y
-CONFIG_VT_CONSOLE=y
-EOF
-make olddefconfig
-make -j"$JOBS" bzImage
-KIMG="arch/x86/boot/bzImage"
-cp "$KIMG" "$WORK/bzImage"
+echo "===== pack initramfs ====="
+( cd "$ROOTFS" && find . | cpio -o -H newc 2>/dev/null | gzip -9 > "$WORK/initrd.gz" )
+ls -lh "$WORK/initrd.gz"
+
+echo "===== build kernel ====="
+KCACHE="${KCACHE:-}"
+if [ -n "$KCACHE" ] && [ -f "$KCACHE/bzImage" ]; then
+  echo "using cached kernel from $KCACHE"
+  cp "$KCACHE/bzImage" "$WORK/bzImage"
+else
+  cd "$SRC/linux-${KERNEL_VER}"
+  make defconfig
+  cat "$REPO/os/selfhost/kernel-${ARCH}.config" >> .config
+  make olddefconfig
+  make -j"$JOBS" bzImage
+  cp arch/x86/boot/bzImage "$WORK/bzImage"
+  if [ -n "$KCACHE" ]; then
+    mkdir -p "$KCACHE"
+    cp "$WORK/bzImage" "$KCACHE/bzImage"
+  fi
+fi
 
 echo "===== build ISO ====="
 ISODIR="$WORK/iso"
 mkdir -p "$ISODIR/boot/grub"
 cp "$WORK/bzImage" "$ISODIR/boot/bzImage"
+cp "$WORK/initrd.gz" "$ISODIR/boot/initrd.gz"
 cat > "$ISODIR/boot/grub/grub.cfg" <<EOF
 set default=0
 set timeout=3
 menuentry "saltOS $VERSION (self-hosted)" {
   linux /boot/bzImage console=tty0 console=ttyS0,115200 rdinit=/sbin/runit-init
+  initrd /boot/initrd.gz
 }
 EOF
 ISO_PATH="$OUT/saltos-$VERSION-selfhost-$ARCH.iso"
