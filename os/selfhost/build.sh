@@ -122,15 +122,15 @@ cp -a "$WORK/bb-install/linuxrc" "$ROOTFS/" 2>/dev/null || true
 for b in runit runit-init runsv runsvdir runsvchdir sv chpst utmpset; do
   [ -f "$RUNIT_SRC/$b" ] && install -Dm755 "$RUNIT_SRC/$b" "$ROOTFS/sbin/$b"
 done
-echo "===== overlay GNU userland (glibc/bash/coreutils win over busybox) ====="
+echo "===== overlay GNU userland (glibc/bash/coreutils alongside busybox) ====="
 cp -a "$GNU/." "$ROOTFS/"
-LDSO="$(cd "$ROOTFS" && ls lib/ld-linux-*.so.* lib64/ld-linux-*.so.* usr/lib/ld-linux-*.so.* 2>/dev/null | head -1 || true)"
 mkdir -p "$ROOTFS/lib64"
-if [ -n "$LDSO" ]; then
-  ln -sf "/$LDSO" "$ROOTFS/lib64/ld-linux-x86-64.so.2"
+if [ ! -e "$ROOTFS/lib64/ld-linux-x86-64.so.2" ]; then
+  REAL="$(find "$ROOTFS/usr/lib" "$ROOTFS/lib" -name 'ld-linux-x86-64.so.2' -type f 2>/dev/null | head -1 || true)"
+  [ -n "$REAL" ] && ln -sf "${REAL#"$ROOTFS"}" "$ROOTFS/lib64/ld-linux-x86-64.so.2"
 fi
-ln -sf bash "$ROOTFS/bin/sh" 2>/dev/null || true
 [ -e "$ROOTFS/usr/bin/bash" ] && ln -sf /usr/bin/bash "$ROOTFS/bin/bash"
+ldconfig -r "$ROOTFS" 2>/dev/null || true
 
 install -Dm755 "$SALT_STATIC" "$ROOTFS/usr/bin/salt"
 
