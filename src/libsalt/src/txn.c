@@ -100,7 +100,8 @@ static void backup_file(const char *root, const char *backup_dir, const char *re
     if (n >= 0) {
       target[n] = '\0';
       unlink(dst);
-      symlink(target, dst);
+      int sr = symlink(target, dst);
+      (void)sr;
     }
   } else if (S_ISREG(st.st_mode)) {
     salt_copy_file(src, dst);
@@ -238,7 +239,8 @@ static int restore_tree(const char *backup_dir, const char *rel, const char *roo
           if (n >= 0) {
             target[n] = '\0';
             unlink(dest);
-            symlink(target, dest);
+            int sr = symlink(target, dest);
+            (void)sr;
           }
         } else {
           salt_copy_file(childfull, dest);
