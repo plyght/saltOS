@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - "os/selfhost/build.sh"
+      - "os/selfhost/kernel-x86_64.config"
       - ".github/workflows/selfhost-iso.yml"
 
 jobs:
@@ -14,28 +15,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install build toolchain
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential cmake pkg-config gcc-12 g++-12 \
-            bison flex bc libssl-dev libelf-dev \
-            gawk texinfo python3 \
-            xz-utils bzip2 curl file cpio ca-certificates \
-            grub-pc-bin grub-efi-amd64-bin grub-common xorriso mtools \
-            qemu-system-x86
-
       - name: Cache compiled kernel
         uses: actions/cache@v4
         with:
           path: .kcache
           key: selfhost-kernel-6.6.52-${{ hashFiles('os/selfhost/kernel-x86_64.config') }}
 
-      - name: Build from-source self-hosted ISO
+      - name: Build from-source ISO (in a clean Debian container)
         run: |
-          env REPO_DIR="$PWD" OUT="$PWD/out-iso" VERSION="0.1.0" \
-            KCACHE="$PWD/.kcache" \
-            bash os/selfhost/build.sh x86_64
+          docker run --rm -v "$PWD":/src -w /src debian:bookworm bash -c '
+            set -e
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update
+            apt-get install -y --no-install-recommends \
+              build-essential cmake pkg-config \
+              bison flex bc libssl-dev libelf-dev \
+              gawk texinfo python3 \
+              xz-utils bzip2 curl file cpio ca-certificates \
+              grub-pc-bin grub-efi-amd64-bin grub-common xorriso mtools
+            REPO_DIR=/src OUT=/src/out-iso VERSION=0.1.0 KCACHE=/src/.kcache \
+              bash os/selfhost/build.sh x86_64'
+          sudo chown -R "$USER" out-iso .kcache 2>/dev/null || true
+
+      - name: Install QEMU (host)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86
 
       - name: Boot test (QEMU)
         run: |
@@ -47,9 +52,9 @@ jobs:
             -cdrom "$ISO" -boot d > qemu.log 2>&1
           set -e
           echo "----- qemu serial tail -----"
-          tail -n 50 qemu.log || true
+          tail -n 60 qemu.log || true
           if grep -q "SALTOS_SELFHOST_OK" qemu.log; then
-            echo "SELF-HOST BOOT OK: kernel+busybox+runit+salt from source, no Debian"
+            echo "SELF-HOST BOOT OK: kernel+glibc+bash+coreutils+runit+salt from source, no Debian"
           else
             echo "BOOT FAILED: marker not found"
             exit 1
