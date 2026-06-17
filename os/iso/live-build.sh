@@ -27,9 +27,9 @@ util-linux,kmod,pciutils,file,less,nano,bash,coreutils,procps,\
 iproute2,iputils-ping,isc-dhcp-client,ca-certificates,\
 libzstd1,libsodium23,libsqlite3-0,zstd"
 
-DESKTOP_PKGS="xserver-xorg-core,xserver-xorg-input-libinput,xserver-xorg-video-fbdev,\
-xinit,xterm,openbox,lxqt-core,sddm,dbus,dbus-x11,udev,\
-calamares,calamares-settings-debian,parted,gdisk,\
+DESKTOP_PKGS="xserver-xorg-core,xserver-xorg-legacy,xserver-xorg-input-libinput,\
+xserver-xorg-video-fbdev,xserver-xorg-video-vesa,xinit,xterm,openbox,lxqt-core,\
+dbus,dbus-x11,udev,calamares,calamares-settings-debian,parted,gdisk,\
 fonts-dejavu,fonts-liberation2,sudo"
 
 PKGS="$BASE_PKGS"
@@ -74,8 +74,11 @@ mkdir -p "$ROOTFS/etc/runit/sv/boot-check"
 cat > "$ROOTFS/etc/runit/sv/boot-check/run" <<'EOF'
 #!/bin/sh
 exec 2>&1
-salt --version > /dev/console 2>&1 || true
-echo "SALTOS_BOOT_OK runit stage 2 reached; salt is present" > /dev/console
+if salt --version > /dev/console 2>&1; then
+  echo "SALTOS_BOOT_OK runit stage 2 reached; salt runs" > /dev/console
+else
+  echo "SALTOS_BOOT_FAIL salt did not run" > /dev/console
+fi
 exec sleep infinity
 EOF
 chmod +x "$ROOTFS/etc/runit/sv/boot-check/run"
@@ -87,7 +90,6 @@ enable_sv agetty-tty1
 enable_sv boot-check
 if [ "$EDITION" = "desktop" ]; then
   enable_sv dbus
-  enable_sv sddm
 fi
 
 mkdir -p "$ROOTFS/etc/salt"
@@ -101,14 +103,28 @@ chroot "$ROOTFS" /usr/bin/salt --root / list >/dev/null 2>&1 || true
 if [ "$EDITION" = "desktop" ]; then
   chroot "$ROOTFS" useradd -m -s /bin/bash -G sudo salt 2>/dev/null || true
   echo "salt:salt" | chroot "$ROOTFS" chpasswd || true
-  mkdir -p "$ROOTFS/etc/sddm.conf.d"
-  cat > "$ROOTFS/etc/sddm.conf.d/autologin.conf" <<'EOF'
-[Autologin]
-User=salt
-Session=lxqt.desktop
+
+  cat > "$ROOTFS/etc/runit/sv/agetty-tty1/run" <<'EOF'
+#!/bin/sh
+exec 2>&1
+exec agetty --noclear --autologin salt tty1 38400 linux
 EOF
-  install -Dm644 "$REPO/os/iso/live/Install-saltOS.desktop" \
+  chmod +x "$ROOTFS/etc/runit/sv/agetty-tty1/run"
+
+  cat > "$ROOTFS/home/salt/.bash_profile" <<'EOF'
+if [ -z "${DISPLAY:-}" ] && [ "$(tty)" = /dev/tty1 ]; then
+  exec startx /usr/bin/lxqt-session
+fi
+EOF
+  chroot "$ROOTFS" chown salt:salt /home/salt/.bash_profile || true
+
+  sed -i 's/^allowed_users=.*/allowed_users=anybody/; s/^#\?needs_root_rights=.*/needs_root_rights=yes/' \
+    "$ROOTFS/etc/X11/Xwrapper.config" 2>/dev/null || \
+    printf 'allowed_users=anybody\nneeds_root_rights=yes\n' > "$ROOTFS/etc/X11/Xwrapper.config"
+
+  install -Dm755 "$REPO/os/iso/live/Install-saltOS.desktop" \
     "$ROOTFS/home/salt/Desktop/Install-saltOS.desktop" 2>/dev/null || true
+  chroot "$ROOTFS" chown -R salt:salt /home/salt 2>/dev/null || true
 fi
 
 KVER="$(basename "$(ls -1 "$ROOTFS"/boot/vmlinuz-* | sort -V | tail -1)")"

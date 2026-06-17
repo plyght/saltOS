@@ -28,15 +28,21 @@ jobs:
             grub-pc-bin grub-efi-amd64-bin grub-common \
             qemu-system-x86 ovmf
 
-      - name: Build salt
+      - name: Build salt against the Debian base
         run: |
-          cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --target salt
+          docker run --rm -v "$PWD":/src -w /src debian:bookworm bash -c '
+            set -e
+            apt-get update
+            apt-get install -y --no-install-recommends \
+              cmake ninja-build pkg-config g++ ca-certificates \
+              libzstd-dev libsodium-dev libsqlite3-dev
+            cmake -G Ninja -B build-iso -DCMAKE_BUILD_TYPE=Release
+            cmake --build build-iso --target salt'
 
       - name: Build live ISO
         run: |
           sudo env \
-            SALT_BIN="$PWD/build/src/salt/salt" \
+            SALT_BIN="$PWD/build-iso/src/salt/salt" \
             REPO_DIR="$PWD" \
             EDITION="${{ github.event.inputs.edition || 'console' }}" \
             VERSION="0.1.0" \
