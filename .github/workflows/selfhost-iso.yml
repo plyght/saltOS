@@ -18,7 +18,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential cmake pkg-config \
+            build-essential cmake pkg-config gcc-12 g++-12 \
             bison flex bc libssl-dev libelf-dev \
             gawk texinfo python3 \
             xz-utils bzip2 curl file cpio ca-certificates \

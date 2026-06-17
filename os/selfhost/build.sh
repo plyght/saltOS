@@ -85,9 +85,12 @@ RUNIT_SRC="$SRC/admin/runit-${RUNIT_VER}/src"
   make )
 
 echo "===== glibc (from source) ====="
+GLIBC_CC="${GLIBC_CC:-gcc-12}"
+command -v "$GLIBC_CC" >/dev/null 2>&1 || GLIBC_CC=gcc
 mkdir -p "$SRC/glibc-build"
 ( cd "$SRC/glibc-build"
   "$SRC/glibc-${GLIBC_VER}/configure" \
+    CC="$GLIBC_CC" CXX="${GLIBC_CC/gcc/g++}" \
     --prefix=/usr \
     --disable-werror \
     --disable-nscd \
