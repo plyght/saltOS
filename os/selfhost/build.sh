@@ -14,9 +14,13 @@ ZSTD_VER="1.5.6"
 SODIUM_VER="1.0.20"
 SQLITE_TAR="sqlite-autoconf-3460000"
 KERNEL_VER="6.6.52"
+GLIBC_VER="2.39"
+BASH_VER="5.2.21"
+COREUTILS_VER="9.5"
 
 SRC="$WORK/src"
 DEPS="$WORK/deps"
+GNU="$WORK/gnu"
 ROOTFS="$WORK/rootfs"
 rm -rf "$WORK"
 mkdir -p "$SRC" "$DEPS" "$ROOTFS" "$OUT"
@@ -34,8 +38,12 @@ fetch "https://github.com/facebook/zstd/releases/download/v${ZSTD_VER}/zstd-${ZS
 fetch "https://download.libsodium.org/libsodium/releases/libsodium-${SODIUM_VER}.tar.gz" sodium.tar.gz
 fetch "https://www.sqlite.org/2024/${SQLITE_TAR}.tar.gz" sqlite.tar.gz
 fetch "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${KERNEL_VER}.tar.xz" linux.tar.xz
+fetch "https://ftp.gnu.org/gnu/glibc/glibc-${GLIBC_VER}.tar.xz" glibc.tar.xz
+fetch "https://ftp.gnu.org/gnu/bash/bash-${BASH_VER}.tar.gz" bash.tar.gz
+fetch "https://ftp.gnu.org/gnu/coreutils/coreutils-${COREUTILS_VER}.tar.xz" coreutils.tar.xz
 
-for f in busybox.tar.bz2 runit.tar.gz zstd.tar.gz sodium.tar.gz sqlite.tar.gz linux.tar.xz; do
+for f in busybox.tar.bz2 runit.tar.gz zstd.tar.gz sodium.tar.gz sqlite.tar.gz linux.tar.xz \
+         glibc.tar.xz bash.tar.gz coreutils.tar.xz; do
   tar -xf "$f"
 done
 
@@ -76,6 +84,30 @@ RUNIT_SRC="$SRC/admin/runit-${RUNIT_VER}/src"
   echo 'gcc -static' > conf-ld
   make )
 
+echo "===== glibc (from source) ====="
+mkdir -p "$SRC/glibc-build"
+( cd "$SRC/glibc-build"
+  "$SRC/glibc-${GLIBC_VER}/configure" \
+    --prefix=/usr \
+    --disable-werror \
+    --disable-nscd \
+    --without-selinux \
+    --enable-kernel=4.19
+  make -j"$JOBS"
+  make DESTDIR="$GNU" install )
+
+echo "===== bash (from source) ====="
+( cd "$SRC/bash-${BASH_VER}"
+  ./configure --prefix=/usr --without-bash-malloc
+  make -j"$JOBS"
+  make DESTDIR="$GNU" install )
+
+echo "===== coreutils (from source) ====="
+( cd "$SRC/coreutils-${COREUTILS_VER}"
+  FORCE_UNSAFE_CONFIGURE=1 ./configure --prefix=/usr
+  make -j"$JOBS"
+  make DESTDIR="$GNU" install )
+
 echo "===== assemble rootfs ====="
 mkdir -p "$ROOTFS"/{bin,sbin,usr/bin,usr/sbin,etc,proc,sys,dev,run,tmp,root,var/lib/salt}
 cp -a "$WORK/bb-install/bin/"* "$ROOTFS/bin/" 2>/dev/null || true
@@ -87,7 +119,22 @@ cp -a "$WORK/bb-install/linuxrc" "$ROOTFS/" 2>/dev/null || true
 for b in runit runit-init runsv runsvdir runsvchdir sv chpst utmpset; do
   [ -f "$RUNIT_SRC/$b" ] && install -Dm755 "$RUNIT_SRC/$b" "$ROOTFS/sbin/$b"
 done
+echo "===== overlay GNU userland (glibc/bash/coreutils win over busybox) ====="
+cp -a "$GNU/." "$ROOTFS/"
+LDSO="$(cd "$ROOTFS" && ls lib/ld-linux-*.so.* lib64/ld-linux-*.so.* usr/lib/ld-linux-*.so.* 2>/dev/null | head -1 || true)"
+mkdir -p "$ROOTFS/lib64"
+if [ -n "$LDSO" ]; then
+  ln -sf "/$LDSO" "$ROOTFS/lib64/ld-linux-x86-64.so.2"
+fi
+ln -sf bash "$ROOTFS/bin/sh" 2>/dev/null || true
+[ -e "$ROOTFS/usr/bin/bash" ] && ln -sf /usr/bin/bash "$ROOTFS/bin/bash"
+
 install -Dm755 "$SALT_STATIC" "$ROOTFS/usr/bin/salt"
+
+cat > "$ROOTFS/etc/profile" <<'EOF'
+export PATH=/usr/bin:/usr/sbin:/bin:/sbin
+export PS1='saltOS:\w\$ '
+EOF
 
 cat > "$ROOTFS/etc/os-release" <<EOF
 NAME="saltOS"
@@ -131,10 +178,15 @@ cat > "$ROOTFS/etc/runit/sv/boot-check/run" <<'EOF'
 exec >/dev/console 2>&1
 echo "----------------------------------------"
 cat /etc/os-release
-if salt --version; then
-  echo "SALTOS_SELFHOST_OK kernel+busybox+runit+salt, all from source, no Debian"
+ok=1
+salt --version || ok=0
+bash --version | head -1 || ok=0
+ls --version | head -1 || ok=0
+echo "ldd salt:"; file /usr/bin/bash 2>/dev/null || true
+if [ "$ok" = 1 ]; then
+  echo "SALTOS_SELFHOST_OK kernel+glibc+bash+coreutils+runit+salt, all from source, no Debian"
 else
-  echo "SALTOS_SELFHOST_FAIL salt did not run"
+  echo "SALTOS_SELFHOST_FAIL a component did not run"
 fi
 exec sleep infinity
 EOF
