@@ -174,10 +174,30 @@ int salt_supplychain_scan(const salt_scan_input *in, salt_findings *out) {
   }
   const char *body = text.data ? text.data : "";
 
-  if (regex_search("0x[0-9a-fA-F]{40}", body) ||
-      regex_search("\\b(bc1|[13])[a-zA-HJ-NP-Z0-9]{25,39}\\b", body))
+  char *masked = salt_strdup(body);
+  if (masked) {
+    size_t n = strlen(masked);
+    size_t i = 0;
+    while (i < n) {
+      if (isxdigit((unsigned char)masked[i])) {
+        size_t j = i;
+        while (j < n && isxdigit((unsigned char)masked[j])) j++;
+        if (j - i >= 32)
+          for (size_t k = i; k < j; k++) masked[k] = ' ';
+        i = j;
+      } else {
+        i++;
+      }
+    }
+  }
+  const char *scan = masked ? masked : body;
+  if (regex_search("0x[0-9a-fA-F]{40}([^0-9a-fA-F]|$)", body) ||
+      regex_search("(^|[^1-9A-HJ-NP-Za-km-z])[13][1-9A-HJ-NP-Za-km-z]{25,34}([^1-9A-HJ-NP-Za-km-z]|$)",
+                   scan) ||
+      regex_search("bc1[ac-hj-np-z02-9]{11,71}", scan))
     salt_findings_push(out, SALT_RISK_BLOCK, "wallet",
                        "possible crypto wallet address in recipe");
+  free(masked);
 
   if (strstr(body, "base64 -d") || strstr(body, "base64 --decode") || strstr(body, "eval ") ||
       strstr(body, "| sh") || strstr(body, "|sh") || strstr(body, "| bash"))
