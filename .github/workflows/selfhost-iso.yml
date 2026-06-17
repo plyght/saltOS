@@ -1,0 +1,55 @@
+name: selfhost-iso
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "os/selfhost/build.sh"
+      - ".github/workflows/selfhost-iso.yml"
+
+jobs:
+  build:
+    name: self-hosted ISO (x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake pkg-config \
+            bison flex bc libssl-dev libelf-dev \
+            xz-utils bzip2 curl file cpio ca-certificates \
+            grub-pc-bin grub-efi-amd64-bin grub-common xorriso mtools \
+            qemu-system-x86
+
+      - name: Build from-source self-hosted ISO
+        run: |
+          env REPO_DIR="$PWD" OUT="$PWD/out-iso" VERSION="0.1.0" \
+            bash os/selfhost/build.sh x86_64
+
+      - name: Boot test (QEMU)
+        run: |
+          ISO=$(ls out-iso/*.iso | head -1)
+          echo "boot-testing $ISO"
+          set +e
+          timeout 300 qemu-system-x86_64 \
+            -machine pc -m 1024 -display none -serial stdio -no-reboot \
+            -cdrom "$ISO" -boot d > qemu.log 2>&1
+          set -e
+          echo "----- qemu serial tail -----"
+          tail -n 50 qemu.log || true
+          if grep -q "SALTOS_SELFHOST_OK" qemu.log; then
+            echo "SELF-HOST BOOT OK: kernel+busybox+runit+salt from source, no Debian"
+          else
+            echo "BOOT FAILED: marker not found"
+            exit 1
+          fi
+
+      - name: Upload ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: saltos-selfhost-x86_64
+          path: out-iso/*.iso
+          if-no-files-found: error
