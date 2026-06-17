@@ -1,0 +1,13 @@
+build/
+out/
+*.o
+*.a
+*.saltpkg
+keys/*.sec
+keys/*.secret
+.DS_Store
+compile_commands.json
+work/
+rootfs/
+sources/
+*.iso
