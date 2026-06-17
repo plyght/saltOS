@@ -38,7 +38,7 @@ if [ "$EDITION" = "desktop" ]; then
 fi
 
 mmdebstrap \
-  --variant=important \
+  --variant=apt \
   --arch="$DARCH" \
   --components="main contrib" \
   --include="$PKGS" \
