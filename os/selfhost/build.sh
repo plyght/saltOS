@@ -63,7 +63,8 @@ echo "===== static busybox ====="
   make defconfig
   sed -i 's/^# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
   sed -i 's/^CONFIG_TC=y/# CONFIG_TC is not set/' .config 2>/dev/null || true
-  yes "" | make oldconfig >/dev/null
+  sed -i 's/^CONFIG_FEATURE_TC_INGRESS=y/# CONFIG_FEATURE_TC_INGRESS is not set/' .config 2>/dev/null || true
+  make oldconfig </dev/null
   make -j"$JOBS"
   make CONFIG_PREFIX="$WORK/bb-install" install )
 
