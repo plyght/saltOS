@@ -13,6 +13,25 @@ recipes, and a simple full-system rollback model built on Btrfs snapshots.
 > saltOS does not yet need thousands of packages; it needs a coherent base
 > system that proves the model works.
 
+### Current status
+
+Verified working (built and tested in CI on both x86_64 and aarch64):
+
+- `salt` package manager: builds clean and passes the unit suite plus an
+  end-to-end CLI smoke test (build → sign → publish → signature-verified sync →
+  install → query/verify → remove → rollback).
+- The maintainer pipeline on real upstream software: `salt build` downloads a
+  pinned source, verifies its sha256, builds it, and produces an installable
+  signed `.saltpkg` (proven with `zlib`).
+- All 111 package recipes pass `salt lint`; 52 are admission-ready today, the
+  rest pin real upstream URLs and are pending verified source hashes.
+
+In progress (written as source, not yet assembled end-to-end):
+
+- The from-scratch base-system bootstrap, the live ISO, and the Calamares
+  graphical installer exist as complete build scripts/recipes and run on a
+  Linux build host; a full bootable image build is not yet produced in CI.
+
 ## What saltOS is
 
 - A real Unix-like desktop OS with a traditional `/usr`, `/etc`, `/var`, `/opt`
