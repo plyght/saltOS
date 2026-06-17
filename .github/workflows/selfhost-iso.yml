@@ -71,8 +71,9 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload ISO
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: saltos-selfhost-x86_64
           path: out-iso/*.iso
-          if-no-files-found: error
+          if-no-files-found: warn
