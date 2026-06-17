@@ -28,8 +28,8 @@ iproute2,iputils-ping,isc-dhcp-client,ca-certificates,\
 libzstd1,libsodium23,libsqlite3-0,zstd"
 
 DESKTOP_PKGS="xserver-xorg-core,xserver-xorg-input-libinput,xserver-xorg-video-fbdev,\
-xinit,xterm,openbox,lxqt-core,sddm,dbus,dbus-x11,eudev,\
-calamares,calamares-settings-debian,parted,gdisk,network-manager,\
+xinit,xterm,openbox,lxqt-core,sddm,dbus,dbus-x11,udev,\
+calamares,calamares-settings-debian,parted,gdisk,\
 fonts-dejavu,fonts-liberation2,sudo"
 
 PKGS="$BASE_PKGS"
