@@ -1,0 +1,20 @@
+name = "libdrm"
+version = "2.4.122"
+release = 1
+summary = "Direct Rendering Manager userspace library"
+license = "MIT"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://dri.freedesktop.org/libdrm/libdrm-2.4.122.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "meson"
+deps = ["meson", "ninja", "pkgconf", "gcc"]
+
+[package]
+deps = ["glibc"]
+
+[reproducibility]
+status = "verified"

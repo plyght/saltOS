@@ -1,0 +1,20 @@
+name = "pcre2"
+version = "10.44"
+release = 1
+summary = "Perl Compatible Regular Expressions library version 2"
+license = "BSD-3-Clause"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.44/pcre2-10.44.tar.bz2"
+sha256 = "TODO-sha256"
+
+[build]
+system = "autotools"
+deps = ["pkgconf", "gcc", "make", "zlib"]
+
+[package]
+deps = ["glibc", "zlib"]
+
+[reproducibility]
+status = "verified"

@@ -1,0 +1,51 @@
+set default=0
+set timeout=10
+
+insmod all_video
+insmod gfxterm
+insmod png
+insmod part_gpt
+insmod part_msdos
+insmod iso9660
+insmod search
+insmod search_label
+
+if loadfont /boot/grub/fonts/unicode.pf2 ; then
+	set gfxmode=auto
+	terminal_output gfxterm
+fi
+
+set LIVE_LABEL="@@ISO_LABEL@@"
+set ARCH="@@ARCH@@"
+
+menuentry "saltOS @@VERSION@@ (live, ${ARCH})" {
+	search --no-floppy --set=root --label ${LIVE_LABEL}
+	linux /boot/vmlinuz-${ARCH} boot=live live-media-path=/live root=live:LABEL=${LIVE_LABEL} rd.live.image quiet
+	initrd /boot/initramfs-${ARCH}.img
+}
+
+menuentry "saltOS @@VERSION@@ (live, ${ARCH}, safe graphics)" {
+	search --no-floppy --set=root --label ${LIVE_LABEL}
+	linux /boot/vmlinuz-${ARCH} boot=live live-media-path=/live root=live:LABEL=${LIVE_LABEL} rd.live.image nomodeset
+	initrd /boot/initramfs-${ARCH}.img
+}
+
+menuentry "saltOS @@VERSION@@ (live, to RAM)" {
+	search --no-floppy --set=root --label ${LIVE_LABEL}
+	linux /boot/vmlinuz-${ARCH} boot=live live-media-path=/live root=live:LABEL=${LIVE_LABEL} rd.live.image toram quiet
+	initrd /boot/initramfs-${ARCH}.img
+}
+
+if [ "${grub_platform}" = "efi" ]; then
+	menuentry "UEFI Firmware Settings" {
+		fwsetup
+	}
+fi
+
+menuentry "Reboot" {
+	reboot
+}
+
+menuentry "Power Off" {
+	halt
+}

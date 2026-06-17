@@ -1,0 +1,25 @@
+name = "git"
+version = "2.47.0"
+release = 1
+summary = "Distributed version control system"
+license = "GPL-2.0-only"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://www.kernel.org/pub/software/scm/git/git-2.47.0.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "make"
+deps = ["gcc", "make", "curl", "openssl", "zlib", "expat", "perl", "gettext", "pcre2"]
+script = """
+#!/bin/sh
+make prefix=/usr CURLDIR=/usr NO_TCLTK=1 USE_LIBPCRE2=1 -j"$SALT_JOBS" all
+make prefix=/usr DESTDIR="$SALT_DEST" NO_TCLTK=1 install
+"""
+
+[package]
+deps = ["glibc", "curl", "openssl", "zlib", "expat", "perl", "pcre2"]
+
+[reproducibility]
+status = "verified"

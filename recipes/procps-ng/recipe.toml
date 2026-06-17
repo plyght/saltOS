@@ -1,0 +1,29 @@
+name = "procps-ng"
+version = "4.0.4"
+release = 1
+summary = "Utilities to inspect processes using /proc"
+license = "GPL-2.0-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://downloads.sourceforge.net/project/procps-ng/Production/procps-ng-4.0.4.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "autotools"
+deps = ["gcc", "make", "ncurses"]
+script = """
+#!/bin/sh
+./configure --prefix=/usr \\
+    --docdir=/usr/share/doc/procps-ng-4.0.4 \\
+    --disable-static \\
+    --disable-kill
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+"""
+
+[package]
+deps = ["glibc", "ncurses"]
+
+[reproducibility]
+status = "verified"

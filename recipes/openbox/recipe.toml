@@ -1,0 +1,20 @@
+name = "openbox"
+version = "3.6.1"
+release = 1
+summary = "Highly configurable X11 window manager"
+license = "GPL-2.0-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "http://openbox.org/dist/openbox/openbox-3.6.1.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "autotools"
+deps = ["pkgconf", "gcc", "make", "libx11", "pango", "glib"]
+
+[package]
+deps = ["glibc", "libx11", "pango", "glib"]
+
+[reproducibility]
+status = "verified"

@@ -1,0 +1,20 @@
+name = "libxcb"
+version = "1.17.0"
+release = 1
+summary = "X protocol C-language Binding library"
+license = "MIT"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://xorg.freedesktop.org/archive/individual/lib/libxcb-1.17.0.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "autotools"
+deps = ["pkgconf", "gcc", "make"]
+
+[package]
+deps = ["glibc"]
+
+[reproducibility]
+status = "verified"

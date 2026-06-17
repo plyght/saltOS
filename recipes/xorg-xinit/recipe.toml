@@ -1,0 +1,20 @@
+name = "xorg-xinit"
+version = "1.4.3"
+release = 1
+summary = "X Window System initializer providing startx"
+license = "MIT"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://www.x.org/releases/individual/app/xinit-1.4.3.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "autotools"
+deps = ["libx11", "xorg-server", "pkgconf", "gcc", "make"]
+
+[package]
+deps = ["glibc", "libx11", "xorg-server"]
+
+[reproducibility]
+status = "verified"

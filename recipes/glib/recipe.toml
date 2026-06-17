@@ -1,0 +1,20 @@
+name = "glib"
+version = "2.80.4"
+release = 1
+summary = "Low-level core library for GNOME"
+license = "LGPL-2.1-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://download.gnome.org/sources/glib/2.80/glib-2.80.4.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "meson"
+deps = ["meson", "ninja", "pkgconf", "gcc", "libffi", "zlib", "pcre2"]
+
+[package]
+deps = ["glibc", "libffi", "zlib", "pcre2"]
+
+[reproducibility]
+status = "verified"

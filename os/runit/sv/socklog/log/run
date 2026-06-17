@@ -1,0 +1,4 @@
+#!/bin/sh
+exec 2>&1
+[ -d /var/log/socklog ] || mkdir -p /var/log/socklog
+exec chpst -U log svlogd -tt /var/log/socklog

@@ -1,0 +1,5 @@
+#!/bin/sh
+PATH=/usr/bin:/usr/sbin:/bin:/sbin
+export PATH
+
+exec env - PATH="$PATH" runsvdir -P /etc/runit/runsvdir/current

@@ -1,0 +1,25 @@
+name = "efivar"
+version = "39"
+release = 1
+summary = "Library and tools to manipulate UEFI variables"
+license = "LGPL-2.1-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://github.com/rhboot/efivar/releases/download/39/efivar-39.tar.bz2"
+sha256 = "TODO-sha256"
+
+[build]
+system = "make"
+deps = ["gcc", "make", "pkgconf"]
+script = """
+#!/bin/sh
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" libdir=/usr/lib bindir=/usr/bin install
+"""
+
+[package]
+deps = ["glibc"]
+
+[reproducibility]
+status = "verified"

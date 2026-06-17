@@ -1,0 +1,31 @@
+name = "dhcpcd"
+version = "10.0.6"
+release = 1
+summary = "DHCP and DHCPv6 client with privilege separation"
+license = "BSD-2-Clause"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://github.com/NetworkConfiguration/dhcpcd/releases/download/v10.0.6/dhcpcd-10.0.6.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "custom"
+deps = ["gcc", "make"]
+script = """
+#!/bin/sh
+./configure --prefix=/usr \\
+    --sysconfdir=/etc \\
+    --libexecdir=/usr/lib/dhcpcd \\
+    --dbdir=/var/lib/dhcpcd \\
+    --runstatedir=/run \\
+    --privsepuser=dhcpcd
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+"""
+
+[package]
+deps = ["glibc"]
+
+[reproducibility]
+status = "verified"

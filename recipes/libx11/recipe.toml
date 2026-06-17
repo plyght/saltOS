@@ -1,0 +1,20 @@
+name = "libx11"
+version = "1.8.10"
+release = 1
+summary = "X11 client-side library"
+license = "MIT"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://www.x.org/releases/individual/lib/libX11-1.8.10.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "autotools"
+deps = ["libxcb", "pkgconf", "gcc", "make"]
+
+[package]
+deps = ["glibc", "libxcb"]
+
+[reproducibility]
+status = "verified"

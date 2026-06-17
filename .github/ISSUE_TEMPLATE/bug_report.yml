@@ -1,0 +1,67 @@
+name: Bug report
+description: Report a defect in saltOS, the salt package manager, or the ISO/installer
+title: "[bug] <summary>"
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - salt (package manager)
+        - libsalt (core library)
+        - repository / signed index
+        - rollback / btrfs deployments
+        - runit / svc
+        - ISO / live image
+        - installer (Calamares)
+        - desktop (LXQt)
+        - documentation
+        - other
+    validations:
+      required: true
+  - type: input
+    id: arch
+    attributes:
+      label: Architecture
+      placeholder: x86_64 or aarch64
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: saltOS / salt version or commit
+      placeholder: salt --version, or git commit
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. salt install ...
+        2. salt update
+        3. observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or transaction output
+      render: shell
+  - type: textarea
+    id: rollback
+    attributes:
+      label: Did rollback recover the system? (if applicable)

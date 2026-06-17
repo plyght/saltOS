@@ -1,0 +1,27 @@
+name = "iproute2"
+version = "6.9.0"
+release = 1
+summary = "Networking and traffic control utilities"
+license = "GPL-2.0-only"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://www.kernel.org/pub/linux/utils/net/iproute2/iproute2-6.9.0.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "make"
+deps = ["gcc", "make", "bison", "flex", "elfutils"]
+script = """
+#!/bin/sh
+sed -i /ARPD/d Makefile
+rm -f man/man8/arpd.8
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" SBINDIR=/usr/sbin install
+"""
+
+[package]
+deps = ["glibc", "elfutils"]
+
+[reproducibility]
+status = "verified"

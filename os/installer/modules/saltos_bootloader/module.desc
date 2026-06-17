@@ -1,0 +1,5 @@
+---
+type: job
+name: saltos_bootloader
+interface: python
+script: main.py

@@ -1,0 +1,28 @@
+name = "btrfs-progs"
+version = "6.9.2"
+release = 1
+summary = "Userspace utilities for the btrfs filesystem"
+license = "GPL-2.0-only"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://www.kernel.org/pub/linux/kernel/people/kdave/btrfs-progs/btrfs-progs-v6.9.2.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "autotools"
+deps = ["gcc", "make", "util-linux", "lzo", "zlib", "zstd"]
+script = """
+#!/bin/sh
+./configure --prefix=/usr \\
+    --disable-static \\
+    --disable-documentation
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+"""
+
+[package]
+deps = ["glibc", "util-linux", "lzo", "zlib", "zstd"]
+
+[reproducibility]
+status = "verified"

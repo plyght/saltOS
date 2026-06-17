@@ -1,0 +1,84 @@
+saltOS base-system bootstrap
+
+This directory turns the package recipes under recipes/ into a base root
+filesystem for saltOS on a Linux build host. It is an LFS-style staged build
+driven entirely by the salt package builder (salt build) and installer
+(salt install).
+
+Bootloader choice: GRUB
+
+GRUB is used as the bootloader. saltOS treats full-system rollback as a
+first-class feature (DISTRO.md sections 4.2 and 7): every transaction takes a
+Btrfs snapshot of the @ subvolume, and the user must be able to boot a previous
+deployment from the boot menu. GRUB has mature Btrfs and subvolume support and
+can enumerate snapshot subvolumes as bootable deployment entries, which makes
+the rollback-from-boot-menu requirement straightforward. systemd-boot was
+rejected because it has weaker Btrfs snapshot integration and saltOS does not
+use systemd. GRUB is built EFI-only here, targeting x86_64-efi and arm64-efi
+selected from SALT_ARCH; efibootmgr/efivar manage the UEFI boot entries.
+
+Stages (build-order.toml)
+
+1. cross-toolchain
+   binutils, gcc, the kernel headers (linux), and glibc plus the gcc math
+   libraries (gmp, mpfr, mpc). This produces a toolchain capable of building
+   the rest of the system for the target arch.
+
+2. temp-tools
+   A minimal set of host-independent tools (shell, coreutils, text tools,
+   archivers, busybox) built against the new toolchain so the base stage no
+   longer depends on the build host's userland.
+
+3. base
+   The self-hosting base system: final glibc/gcc/binutils, core libraries
+   (zlib, openssl, ncurses, readline, libffi, expat, sqlite, libsodium, ...),
+   filesystem and device tooling (e2fsprogs, btrfs-progs, eudev, kmod), init
+   (runit), networking (iproute2, dhcpcd, openssh), the kernel and initramfs
+   (linux, dracut), the bootloader (grub, efibootmgr), the build toolchain
+   (cmake, ninja, meson), and salt itself. After this stage the system can
+   build and install its own packages.
+
+4. desktop
+   The LXQt edition (DISTRO.md section 15): the X11 display stack
+   (mesa, llvm, xorg-server, openbox), Qt6, fonts and 2D libraries, the LXQt
+   component stack, SDDM as the login manager, and the prebuilt Helium browser.
+
+Network policy
+
+Network access is allowed only while salt fetches and hash-verifies sources.
+The base and desktop stages export SALT_NO_NETWORK=1 so the build phase runs
+with networking denied, matching DISTRO.md section 13.
+
+Running the build
+
+Build the package set and assemble a sysroot:
+
+  ARCH=x86_64  OUT=/var/tmp/saltos-build  sh os/bootstrap/bootstrap.sh
+  ARCH=aarch64 OUT=/var/tmp/saltos-build  sh os/bootstrap/bootstrap.sh
+
+Environment variables:
+  ARCH   x86_64 | aarch64 (arm64/amd64 are normalized)
+  OUT    work directory root (default /var/tmp/saltos-build)
+  JOBS   build parallelism (default nproc)
+  SALT   path to the salt binary (default: salt on PATH)
+
+Built .saltpkg files land in $OUT/$ARCH/packages and per-package logs in
+$OUT/$ARCH/logs.
+
+Assembling the rootfs
+
+After the packages are built, populate a clean rootfs, install the runit
+service tree, write fstab, and seed /etc:
+
+  ARCH=x86_64 OUT=/var/tmp/saltos-build ROOTFS=/var/tmp/saltos-build/x86_64/rootfs \
+    sh os/bootstrap/stage-rootfs.sh
+
+This installs the base and desktop packages with salt install --root, copies
+os/runit/sv into /etc/runit/sv, enables the default services by symlink into
+/etc/runit/runsvdir/current, writes a Btrfs subvolume fstab
+(@ @home @var @log @snapshots), and seeds hostname, hosts, os-release,
+passwd/group, shells, and /etc/salt/repo.conf.
+
+The resulting rootfs is consumed by os/iso (image assembly) and os/installer
+(disk install). Bootloader deployment entries and the Btrfs subvolume creation
+are handled at install time by the installer's custom module.

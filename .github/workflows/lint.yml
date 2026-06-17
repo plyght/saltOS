@@ -1,0 +1,62 @@
+name: lint
+
+on:
+  pull_request:
+    paths:
+      - "recipes/**"
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  recipe-lint:
+    name: salt lint + supply-chain scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config \
+            libzstd-dev libsodium-dev libsqlite3-dev \
+            build-essential
+
+      - name: Build salt
+        run: |
+          cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target salt
+
+      - name: Determine changed recipes
+        id: changed
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          dirs="$(git diff --name-only "$base" "$head" -- 'recipes/**' \
+            | sed -n 's#^\(recipes/[^/]\+\)/.*#\1#p' | sort -u)"
+          {
+            echo "dirs<<EOF"
+            echo "$dirs"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Lint and scan changed recipes
+        run: |
+          export PATH="$PWD/build/src/salt:$PATH"
+          status=0
+          if [ -z "${{ steps.changed.outputs.dirs }}" ]; then
+            echo "No recipe directories changed."
+            exit 0
+          fi
+          while IFS= read -r dir; do
+            [ -n "$dir" ] || continue
+            echo "::group::$dir"
+            salt lint "$dir" || status=1
+            salt trust scan "$dir" || status=1
+            echo "::endgroup::"
+          done <<< "${{ steps.changed.outputs.dirs }}"
+          exit $status

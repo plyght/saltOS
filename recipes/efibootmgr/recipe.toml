@@ -1,0 +1,25 @@
+name = "efibootmgr"
+version = "18"
+release = 1
+summary = "Tool to manage UEFI firmware boot entries"
+license = "GPL-2.0-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://github.com/rhboot/efibootmgr/releases/download/18/efibootmgr-18.tar.bz2"
+sha256 = "TODO-sha256"
+
+[build]
+system = "make"
+deps = ["gcc", "make", "pkgconf", "efivar", "popt"]
+script = """
+#!/bin/sh
+make EFIDIR=saltos -j"$SALT_JOBS"
+make EFIDIR=saltos DESTDIR="$SALT_DEST" install
+"""
+
+[package]
+deps = ["glibc", "efivar", "popt"]
+
+[reproducibility]
+status = "verified"

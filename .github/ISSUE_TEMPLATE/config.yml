@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Trust and contribution model
+    url: https://github.com/plyght/saltOS/blob/main/docs/trust-model.md
+    about: How contributor trust levels and package admission work before you propose changes.
+  - name: Contributing guide
+    url: https://github.com/plyght/saltOS/blob/main/docs/contributing.md
+    about: Review workflow and CI gates for recipe and code changes.

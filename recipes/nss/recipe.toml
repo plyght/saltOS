@@ -1,0 +1,32 @@
+name = "nss"
+version = "3.101"
+release = 1
+summary = "Network Security Services libraries"
+license = "MPL-2.0"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://archive.mozilla.org/pub/security/nss/releases/NSS_3_101_RTM/src/nss-3.101.tar.gz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "custom"
+deps = ["gcc", "make", "nspr", "perl", "sqlite", "zlib"]
+script = """
+#!/bin/sh
+cd nss
+make BUILD_OPT=1 NSPR_INCLUDE_DIR=/usr/include/nspr USE_SYSTEM_ZLIB=1 ZLIB_LIBS=-lz NSS_ENABLE_WERROR=0 $([ "$SALT_ARCH" = "x86_64" ] && echo USE_64=1 || echo USE_64=1) nss_build_all
+install -d "$SALT_DEST/usr/lib"
+install -d "$SALT_DEST/usr/include/nss"
+install -d "$SALT_DEST/usr/bin"
+cp -a ../dist/Release/lib/*.so "$SALT_DEST/usr/lib/"
+cp -a ../dist/Release/lib/libcrmf.a "$SALT_DEST/usr/lib/"
+cp -a ../dist/public/nss/* "$SALT_DEST/usr/include/nss/"
+cp -a ../dist/Release/bin/certutil ../dist/Release/bin/nss-config ../dist/Release/bin/pk12util "$SALT_DEST/usr/bin/" 2>/dev/null || true
+"""
+
+[package]
+deps = ["glibc", "nspr", "sqlite", "zlib"]
+
+[reproducibility]
+status = "verified"

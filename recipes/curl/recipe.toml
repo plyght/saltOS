@@ -1,0 +1,26 @@
+name = "curl"
+version = "8.11.0"
+release = 1
+summary = "Command line tool and library for transferring data with URLs"
+license = "curl"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://curl.se/download/curl-8.11.0.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "autotools"
+deps = ["gcc", "make", "pkgconf", "openssl", "zlib", "zstd", "ca-certificates"]
+script = """
+#!/bin/sh
+./configure --prefix=/usr --with-openssl --with-ca-bundle=/etc/ssl/certs/ca-certificates.crt --enable-threaded-resolver --with-zstd
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+"""
+
+[package]
+deps = ["glibc", "openssl", "zlib", "zstd", "ca-certificates"]
+
+[reproducibility]
+status = "verified"

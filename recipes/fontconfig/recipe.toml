@@ -1,0 +1,20 @@
+name = "fontconfig"
+version = "2.15.0"
+release = 1
+summary = "Library for configuring and customizing font access"
+license = "MIT"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://www.freedesktop.org/software/fontconfig/release/fontconfig-2.15.0.tar.xz"
+sha256 = "63a0658d0e06e0fa886106452b58ef04f21f58202ea02a94c39de0d3335d7c0e"
+
+[build]
+system = "meson"
+deps = ["meson", "ninja", "pkgconf", "gcc", "freetype", "expat"]
+
+[package]
+deps = ["glibc", "freetype", "expat"]
+
+[reproducibility]
+status = "verified"

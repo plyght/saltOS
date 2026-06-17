@@ -1,0 +1,29 @@
+name = "pkgconf"
+version = "2.2.0"
+release = 1
+summary = "Tool to query compile and link flags, provides pkg-config"
+license = "ISC"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://distfiles.ariadne.space/pkgconf/pkgconf-2.2.0.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "autotools"
+deps = ["gcc", "make", "glibc"]
+script = """
+#!/bin/sh
+./configure --prefix=/usr \\
+    --disable-static
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+ln -sf pkgconf "$SALT_DEST/usr/bin/pkg-config"
+"""
+
+[package]
+deps = ["glibc"]
+
+[reproducibility]
+status = "unverified"
+reason = "upstream tarball sha256 set to TODO-sha256 pending verification"

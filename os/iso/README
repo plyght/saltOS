@@ -1,0 +1,71 @@
+saltOS live ISO builder
+
+Overview
+--------
+build-iso.sh assembles a hybrid bootable live ISO from a base rootfs produced by
+os/bootstrap. The live image boots into an LXQt session (SDDM autologin) with the
+Calamares graphical installer available via an "Install saltOS" desktop launcher.
+The builder is parameterized by architecture and supports both x86_64 and aarch64.
+
+Layout
+------
+build-iso.sh            POSIX sh ISO assembler (squashfs + initramfs + GRUB + xorriso)
+grub/grub.cfg.in        GRUB menu template (UEFI on both arches, BIOS on x86_64)
+live/live-init          fallback live-boot init (squashfs + overlayfs, toram option)
+live/live-setup.sh      live-session setup: live user, SDDM autologin, repo bind mount
+live/sv/live-setup/run  runit service that runs live-setup once at boot
+live/Install-saltOS.desktop  desktop launcher that runs calamares
+
+Boot model
+----------
+Bootloader: GRUB. This matches the rollback model in DISTRO.md (GRUB has the best
+Btrfs snapshot and previous-deployment boot story) and gives one bootloader across
+UEFI for both arches plus BIOS for x86_64.
+
+UEFI: a FAT El Torito image (boot/grub/efiboot.img) holds a standalone GRUB EFI
+binary (BOOTX64.EFI on x86_64, BOOTAA64.EFI on aarch64) under EFI/BOOT.
+BIOS (x86_64 only): a GRUB i386-pc core image is embedded as an El Torito no-emul
+boot image and the ISO is made isohybrid so it boots from USB.
+
+Live filesystem: the rootfs is packed into live/filesystem.squashfs (zstd). At boot
+the live init mounts the squashfs read-only and stacks a tmpfs overlay on top so the
+running system is writable but the medium stays read-only. A "toram" menu entry copies
+the squashfs into RAM and frees the medium. If the rootfs ships dracut with the
+dmsquash-live module, build-iso.sh uses dracut for the initramfs; otherwise it builds
+a minimal initramfs around live/live-init.
+
+Prerequisites (Linux build host)
+--------------------------------
+- mksquashfs (squashfs-tools)
+- xorriso
+- grub-mkstandalone, grub-mkimage and the GRUB platform modules:
+    /usr/lib/grub/x86_64-efi, /usr/lib/grub/arm64-efi, /usr/lib/grub/i386-pc
+- mkfs.vfat (dosfstools) and mtools (mmd/mcopy) for the EFI image
+- optional: dracut in the rootfs for the live initramfs
+- a base rootfs from os/bootstrap that already contains the kernel, calamares,
+  the salt CLI, LXQt, SDDM, btrfs-progs, grub, and the runit service tree
+
+Usage
+-----
+x86_64:
+
+    os/iso/build-iso.sh \
+        --arch x86_64 \
+        --rootfs /path/to/rootfs-x86_64 \
+        --repo repo/x86_64 \
+        --out saltos-0.1-x86_64.iso
+
+aarch64:
+
+    os/iso/build-iso.sh \
+        --arch aarch64 \
+        --rootfs /path/to/rootfs-aarch64 \
+        --repo repo/aarch64 \
+        --out saltos-0.1-aarch64.iso
+
+Options: --version, --label, --kernel (kernel/module version under
+<rootfs>/lib/modules; auto-detected when omitted).
+
+The bundled repository (--repo) is placed at /repo on the ISO. live-setup.sh
+bind-mounts the live medium's repo to /run/salt/repo, which is the source the
+installer's saltos_base module reads when it runs salt install --root.

@@ -1,0 +1,27 @@
+name = "ca-certificates"
+version = "2024.07.02"
+release = 1
+summary = "Mozilla CA root certificate bundle"
+license = "MPL-2.0"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://curl.se/ca/cacert-2024-07-02.pem"
+sha256 = "TODO-sha256"
+
+[build]
+system = "custom"
+deps = ["openssl"]
+script = """
+#!/bin/sh
+install -d "$SALT_DEST/etc/ssl/certs"
+install -m 0644 "$SALT_SRC/cacert-2024-07-02.pem" "$SALT_DEST/etc/ssl/certs/ca-certificates.crt"
+install -d "$SALT_DEST/etc/ssl"
+ln -sf certs/ca-certificates.crt "$SALT_DEST/etc/ssl/cert.pem"
+"""
+
+[package]
+deps = ["openssl"]
+
+[reproducibility]
+status = "verified"

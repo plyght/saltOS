@@ -1,0 +1,29 @@
+name = "xz"
+version = "5.4.6"
+release = 1
+summary = "XZ Utils compression tools and library implementing the LZMA algorithm"
+license = "GPL-2.0-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://github.com/tukaani-project/xz/releases/download/v5.4.6/xz-5.4.6.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "autotools"
+deps = ["gcc", "make", "glibc"]
+script = """
+#!/bin/sh
+./configure --prefix=/usr \\
+    --disable-static \\
+    --docdir=/usr/share/doc/xz
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+"""
+
+[package]
+deps = ["glibc"]
+
+[reproducibility]
+status = "unverified"
+reason = "upstream tarball sha256 set to TODO-sha256 pending verification"

@@ -1,0 +1,26 @@
+name = "dracut"
+version = "060"
+release = 1
+summary = "Event-driven initramfs infrastructure"
+license = "GPL-2.0-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://github.com/dracutdevs/dracut/archive/refs/tags/060.tar.gz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "custom"
+deps = ["gcc", "make", "bash", "pkgconf", "kmod"]
+script = """
+#!/bin/sh
+./configure --prefix=/usr --sysconfdir=/etc --systemdsystemunitdir=
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+"""
+
+[package]
+deps = ["bash", "kmod", "coreutils", "util-linux", "busybox"]
+
+[reproducibility]
+status = "verified"

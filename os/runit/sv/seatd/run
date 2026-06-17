@@ -1,0 +1,4 @@
+#!/bin/sh
+exec 2>&1
+[ -d /run/seatd ] || mkdir -p /run/seatd
+exec seatd -g seat

@@ -1,0 +1,26 @@
+name = "llvm"
+version = "18.1.8"
+release = 1
+summary = "Low Level Virtual Machine compiler infrastructure"
+license = "Apache-2.0 WITH LLVM-exception"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-18.1.8/llvm-project-18.1.8.src.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "cmake"
+deps = ["cmake", "ninja", "pkgconf", "zlib", "zstd", "gcc"]
+script = """
+#!/bin/sh
+cmake -G Ninja -S "$SALT_SRC/llvm" -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DLLVM_ENABLE_RTTI=ON -DLLVM_BUILD_LLVM_DYLIB=ON -DLLVM_LINK_LLVM_DYLIB=ON
+cmake --build build -j"$SALT_JOBS"
+DESTDIR="$SALT_DEST" cmake --install build
+"""
+
+[package]
+deps = ["glibc", "zlib", "zstd"]
+
+[reproducibility]
+status = "verified"

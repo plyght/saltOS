@@ -1,0 +1,40 @@
+name = "helium"
+version = "0.4.13"
+release = 1
+summary = "Helium privacy-focused Chromium-derived web browser (prebuilt)"
+license = "BSD-3-Clause"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://github.com/imputnet/helium-chromium/releases/download/0.4.13/helium-0.4.13-x86_64.AppImage"
+sha256 = "TODO-sha256"
+
+[build]
+system = "custom"
+deps = ["coreutils", "tar", "zstd"]
+script = """
+#!/bin/sh
+if [ "$SALT_ARCH" = "aarch64" ]; then
+  appimage="$SALT_SRC/helium-${SALT_ARCH}.AppImage"
+else
+  appimage="$SALT_SRC/helium-x86_64.AppImage"
+fi
+[ -f "$appimage" ] || appimage=$(ls "$SALT_SRC"/helium-*.AppImage | head -n1)
+chmod +x "$appimage"
+"$appimage" --appimage-extract
+install -d "$SALT_DEST/opt/helium"
+cp -a squashfs-root/. "$SALT_DEST/opt/helium/"
+install -d "$SALT_DEST/usr/bin"
+ln -sf /opt/helium/AppRun "$SALT_DEST/usr/bin/helium"
+install -d "$SALT_DEST/usr/share/applications"
+if [ -f "$SALT_DEST/opt/helium/helium.desktop" ]; then
+  cp "$SALT_DEST/opt/helium/helium.desktop" "$SALT_DEST/usr/share/applications/helium.desktop"
+fi
+"""
+
+[package]
+deps = ["glibc", "mesa", "fontconfig", "freetype", "libx11", "nss", "alsa-lib"]
+
+[reproducibility]
+status = "unverified"
+reason = "Chromium-derived browser build currently not bit-for-bit reproducible"

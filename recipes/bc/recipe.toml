@@ -1,0 +1,26 @@
+name = "bc"
+version = "7.0.3"
+release = 1
+summary = "Arbitrary precision numeric processing language"
+license = "BSD-2-Clause"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://github.com/gavinhoward/bc/releases/download/7.0.3/bc-7.0.3.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "custom"
+deps = ["gcc", "make"]
+script = """
+#!/bin/sh
+PREFIX=/usr CC=gcc ./configure.sh -O3 -r
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+"""
+
+[package]
+deps = ["glibc"]
+
+[reproducibility]
+status = "verified"

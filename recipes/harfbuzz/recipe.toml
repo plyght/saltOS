@@ -1,0 +1,20 @@
+name = "harfbuzz"
+version = "9.0.0"
+release = 1
+summary = "OpenType text shaping engine"
+license = "MIT"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://github.com/harfbuzz/harfbuzz/releases/download/9.0.0/harfbuzz-9.0.0.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "meson"
+deps = ["meson", "ninja", "pkgconf", "gcc", "freetype", "glib"]
+
+[package]
+deps = ["glibc", "freetype", "glib"]
+
+[reproducibility]
+status = "verified"

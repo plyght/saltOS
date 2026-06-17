@@ -1,0 +1,20 @@
+name = "diffutils"
+version = "3.10"
+release = 1
+summary = "GNU file comparison utilities (diff, cmp, sdiff, diff3)"
+license = "GPL-3.0-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://ftp.gnu.org/gnu/diffutils/diffutils-3.10.tar.xz"
+sha256 = "90e5e93cc724e4ebe12ede80df1634063c7a855692685919bfe60b556c9bd09e"
+
+[build]
+system = "autotools"
+deps = ["gcc", "make", "glibc"]
+
+[package]
+deps = ["glibc"]
+
+[reproducibility]
+status = "verified"

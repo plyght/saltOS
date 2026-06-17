@@ -1,0 +1,31 @@
+name = "iputils"
+version = "20240117"
+release = 1
+summary = "Network monitoring tools including ping"
+license = "GPL-2.0-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://github.com/iputils/iputils/archive/20240117/iputils-20240117.tar.gz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "meson"
+deps = ["gcc", "make", "meson", "ninja"]
+script = """
+#!/bin/sh
+meson setup build \\
+    --prefix=/usr \\
+    --buildtype=release \\
+    -DSKIP_TESTS=true \\
+    -DBUILD_HTML_MANS=false \\
+    -DNO_SETCAP_OR_SUID=true
+ninja -C build
+DESTDIR="$SALT_DEST" ninja -C build install
+"""
+
+[package]
+deps = ["glibc"]
+
+[reproducibility]
+status = "verified"

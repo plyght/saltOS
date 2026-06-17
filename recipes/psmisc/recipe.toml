@@ -1,0 +1,26 @@
+name = "psmisc"
+version = "23.7"
+release = 1
+summary = "Utilities for managing processes via /proc"
+license = "GPL-2.0-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://downloads.sourceforge.net/project/psmisc/psmisc/psmisc-23.7.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "autotools"
+deps = ["gcc", "make", "ncurses"]
+script = """
+#!/bin/sh
+./configure --prefix=/usr
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+"""
+
+[package]
+deps = ["glibc", "ncurses"]
+
+[reproducibility]
+status = "verified"

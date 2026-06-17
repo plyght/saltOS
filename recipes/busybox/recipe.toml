@@ -1,0 +1,26 @@
+name = "busybox"
+version = "1.36.1"
+release = 1
+summary = "Combined small versions of many common UNIX utilities into a single executable"
+license = "GPL-2.0-only"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://busybox.net/downloads/busybox-1.36.1.tar.bz2"
+sha256 = "b8cc24c9574d809e7279c3be349795c5d5ceb6fdf19ca709f80cde50e47de314"
+
+[build]
+system = "custom"
+deps = ["gcc", "make", "glibc"]
+script = """
+#!/bin/sh
+make defconfig
+make -j"$SALT_JOBS"
+install -D -m 0755 busybox "$SALT_DEST/usr/bin/busybox"
+"""
+
+[package]
+deps = ["glibc"]
+
+[reproducibility]
+status = "verified"

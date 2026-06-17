@@ -1,0 +1,6 @@
+UUID=@ROOT_UUID@  /            btrfs  rw,noatime,compress=zstd:3,space_cache=v2,subvol=@           0 0
+UUID=@ROOT_UUID@  /home        btrfs  rw,noatime,compress=zstd:3,space_cache=v2,subvol=@home       0 0
+UUID=@ROOT_UUID@  /var         btrfs  rw,noatime,compress=zstd:3,space_cache=v2,subvol=@var        0 0
+UUID=@ROOT_UUID@  /var/log     btrfs  rw,noatime,compress=zstd:3,space_cache=v2,subvol=@log        0 0
+UUID=@ROOT_UUID@  /.snapshots  btrfs  rw,noatime,compress=zstd:3,space_cache=v2,subvol=@snapshots  0 0
+UUID=@BOOT_UUID@  /boot        vfat   rw,noatime,fmask=0077,dmask=0077                             0 2

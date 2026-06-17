@@ -1,0 +1,29 @@
+name = "mpfr"
+version = "4.2.1"
+release = 1
+summary = "C library for multiple-precision floating-point computations"
+license = "LGPL-3.0-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://ftp.gnu.org/gnu/mpfr/mpfr-4.2.1.tar.xz"
+sha256 = "277807353a6726978996945af13e52829e3abd7a9a5b7fb2793894e18f1fcbb2"
+
+[build]
+system = "autotools"
+deps = ["gcc", "make", "gmp", "glibc"]
+script = """
+#!/bin/sh
+./configure --prefix=/usr \\
+    --disable-static \\
+    --enable-thread-safe \\
+    --docdir=/usr/share/doc/mpfr
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+"""
+
+[package]
+deps = ["gmp", "glibc"]
+
+[reproducibility]
+status = "verified"

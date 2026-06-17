@@ -1,0 +1,29 @@
+name = "sqlite"
+version = "3.46.0"
+release = 1
+summary = "Self-contained serverless SQL database engine"
+license = "Public-Domain"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://www.sqlite.org/2024/sqlite-autoconf-3460000.tar.gz"
+sha256 = "6f8e6a7b335273748816f9b3b62bbdc7a3534671f19b91fb52733133f8f79de9"
+
+[build]
+system = "autotools"
+deps = ["gcc", "make", "readline", "zlib"]
+script = """
+#!/bin/sh
+export CFLAGS="-DSQLITE_ENABLE_FTS5=1 -DSQLITE_ENABLE_FTS4=1 -DSQLITE_ENABLE_COLUMN_METADATA=1"
+./configure --prefix=/usr \\
+    --disable-static \\
+    --enable-fts5
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+"""
+
+[package]
+deps = ["glibc", "readline", "zlib"]
+
+[reproducibility]
+status = "verified"

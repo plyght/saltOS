@@ -1,0 +1,26 @@
+name = "elfutils"
+version = "0.191"
+release = 1
+summary = "Libraries and tools for ELF files and DWARF data"
+license = "GPL-2.0-or-later OR LGPL-3.0-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://sourceware.org/elfutils/ftp/0.191/elfutils-0.191.tar.bz2"
+sha256 = "df76db71366d1d708365fc7a6c60ca48398f14367eb2b8954efc8897147ad871"
+
+[build]
+system = "autotools"
+deps = ["gcc", "make", "zlib", "xz", "zstd", "bzip2"]
+script = """
+#!/bin/sh
+./configure --prefix=/usr --disable-debuginfod --enable-libdebuginfod=dummy --program-prefix="eu-"
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+"""
+
+[package]
+deps = ["glibc", "zlib", "xz", "zstd", "bzip2"]
+
+[reproducibility]
+status = "verified"

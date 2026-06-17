@@ -1,0 +1,26 @@
+name = "perl"
+version = "5.40.0"
+release = 1
+summary = "Practical Extraction and Report Language"
+license = "GPL-1.0-or-later OR Artistic-1.0-Perl"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://www.cpan.org/src/5.0/perl-5.40.0.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "custom"
+deps = ["gcc", "make", "zlib", "bzip2"]
+script = """
+#!/bin/sh
+sh Configure -des -Dprefix=/usr -Dvendorprefix=/usr -Duseshrplib -Dusethreads
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+"""
+
+[package]
+deps = ["glibc", "zlib", "bzip2"]
+
+[reproducibility]
+status = "verified"

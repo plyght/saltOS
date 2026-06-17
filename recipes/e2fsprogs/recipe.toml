@@ -1,0 +1,35 @@
+name = "e2fsprogs"
+version = "1.47.1"
+release = 1
+summary = "Utilities for ext2/ext3/ext4 filesystems"
+license = "GPL-2.0-only"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://downloads.sourceforge.net/project/e2fsprogs/e2fsprogs/v1.47.1/e2fsprogs-1.47.1.tar.gz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "autotools"
+deps = ["gcc", "make", "util-linux"]
+script = """
+#!/bin/sh
+mkdir -p build
+cd build
+../configure --prefix=/usr \\
+    --sysconfdir=/etc \\
+    --enable-elf-shlibs \\
+    --disable-libblkid \\
+    --disable-libuuid \\
+    --disable-uuidd \\
+    --disable-fsck
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+make DESTDIR="$SALT_DEST" install-libs
+"""
+
+[package]
+deps = ["glibc", "util-linux"]
+
+[reproducibility]
+status = "verified"

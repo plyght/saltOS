@@ -1,0 +1,33 @@
+name = "ncurses"
+version = "6.5"
+release = 1
+summary = "Library for terminal-independent text user interfaces"
+license = "MIT"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://ftp.gnu.org/gnu/ncurses/ncurses-6.5.tar.gz"
+sha256 = "136d91bc269a9a5785e5f9e980bc76ab57428f604ce3e5a5a90cebc767971cc6"
+
+[build]
+system = "autotools"
+deps = ["gcc", "make"]
+script = """
+#!/bin/sh
+./configure --prefix=/usr \\
+    --mandir=/usr/share/man \\
+    --with-shared \\
+    --without-debug \\
+    --without-normal \\
+    --with-cxx-shared \\
+    --enable-pc-files \\
+    --enable-widec
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+"""
+
+[package]
+deps = ["glibc"]
+
+[reproducibility]
+status = "verified"

@@ -1,0 +1,41 @@
+---
+componentName: saltos
+
+welcomeStyleCalamares: false
+welcomeExpandingLogo: true
+
+windowExpanding: normal
+windowSize: 900px,560px
+windowPlacement: center
+
+sidebar: widget
+navigation: widget
+
+strings:
+    productName: saltOS
+    shortProductName: saltOS
+    version: 0.1
+    shortVersion: 0.1
+    versionedName: saltOS 0.1
+    shortVersionedName: saltOS 0.1
+    bootloaderEntryName: saltOS
+    productUrl: https://saltos.example
+    supportUrl: https://saltos.example/support
+    knownIssuesUrl: https://saltos.example/issues
+    releaseNotesUrl: https://saltos.example/releases
+    donateUrl: https://saltos.example/donate
+
+images:
+    productBanner: banner.png
+    productLogo: logo.png
+    productIcon: logo.png
+    productWelcome: welcome.png
+
+slideshow: show.qml
+slideshowAPI: 2
+
+style:
+    sidebarBackground: "#1b1f24"
+    sidebarText: "#f2f4f7"
+    sidebarTextSelect: "#2b8a9c"
+    sidebarTextHighlight: "#2b8a9c"

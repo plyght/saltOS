@@ -1,0 +1,26 @@
+name = "pciutils"
+version = "3.13.0"
+release = 1
+summary = "PCI bus inspection and manipulation utilities"
+license = "GPL-2.0-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://www.kernel.org/pub/software/utils/pciutils/pciutils-3.13.0.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "make"
+deps = ["gcc", "make", "zlib"]
+script = """
+#!/bin/sh
+make PREFIX=/usr SHAREDIR=/usr/share/hwdata SHARED=yes -j"$SALT_JOBS"
+make PREFIX=/usr SHAREDIR=/usr/share/hwdata SHARED=yes DESTDIR="$SALT_DEST" install install-lib
+chmod 0755 "$SALT_DEST/usr/lib/libpci.so"
+"""
+
+[package]
+deps = ["glibc", "zlib"]
+
+[reproducibility]
+status = "verified"

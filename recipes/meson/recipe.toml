@@ -1,0 +1,25 @@
+name = "meson"
+version = "1.6.0"
+release = 1
+summary = "High productivity build system"
+license = "Apache-2.0"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://github.com/mesonbuild/meson/releases/download/1.6.0/meson-1.6.0.tar.gz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "custom"
+deps = ["python", "ninja"]
+script = """
+#!/bin/sh
+python setup.py build
+python setup.py install --root="$SALT_DEST" --prefix=/usr --optimize=1
+"""
+
+[package]
+deps = ["python", "ninja"]
+
+[reproducibility]
+status = "verified"

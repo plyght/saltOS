@@ -1,0 +1,31 @@
+name = "chrony"
+version = "4.6"
+release = 1
+summary = "Versatile NTP client and server implementation"
+license = "GPL-2.0-only"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://chrony-project.org/releases/chrony-4.6.tar.gz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "autotools"
+deps = ["gcc", "make", "libsodium"]
+script = """
+#!/bin/sh
+./configure --prefix=/usr \\
+    --sysconfdir=/etc \\
+    --localstatedir=/var \\
+    --without-nettle \\
+    --without-nss \\
+    --with-sendmail=/usr/sbin/sendmail
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+"""
+
+[package]
+deps = ["glibc", "libsodium"]
+
+[reproducibility]
+status = "verified"

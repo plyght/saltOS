@@ -1,0 +1,20 @@
+name = "pango"
+version = "1.54.0"
+release = 1
+summary = "Library for layout and rendering of internationalized text"
+license = "LGPL-2.1-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://download.gnome.org/sources/pango/1.54/pango-1.54.0.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "meson"
+deps = ["meson", "ninja", "pkgconf", "gcc", "glib", "harfbuzz", "fontconfig", "freetype", "cairo"]
+
+[package]
+deps = ["glibc", "glib", "harfbuzz", "fontconfig", "freetype", "cairo"]
+
+[reproducibility]
+status = "verified"

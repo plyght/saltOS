@@ -1,0 +1,5 @@
+#!/bin/sh
+exec 2>&1
+[ -d /run/sshd ] || mkdir -p /run/sshd
+[ -f /etc/ssh/ssh_host_ed25519_key ] || ssh-keygen -A
+exec /usr/sbin/sshd -D -e

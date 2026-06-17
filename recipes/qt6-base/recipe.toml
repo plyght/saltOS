@@ -1,0 +1,26 @@
+name = "qt6-base"
+version = "6.7.2"
+release = 1
+summary = "Qt6 base libraries and tools"
+license = "LGPL-3.0-only"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://download.qt.io/official_releases/qt/6.7/6.7.2/submodules/qtbase-everywhere-src-6.7.2.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "cmake"
+deps = ["cmake", "ninja", "pkgconf", "openssl", "zlib", "libpng", "freetype", "fontconfig", "libx11", "mesa", "sqlite", "gcc"]
+script = """
+#!/bin/sh
+cmake -G Ninja -S "$SALT_SRC" -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+cmake --build build -j"$SALT_JOBS"
+DESTDIR="$SALT_DEST" cmake --install build
+"""
+
+[package]
+deps = ["glibc", "openssl", "zlib", "libpng", "freetype", "fontconfig", "libx11", "mesa", "sqlite"]
+
+[reproducibility]
+status = "verified"

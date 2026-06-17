@@ -1,0 +1,4 @@
+#!/bin/sh
+exec 2>&1
+[ -d /run/dhcpcd ] || mkdir -p /run/dhcpcd
+exec dhcpcd -B -M

@@ -1,0 +1,28 @@
+name = "usbutils"
+version = "017"
+release = 1
+summary = "USB device listing and inspection utilities"
+license = "GPL-2.0-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://www.kernel.org/pub/linux/utils/usb/usbutils/usbutils-017.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "meson"
+deps = ["gcc", "make", "meson", "ninja", "libusb"]
+script = """
+#!/bin/sh
+meson setup build \\
+    --prefix=/usr \\
+    --buildtype=release
+ninja -C build
+DESTDIR="$SALT_DEST" ninja -C build install
+"""
+
+[package]
+deps = ["glibc", "libusb"]
+
+[reproducibility]
+status = "verified"

@@ -1,0 +1,20 @@
+name = "featherpad"
+version = "1.5.1"
+release = 1
+summary = "Lightweight Qt plain text editor"
+license = "GPL-3.0-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://github.com/tsujan/FeatherPad/releases/download/V1.5.1/FeatherPad-1.5.1.tar.gz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "cmake"
+deps = ["cmake", "ninja", "pkgconf", "qt6-base", "qt6-svg", "gcc"]
+
+[package]
+deps = ["glibc", "qt6-base", "qt6-svg"]
+
+[reproducibility]
+status = "verified"

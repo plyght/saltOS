@@ -1,0 +1,35 @@
+name = "kmod"
+version = "33"
+release = 1
+summary = "Tools to handle Linux kernel modules"
+license = "GPL-2.0-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://www.kernel.org/pub/linux/utils/kernel/kmod/kmod-33.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "autotools"
+deps = ["gcc", "make", "zlib", "xz", "zstd"]
+script = """
+#!/bin/sh
+./configure --prefix=/usr \\
+    --sysconfdir=/etc \\
+    --with-openssl \\
+    --with-xz \\
+    --with-zstd \\
+    --with-zlib
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+for tool in depmod insmod modinfo modprobe rmmod; do
+    ln -sf ../bin/kmod "$SALT_DEST/usr/sbin/$tool"
+done
+ln -sf kmod "$SALT_DEST/usr/bin/lsmod"
+"""
+
+[package]
+deps = ["glibc", "zlib", "xz", "zstd"]
+
+[reproducibility]
+status = "verified"

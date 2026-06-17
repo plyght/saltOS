@@ -1,0 +1,32 @@
+name = "glibc"
+version = "2.39"
+release = 1
+summary = "GNU C Library"
+license = "LGPL-2.1-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://ftp.gnu.org/gnu/glibc/glibc-2.39.tar.xz"
+sha256 = "f77bd47cf8170c57365ae7f8e575d6a1bdde2da767bcb0c34a0e9d8bde5cc41a"
+
+[build]
+system = "autotools"
+deps = ["gcc", "make", "binutils", "python", "bison"]
+script = """
+#!/bin/sh
+mkdir -p build
+cd build
+../configure --prefix=/usr \\
+    --disable-werror \\
+    --enable-kernel=4.19 \\
+    --enable-stack-protector=strong \\
+    libc_cv_slibdir=/usr/lib
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+"""
+
+[package]
+deps = []
+
+[reproducibility]
+status = "verified"

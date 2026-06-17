@@ -1,0 +1,20 @@
+name = "grep"
+version = "3.11"
+release = 1
+summary = "GNU grep pattern matching utility"
+license = "GPL-3.0-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://ftp.gnu.org/gnu/grep/grep-3.11.tar.xz"
+sha256 = "1625eae01f6e4dbc41b58545aa2326c74791b2010434f8241d41903a4ea5ff70"
+
+[build]
+system = "autotools"
+deps = ["gcc", "make", "glibc"]
+
+[package]
+deps = ["glibc"]
+
+[reproducibility]
+status = "verified"

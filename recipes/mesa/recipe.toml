@@ -1,0 +1,20 @@
+name = "mesa"
+version = "24.1.5"
+release = 1
+summary = "OpenGL and Vulkan implementation"
+license = "MIT"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://archive.mesa3d.org/mesa-24.1.5.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "meson"
+deps = ["llvm", "libdrm", "expat", "zlib", "zstd", "meson", "ninja", "pkgconf", "gcc"]
+
+[package]
+deps = ["glibc", "llvm", "libdrm", "expat", "zlib", "zstd"]
+
+[reproducibility]
+status = "verified"

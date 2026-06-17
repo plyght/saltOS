@@ -40,6 +40,7 @@ int salt_db_sql_rollback(salt_db *db);
 
 int salt_db_txn_new(salt_db *db, const char *op, int64_t *txn_id_out);
 int salt_db_txn_finish(salt_db *db, int64_t txn_id, const char *status);
+int salt_db_txn_set_snapshot(salt_db *db, int64_t txn_id, const char *snapshot);
 
 int salt_db_record_install(salt_db *db, const salt_pkg_meta *meta, const salt_manifest *manifest,
                            const char *repo, const char *sig_status, int64_t txn_id);
@@ -53,6 +54,9 @@ int salt_db_pkg_files(salt_db *db, const char *name, salt_strlist *out);
 int salt_db_owner(salt_db *db, const char *path, char **owner_out);
 int salt_db_pkg_manifest(salt_db *db, const char *name, salt_manifest *out);
 int salt_db_revdeps(salt_db *db, const char *name, salt_strlist *out);
+
+int salt_db_vacuum_into(salt_db *db, const char *path);
+int salt_db_restore_state_from(salt_db *db, const char *before_path);
 
 void salt_db_pkg_free_fields(salt_db_pkg *p);
 

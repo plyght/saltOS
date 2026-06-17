@@ -1,0 +1,20 @@
+name = "tar"
+version = "1.35"
+release = 1
+summary = "GNU tar archiving utility"
+license = "GPL-3.0-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://ftp.gnu.org/gnu/tar/tar-1.35.tar.xz"
+sha256 = "4d62ff37342ec7aed748535323930c7cf94acf71c3591882b26a7ea50f3edc16"
+
+[build]
+system = "autotools"
+deps = ["gcc", "make", "glibc"]
+
+[package]
+deps = ["glibc"]
+
+[reproducibility]
+status = "verified"

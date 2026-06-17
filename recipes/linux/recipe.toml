@@ -1,0 +1,46 @@
+name = "linux"
+version = "6.12.30"
+release = 1
+summary = "Linux kernel"
+license = "GPL-2.0-only"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.12.30.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "kernel"
+deps = ["gcc", "make", "binutils", "bc", "flex", "bison", "openssl", "perl", "elfutils", "zstd"]
+script = """
+#!/bin/sh
+if [ "$SALT_ARCH" = "aarch64" ]; then
+  karch=arm64
+  kimage=arch/arm64/boot/Image.gz
+else
+  karch=x86_64
+  kimage=arch/x86/boot/bzImage
+fi
+make ARCH="$karch" mrproper
+make ARCH="$karch" defconfig
+scripts/config --enable BTRFS_FS
+scripts/config --enable EFI
+scripts/config --enable EFI_STUB
+scripts/config --enable BLK_DEV_INITRD
+scripts/config --set-str CONFIG_LOCALVERSION "-saltos"
+make ARCH="$karch" olddefconfig
+make ARCH="$karch" -j"$SALT_JOBS"
+make ARCH="$karch" -j"$SALT_JOBS" modules
+kver=$(make ARCH="$karch" -s kernelrelease)
+install -Dm644 "$kimage" "$SALT_DEST/boot/vmlinuz-$kver"
+install -Dm644 .config "$SALT_DEST/boot/config-$kver"
+install -Dm644 System.map "$SALT_DEST/boot/System.map-$kver"
+make ARCH="$karch" INSTALL_MOD_PATH="$SALT_DEST/usr" modules_install
+"""
+
+[package]
+deps = ["glibc", "kmod"]
+
+[reproducibility]
+status = "unverified"
+reason = "kernel build embeds build host, timestamp, and toolchain identifiers that are not yet normalized"

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Install saltOS
+GenericName=System Installer
+Comment=Install saltOS to disk
+Icon=calamares
+Exec=sudo -E calamares
+Terminal=false
+Categories=System;
+Keywords=calamares;install;installer;

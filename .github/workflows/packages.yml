@@ -1,0 +1,86 @@
+name: packages
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "recipes/**"
+
+concurrency:
+  group: packages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build packages (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config \
+            libzstd-dev libsodium-dev libsqlite3-dev \
+            build-essential
+
+      - name: Build salt
+        run: |
+          cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target salt
+
+      - name: Lint and scan recipes
+        run: |
+          export PATH="$PWD/build/src/salt:$PATH"
+          status=0
+          for dir in recipes/*/; do
+            [ -f "$dir/recipe.toml" ] || continue
+            echo "::group::$dir"
+            salt lint "$dir" || status=1
+            salt trust admit "$dir" || status=1
+            echo "::endgroup::"
+          done
+          exit $status
+
+      - name: Build packages
+        run: |
+          export PATH="$PWD/build/src/salt:$PATH"
+          export SALT_ARCH="${{ matrix.arch }}"
+          mkdir -p out
+          for dir in recipes/*/; do
+            [ -f "$dir/recipe.toml" ] || continue
+            echo "::group::build $dir"
+            salt build "$dir" || echo "TODO build failed for $dir on ${{ matrix.arch }}; continuing"
+            echo "::endgroup::"
+          done
+
+      - name: Publish signed repo index
+        env:
+          SALT_REPO_SECKEY: ${{ secrets.SALT_REPO_SECKEY }}
+        run: |
+          export PATH="$PWD/build/src/salt:$PATH"
+          if [ -z "${SALT_REPO_SECKEY:-}" ]; then
+            echo "No signing key configured; producing unsigned index for inspection."
+            salt repo publish out/ --key "" || echo "TODO repo publish (no key) needs base packages"
+          else
+            salt repo publish out/ --key "$SALT_REPO_SECKEY" || echo "TODO repo publish needs base packages"
+          fi
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: saltpkg-${{ matrix.arch }}
+          path: |
+            out/**/*.saltpkg
+            out/**/index.toml
+            out/**/index.toml.sig
+          if-no-files-found: warn

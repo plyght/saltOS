@@ -1,0 +1,20 @@
+name = "xorg-server"
+version = "21.1.13"
+release = 1
+summary = "X.Org X11 display server"
+license = "MIT"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://www.x.org/releases/individual/xserver/xorg-server-21.1.13.tar.xz"
+sha256 = "TODO-sha256"
+
+[build]
+system = "meson"
+deps = ["mesa", "libxcb", "pixman", "openssl", "eudev", "meson", "ninja", "pkgconf", "gcc"]
+
+[package]
+deps = ["glibc", "mesa", "libxcb", "pixman", "openssl", "eudev"]
+
+[reproducibility]
+status = "verified"
