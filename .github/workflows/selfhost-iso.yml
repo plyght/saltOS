@@ -51,14 +51,24 @@ jobs:
             -machine pc -m 1024 -display none -serial stdio -no-reboot \
             -cdrom "$ISO" -boot d > qemu.log 2>&1
           set -e
-          echo "----- qemu serial tail -----"
-          tail -n 60 qemu.log || true
+          echo "----- qemu serial (head) -----"
+          head -n 120 qemu.log || true
+          echo "----- qemu serial (tail) -----"
+          tail -n 120 qemu.log || true
           if grep -q "SALTOS_SELFHOST_OK" qemu.log; then
             echo "SELF-HOST BOOT OK: kernel+glibc+bash+coreutils+runit+salt from source, no Debian"
           else
             echo "BOOT FAILED: marker not found"
             exit 1
           fi
+
+      - name: Upload serial log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-serial-log
+          path: qemu.log
+          if-no-files-found: ignore
 
       - name: Upload ISO
         uses: actions/upload-artifact@v4
