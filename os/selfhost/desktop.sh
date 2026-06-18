@@ -10,8 +10,10 @@ export FONTROOTDIR="/usr/share/fonts/X11"
 
 xbuild() {
   local url="$1"; shift
-  local tarball dir
+  local tarball dir marker
   tarball="$(basename "$url")"
+  marker="$X/.salt-done/$tarball"
+  if [ -f "$marker" ]; then echo "skip (cached): $tarball"; cd "$SRC"; return 0; fi
   cd "$SRC"
   [ -f "$tarball" ] || fetch "$url" "$tarball"
   set +o pipefail
@@ -31,6 +33,8 @@ xbuild() {
   else
     echo "no build system for $dir"; exit 1
   fi
+  mkdir -p "$X/.salt-done"
+  touch "$marker"
   cd "$SRC"
 }
 
@@ -40,8 +44,10 @@ xbuild "$XR/proto/xorgproto-2024.1.tar.xz"
 
 echo "===== base libs ====="
 xbuild "$XR/lib/libXau-1.0.11.tar.xz"
+xbuild "$XR/lib/libXdmcp-1.1.5.tar.xz"
 xbuild "$XR/lib/libpthread-stubs-0.5.tar.xz"
 xbuild "https://xorg.freedesktop.org/archive/individual/proto/xcb-proto-1.17.0.tar.xz"
+export PYTHONPATH="$(dirname "$(find "$X" -type d -name xcbgen 2>/dev/null | head -1)")"
 xbuild "$XR/lib/libxcb-1.17.0.tar.xz"
 xbuild "$XR/lib/xtrans-1.5.2.tar.xz"
 xbuild "$XR/lib/libX11-1.8.10.tar.xz"

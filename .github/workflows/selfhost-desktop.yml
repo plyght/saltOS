@@ -20,11 +20,13 @@ jobs:
           path: .kcache
           key: selfhost-kernel-6.6.52-${{ hashFiles('os/selfhost/kernel-x86_64.config') }}
 
-      - name: Cache X sysroot
-        uses: actions/cache@v4
+      - name: Restore X sysroot (incremental)
+        uses: actions/cache/restore@v4
         with:
           path: .xcache
-          key: selfhost-x-${{ hashFiles('os/selfhost/desktop.sh') }}
+          key: selfhost-x-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            selfhost-x-
 
       - name: Build desktop ISO (in a clean Debian container)
         run: |
@@ -42,6 +44,13 @@ jobs:
               KCACHE=/src/.kcache XCACHE=/src/.xcache \
               bash os/selfhost/build.sh x86_64'
           sudo chown -R "$USER" out-iso .kcache .xcache 2>/dev/null || true
+
+      - name: Save X sysroot (incremental, always)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .xcache
+          key: selfhost-x-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Install QEMU + tools (host)
         run: |

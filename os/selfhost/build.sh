@@ -152,15 +152,9 @@ ldconfig -r "$ROOTFS" 2>/dev/null || true
 
 if [ "$EDITION" = "desktop" ]; then
   echo "===== X11 desktop (from source) ====="
-  X="$WORK/x"
+  if [ -n "${XCACHE:-}" ]; then X="$XCACHE/x"; else X="$WORK/x"; fi
   mkdir -p "$X"
-  if [ -n "${XCACHE:-}" ] && [ -f "$XCACHE/x-sysroot.tgz" ]; then
-    echo "using cached X sysroot"
-    tar -xzf "$XCACHE/x-sysroot.tgz" -C "$X"
-  else
-    . "$REPO/os/selfhost/desktop.sh"
-    if [ -n "${XCACHE:-}" ]; then mkdir -p "$XCACHE"; tar -czf "$XCACHE/x-sysroot.tgz" -C "$X" .; fi
-  fi
+  . "$REPO/os/selfhost/desktop.sh"
   cp -a "$X/." "$ROOTFS/"
   ldconfig -r "$ROOTFS" 2>/dev/null || true
 
