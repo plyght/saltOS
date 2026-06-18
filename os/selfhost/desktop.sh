@@ -69,7 +69,7 @@ xbuild "$XR/lib/libXcursor-1.2.3.tar.xz"
 xbuild "$XR/lib/libxkbfile-1.1.3.tar.xz"
 
 echo "===== fonts + rendering deps ====="
-xbuild "https://zlib.net/fossils/zlib-1.3.1.tar.gz"
+xbuild "https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz"
 xbuild "https://downloads.sourceforge.net/libpng/libpng-1.6.43.tar.xz"
 xbuild "https://download.savannah.gnu.org/releases/freetype/freetype-2.13.3.tar.xz" --enable-freetype-config
 xbuild "https://github.com/libexpat/libexpat/releases/download/R_2_6_3/expat-2.6.3.tar.xz"
