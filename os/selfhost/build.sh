@@ -68,16 +68,22 @@ file "$SALT_STATIC"
 
 echo "===== static busybox ====="
 BB_CC="cc"
-command -v musl-gcc >/dev/null 2>&1 && BB_CC="musl-gcc"
+if command -v musl-gcc >/dev/null 2>&1; then
+  BB_CC="musl-gcc"
+  MUSL_INC=/usr/lib/x86_64-linux-musl/include
+  if [ -d "$MUSL_INC" ]; then
+    ln -sf /usr/include/linux "$MUSL_INC/linux" 2>/dev/null || true
+    ln -sf /usr/include/asm-generic "$MUSL_INC/asm-generic" 2>/dev/null || true
+    ln -sf /usr/include/x86_64-linux-gnu/asm "$MUSL_INC/asm" 2>/dev/null || true
+    ln -sf /usr/include/mtd "$MUSL_INC/mtd" 2>/dev/null || true
+  fi
+fi
 ( cd "busybox-${BUSYBOX_VER}"
   make defconfig
   sed -i 's/^# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
   sed -i 's/^CONFIG_PIE=y/# CONFIG_PIE is not set/' .config 2>/dev/null || true
   sed -i 's/^CONFIG_TC=y/# CONFIG_TC is not set/' .config 2>/dev/null || true
   sed -i 's/^CONFIG_FEATURE_TC_INGRESS=y/# CONFIG_FEATURE_TC_INGRESS is not set/' .config 2>/dev/null || true
-  if [ "$BB_CC" = "musl-gcc" ]; then
-    sed -i 's|^CONFIG_EXTRA_CFLAGS=.*|CONFIG_EXTRA_CFLAGS="-I/usr/include"|' .config
-  fi
   make CC="$BB_CC" oldconfig </dev/null
   grep -q '^CONFIG_STATIC=y' .config || { echo "FATAL: busybox CONFIG_STATIC was dropped"; exit 1; }
   make CC="$BB_CC" -j"$JOBS"
