@@ -28,7 +28,7 @@ jobs:
             export DEBIAN_FRONTEND=noninteractive
             apt-get update
             apt-get install -y --no-install-recommends \
-              build-essential cmake pkg-config \
+              build-essential cmake pkg-config musl-tools \
               bison flex bc libssl-dev libelf-dev \
               gawk texinfo python3 \
               xz-utils bzip2 curl file cpio ca-certificates \

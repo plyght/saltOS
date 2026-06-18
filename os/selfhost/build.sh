@@ -67,17 +67,20 @@ SALT_STATIC="$WORK/salt-build/src/salt/salt"
 file "$SALT_STATIC"
 
 echo "===== static busybox ====="
+BB_CC="cc"
+command -v musl-gcc >/dev/null 2>&1 && BB_CC="musl-gcc"
 ( cd "busybox-${BUSYBOX_VER}"
   make defconfig
   sed -i 's/^# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
   sed -i 's/^CONFIG_PIE=y/# CONFIG_PIE is not set/' .config 2>/dev/null || true
   sed -i 's/^CONFIG_TC=y/# CONFIG_TC is not set/' .config 2>/dev/null || true
   sed -i 's/^CONFIG_FEATURE_TC_INGRESS=y/# CONFIG_FEATURE_TC_INGRESS is not set/' .config 2>/dev/null || true
-  make oldconfig </dev/null
+  make CC="$BB_CC" oldconfig </dev/null
   grep -q '^CONFIG_STATIC=y' .config || { echo "FATAL: busybox CONFIG_STATIC was dropped"; exit 1; }
-  make -j"$JOBS"
+  make CC="$BB_CC" -j"$JOBS"
   file busybox | grep -q 'statically linked' || { echo "FATAL: busybox is not static"; exit 1; }
-  make CONFIG_PREFIX="$WORK/bb-install" install )
+  make CC="$BB_CC" CONFIG_PREFIX="$WORK/bb-install" install )
+file "$WORK/bb-install/bin/busybox"
 
 echo "===== static runit ====="
 RUNIT_SRC="$SRC/admin/runit-${RUNIT_VER}/src"
@@ -216,6 +219,14 @@ repo = "current"
 source = ""
 key = ""
 EOF
+
+echo "===== sanity: rootfs init shell must be static ====="
+file "$ROOTFS/bin/busybox"
+if ! file "$ROOTFS/bin/busybox" | grep -q 'statically linked'; then
+  echo "FATAL: rootfs /bin/busybox is not static (init shell would depend on the loader)"
+  ls -la "$ROOTFS/bin/busybox"
+  exit 1
+fi
 
 echo "===== pack initramfs ====="
 ( cd "$ROOTFS" && find . | cpio -o -H newc 2>/dev/null | gzip -9 > "$WORK/initrd.gz" )
