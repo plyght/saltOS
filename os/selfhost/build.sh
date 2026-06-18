@@ -75,6 +75,9 @@ command -v musl-gcc >/dev/null 2>&1 && BB_CC="musl-gcc"
   sed -i 's/^CONFIG_PIE=y/# CONFIG_PIE is not set/' .config 2>/dev/null || true
   sed -i 's/^CONFIG_TC=y/# CONFIG_TC is not set/' .config 2>/dev/null || true
   sed -i 's/^CONFIG_FEATURE_TC_INGRESS=y/# CONFIG_FEATURE_TC_INGRESS is not set/' .config 2>/dev/null || true
+  if [ "$BB_CC" = "musl-gcc" ]; then
+    sed -i 's|^CONFIG_EXTRA_CFLAGS=.*|CONFIG_EXTRA_CFLAGS="-I/usr/include"|' .config
+  fi
   make CC="$BB_CC" oldconfig </dev/null
   grep -q '^CONFIG_STATIC=y' .config || { echo "FATAL: busybox CONFIG_STATIC was dropped"; exit 1; }
   make CC="$BB_CC" -j"$JOBS"
