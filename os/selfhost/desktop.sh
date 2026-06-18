@@ -79,12 +79,12 @@ xbuild "https://www.cairographics.org/releases/pixman-0.43.4.tar.gz"
 xbuild "$XR/lib/libfontenc-1.1.8.tar.xz"
 xbuild "$XR/lib/libXfont2-2.0.7.tar.xz"
 xbuild "$XR/font/font-util-1.4.1.tar.xz"
-xbuild "$XR/app/mkfontscale-1.2.3.tar.xz"
-xbuild "$XR/app/bdftopcf-1.1.1.tar.xz"
+xbuild "$XR/app/mkfontscale-1.2.4.tar.xz"
+xbuild "$XR/app/bdftopcf-1.1.tar.gz"
 xbuild "$XR/font/font-misc-misc-1.1.3.tar.xz"
 
 echo "===== keyboard ====="
-xbuild "$XR/app/xkbcomp-1.4.7.tar.xz"
+xbuild "$XR/app/xkbcomp-1.4.7.tar.gz"
 xbuild "https://www.x.org/releases/individual/data/xkeyboard-config/xkeyboard-config-2.41.tar.xz"
 
 echo "===== X server (fbdev) + input/video drivers ====="
@@ -95,14 +95,14 @@ xbuild "$XR/xserver/xorg-server-21.1.13.tar.xz" \
   --disable-systemd-logind --disable-libunwind --without-dtrace \
   --enable-xorg --with-fontrootdir="$FONTROOTDIR"
 xbuild "$XR/driver/xf86-video-fbdev-0.5.0.tar.xz"
-xbuild "$XR/driver/xf86-input-keyboard-2.0.0.tar.xz"
+xbuild "$XR/driver/xf86-input-keyboard-2.1.0.tar.xz"
 xbuild "$XR/driver/xf86-input-mouse-1.9.5.tar.xz"
 
 echo "===== X apps + WM + terminal ====="
-xbuild "$XR/app/xauth-1.1.3.tar.xz"
+xbuild "$XR/app/xauth-1.1.5.tar.xz"
 xbuild "$XR/app/xinit-1.4.4.tar.xz"
 xbuild "$XR/app/xsetroot-1.1.3.tar.xz"
 xbuild "$XR/app/xclock-1.1.1.tar.xz"
-xbuild "$XR/app/twm-1.0.12.tar.xz"
-xbuild "https://invisible-island.net/datafiles/release/ncurses.tar.gz"
-xbuild "$XR/app/xterm-393.tgz" --disable-freetype
+xbuild "$XR/app/twm-1.0.13.1.tar.xz"
+xbuild "https://ftp.gnu.org/gnu/ncurses/ncurses-6.5.tar.gz"
+xbuild "https://invisible-island.net/archives/xterm/xterm-393.tgz" --disable-freetype
