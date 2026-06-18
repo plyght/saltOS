@@ -9,6 +9,8 @@ export CPPFLAGS="-I$X/usr/include"
 export LDFLAGS="-L$X/usr/lib -Wl,-rpath-link,$X/usr/lib"
 export FONTROOTDIR="/usr/share/fonts/X11"
 
+find "$X" -name '*.la' -delete 2>/dev/null || true
+
 xbuild() {
   local url="$1"; shift
   local tarball dir marker
@@ -34,6 +36,7 @@ xbuild() {
   else
     echo "no build system for $dir"; exit 1
   fi
+  find "$X" -name '*.la' -delete 2>/dev/null || true
   mkdir -p "$X/.salt-done"
   touch "$marker"
   cd "$SRC"
