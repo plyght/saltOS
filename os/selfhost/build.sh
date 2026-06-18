@@ -67,29 +67,19 @@ SALT_STATIC="$WORK/salt-build/src/salt/salt"
 file "$SALT_STATIC"
 
 echo "===== static busybox ====="
-BB_CC="cc"
-if command -v musl-gcc >/dev/null 2>&1; then
-  BB_CC="musl-gcc"
-  MUSL_INC=/usr/lib/x86_64-linux-musl/include
-  if [ -d "$MUSL_INC" ]; then
-    ln -sf /usr/include/linux "$MUSL_INC/linux" 2>/dev/null || true
-    ln -sf /usr/include/asm-generic "$MUSL_INC/asm-generic" 2>/dev/null || true
-    ln -sf /usr/include/x86_64-linux-gnu/asm "$MUSL_INC/asm" 2>/dev/null || true
-    ln -sf /usr/include/mtd "$MUSL_INC/mtd" 2>/dev/null || true
-  fi
-fi
 ( cd "busybox-${BUSYBOX_VER}"
   make defconfig
   sed -i 's/^# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
   sed -i 's/^CONFIG_PIE=y/# CONFIG_PIE is not set/' .config 2>/dev/null || true
   sed -i 's/^CONFIG_TC=y/# CONFIG_TC is not set/' .config 2>/dev/null || true
   sed -i 's/^CONFIG_FEATURE_TC_INGRESS=y/# CONFIG_FEATURE_TC_INGRESS is not set/' .config 2>/dev/null || true
-  make CC="$BB_CC" oldconfig </dev/null
+  make oldconfig </dev/null
   grep -q '^CONFIG_STATIC=y' .config || { echo "FATAL: busybox CONFIG_STATIC was dropped"; exit 1; }
-  make CC="$BB_CC" -j"$JOBS"
+  make -j"$JOBS"
+  echo "DIAG build-dir busybox:"; file busybox
   file busybox | grep -q 'statically linked' || { echo "FATAL: busybox is not static"; exit 1; }
-  make CC="$BB_CC" CONFIG_PREFIX="$WORK/bb-install" install )
-file "$WORK/bb-install/bin/busybox"
+  make CONFIG_PREFIX="$WORK/bb-install" install )
+echo "DIAG bb-install busybox:"; file "$WORK/bb-install/bin/busybox"
 
 echo "===== static runit ====="
 RUNIT_SRC="$SRC/admin/runit-${RUNIT_VER}/src"
@@ -137,8 +127,10 @@ cp -a "$WORK/bb-install/linuxrc" "$ROOTFS/" 2>/dev/null || true
 for b in runit runit-init runsv runsvdir runsvchdir sv chpst utmpset; do
   [ -f "$RUNIT_SRC/$b" ] && install -Dm755 "$RUNIT_SRC/$b" "$ROOTFS/sbin/$b"
 done
+echo "DIAG rootfs busybox before GNU overlay:"; file "$ROOTFS/bin/busybox"
 echo "===== overlay GNU userland (glibc/bash/coreutils alongside busybox) ====="
 cp -a "$GNU/." "$ROOTFS/"
+echo "DIAG rootfs busybox after GNU overlay:"; file "$ROOTFS/bin/busybox"
 mkdir -p "$ROOTFS/lib64"
 if [ ! -e "$ROOTFS/lib64/ld-linux-x86-64.so.2" ]; then
   REAL="$(find "$ROOTFS/usr/lib" "$ROOTFS/lib" -name 'ld-linux-x86-64.so.2' -type f 2>/dev/null | head -1 || true)"
