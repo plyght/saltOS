@@ -117,20 +117,32 @@ echo "===== coreutils (from source) ====="
   make DESTDIR="$GNU" install )
 
 echo "===== assemble rootfs ====="
-mkdir -p "$ROOTFS"/{bin,sbin,usr/bin,usr/sbin,etc,proc,sys,dev,run,tmp,root,var/lib/salt}
-cp -a "$WORK/bb-install/bin/"* "$ROOTFS/bin/" 2>/dev/null || true
+mkdir -p "$ROOTFS"/{proc,sys,dev,run,tmp,root,var/lib/salt,etc}
+
+echo "===== lay down GNU userland first (glibc/bash/coreutils -> /usr,/lib) ====="
+cp -a "$GNU/." "$ROOTFS/"
+
+for d in bin sbin usr/bin usr/sbin; do
+  [ -L "$ROOTFS/$d" ] && rm -f "$ROOTFS/$d"
+  mkdir -p "$ROOTFS/$d"
+done
+
+echo "===== static busybox on top (owns /bin and /sbin) ====="
+cp -a "$WORK/bb-install/bin/"* "$ROOTFS/bin/"
 cp -a "$WORK/bb-install/sbin/"* "$ROOTFS/sbin/" 2>/dev/null || true
-cp -a "$WORK/bb-install/usr/bin/"* "$ROOTFS/usr/bin/" 2>/dev/null || true
-cp -a "$WORK/bb-install/usr/sbin/"* "$ROOTFS/usr/sbin/" 2>/dev/null || true
-cp -a "$WORK/bb-install/linuxrc" "$ROOTFS/" 2>/dev/null || true
+for f in "$WORK/bb-install/usr/bin/"*; do
+  n="$(basename "$f")"; [ -e "$ROOTFS/usr/bin/$n" ] || cp -a "$f" "$ROOTFS/usr/bin/$n"
+done
+for f in "$WORK/bb-install/usr/sbin/"*; do
+  n="$(basename "$f")"; [ -e "$ROOTFS/usr/sbin/$n" ] || cp -a "$f" "$ROOTFS/usr/sbin/$n"
+done
 
 for b in runit runit-init runsv runsvdir runsvchdir sv chpst utmpset; do
   [ -f "$RUNIT_SRC/$b" ] && install -Dm755 "$RUNIT_SRC/$b" "$ROOTFS/sbin/$b"
 done
-echo "DIAG rootfs busybox before GNU overlay:"; file "$ROOTFS/bin/busybox"
-echo "===== overlay GNU userland (glibc/bash/coreutils alongside busybox) ====="
-cp -a "$GNU/." "$ROOTFS/"
-echo "DIAG rootfs busybox after GNU overlay:"; file "$ROOTFS/bin/busybox"
+
+install -Dm755 "$SALT_STATIC" "$ROOTFS/usr/bin/salt"
+
 mkdir -p "$ROOTFS/lib64"
 if [ ! -e "$ROOTFS/lib64/ld-linux-x86-64.so.2" ]; then
   REAL="$(find "$ROOTFS/usr/lib" "$ROOTFS/lib" -name 'ld-linux-x86-64.so.2' -type f 2>/dev/null | head -1 || true)"
@@ -138,8 +150,7 @@ if [ ! -e "$ROOTFS/lib64/ld-linux-x86-64.so.2" ]; then
 fi
 [ -e "$ROOTFS/usr/bin/bash" ] && ln -sf /usr/bin/bash "$ROOTFS/bin/bash"
 ldconfig -r "$ROOTFS" 2>/dev/null || true
-
-install -Dm755 "$SALT_STATIC" "$ROOTFS/usr/bin/salt"
+echo "DIAG final rootfs busybox:"; file "$ROOTFS/bin/busybox"
 
 cat > "$ROOTFS/etc/profile" <<'EOF'
 export PATH=/usr/bin:/usr/sbin:/bin:/sbin
