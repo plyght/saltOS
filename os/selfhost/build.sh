@@ -7,6 +7,7 @@ WORK="${WORK:-$PWD/selfhost-work}"
 OUT="${OUT:-$PWD/out-iso}"
 VERSION="${VERSION:-0.1.0}"
 JOBS="${JOBS:-$(nproc)}"
+EDITION="${EDITION:-console}"
 
 BUSYBOX_VER="1.36.1"
 RUNIT_VER="2.1.2"
@@ -148,6 +149,80 @@ if [ ! -e "$ROOTFS/lib64/ld-linux-x86-64.so.2" ]; then
 fi
 [ -e "$ROOTFS/usr/bin/bash" ] && ln -sf /usr/bin/bash "$ROOTFS/bin/bash"
 ldconfig -r "$ROOTFS" 2>/dev/null || true
+
+if [ "$EDITION" = "desktop" ]; then
+  echo "===== X11 desktop (from source) ====="
+  X="$WORK/x"
+  mkdir -p "$X"
+  if [ -n "${XCACHE:-}" ] && [ -f "$XCACHE/x-sysroot.tgz" ]; then
+    echo "using cached X sysroot"
+    tar -xzf "$XCACHE/x-sysroot.tgz" -C "$X"
+  else
+    . "$REPO/os/selfhost/desktop.sh"
+    if [ -n "${XCACHE:-}" ]; then mkdir -p "$XCACHE"; tar -czf "$XCACHE/x-sysroot.tgz" -C "$X" .; fi
+  fi
+  cp -a "$X/." "$ROOTFS/"
+  ldconfig -r "$ROOTFS" 2>/dev/null || true
+
+  mkdir -p "$ROOTFS/etc/X11"
+  cat > "$ROOTFS/etc/X11/xorg.conf" <<'EOF'
+Section "ServerFlags"
+    Option "AutoAddDevices" "false"
+    Option "DontZap" "false"
+EndSection
+Section "Device"
+    Identifier "fb"
+    Driver "fbdev"
+    Option "fbdev" "/dev/fb0"
+EndSection
+Section "Monitor"
+    Identifier "mon"
+EndSection
+Section "Screen"
+    Identifier "scr"
+    Device "fb"
+    Monitor "mon"
+EndSection
+Section "InputDevice"
+    Identifier "kbd"
+    Driver "kbd"
+EndSection
+Section "InputDevice"
+    Identifier "mouse"
+    Driver "mouse"
+    Option "Device" "/dev/input/mice"
+    Option "Protocol" "ImPS/2"
+EndSection
+Section "ServerLayout"
+    Identifier "layout"
+    Screen "scr"
+    InputDevice "kbd" "CoreKeyboard"
+    InputDevice "mouse" "CorePointer"
+EndSection
+EOF
+
+  cat > "$ROOTFS/root/.xinitrc" <<'EOF'
+xsetroot -solid "#1a3a5a"
+xclock -geometry 160x160-10+10 &
+xterm -geometry 90x30+20+20 -fn fixed -e /bin/bash &
+echo "SALTOS_X_OK xorg + twm + xterm running, all from source, no Debian" > /dev/console
+exec twm
+EOF
+
+  mkdir -p "$ROOTFS/etc/runit/sv/xorg"
+  cat > "$ROOTFS/etc/runit/sv/xorg/run" <<'EOF'
+#!/bin/sh
+exec >/dev/console 2>&1
+export HOME=/root
+export PATH=/usr/bin:/usr/sbin:/bin:/sbin
+export XKB_CONFIG_ROOT=/usr/share/X11/xkb
+sleep 3
+exec startx -- :0 vt1
+EOF
+  chmod +x "$ROOTFS/etc/runit/sv/xorg/run"
+  mkdir -p "$ROOTFS/etc/runit/runsvdir/current"
+  ln -sf /etc/runit/sv/xorg "$ROOTFS/etc/runit/runsvdir/current/xorg"
+fi
 
 cat > "$ROOTFS/etc/profile" <<'EOF'
 export PATH=/usr/bin:/usr/sbin:/bin:/sbin

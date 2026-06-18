@@ -1,0 +1,99 @@
+name: selfhost-desktop
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "os/selfhost/desktop.sh"
+      - ".github/workflows/selfhost-desktop.yml"
+
+jobs:
+  build:
+    name: self-hosted desktop ISO (x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache compiled kernel
+        uses: actions/cache@v4
+        with:
+          path: .kcache
+          key: selfhost-kernel-6.6.52-${{ hashFiles('os/selfhost/kernel-x86_64.config') }}
+
+      - name: Cache X sysroot
+        uses: actions/cache@v4
+        with:
+          path: .xcache
+          key: selfhost-x-${{ hashFiles('os/selfhost/desktop.sh') }}
+
+      - name: Build desktop ISO (in a clean Debian container)
+        run: |
+          docker run --rm -v "$PWD":/src -w /src debian:bookworm bash -c '
+            set -e
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update
+            apt-get install -y --no-install-recommends \
+              build-essential cmake pkg-config musl-tools gcc-12 g++-12 \
+              bison flex bc libssl-dev libelf-dev \
+              gawk texinfo python3 meson ninja-build gperf \
+              xz-utils bzip2 curl file cpio ca-certificates \
+              grub-pc-bin grub-efi-amd64-bin grub-common xorriso mtools
+            REPO_DIR=/src OUT=/src/out-iso VERSION=0.1.0 EDITION=desktop \
+              KCACHE=/src/.kcache XCACHE=/src/.xcache \
+              bash os/selfhost/build.sh x86_64'
+          sudo chown -R "$USER" out-iso .kcache .xcache 2>/dev/null || true
+
+      - name: Install QEMU + tools (host)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 socat netpbm
+
+      - name: Boot + screenshot (QEMU)
+        run: |
+          ISO=$(ls out-iso/*.iso | head -1)
+          echo "booting $ISO"
+          rm -f /tmp/qmon
+          timeout 360 qemu-system-x86_64 \
+            -machine pc -m 2048 -vga std -display none -no-reboot \
+            -serial file:qemu.log -monitor unix:/tmp/qmon,server,nowait \
+            -cdrom "$ISO" -boot d &
+          QPID=$!
+          for i in $(seq 1 24); do
+            sleep 10
+            grep -q "SALTOS_X_OK" qemu.log 2>/dev/null && break
+          done
+          sleep 5
+          printf 'screendump /tmp/screen.ppm\n' | socat - unix-connect:/tmp/qmon || true
+          sleep 3
+          [ -f /tmp/screen.ppm ] && pnmtopng /tmp/screen.ppm > saltos-desktop.png || echo "no screendump"
+          kill $QPID 2>/dev/null || true
+          echo "----- serial tail -----"; tail -n 50 qemu.log || true
+          if grep -q "SALTOS_X_OK" qemu.log; then
+            echo "DESKTOP OK: Xorg + twm + xterm running from source"
+          else
+            echo "X did not come up"; exit 1
+          fi
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: saltos-desktop-screenshot
+          path: saltos-desktop.png
+          if-no-files-found: ignore
+
+      - name: Upload serial log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-serial-log
+          path: qemu.log
+          if-no-files-found: ignore
+
+      - name: Upload ISO
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: saltos-desktop-x86_64
+          path: out-iso/*.iso
+          if-no-files-found: warn
