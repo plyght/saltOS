@@ -14,7 +14,9 @@ xbuild() {
   tarball="$(basename "$url")"
   cd "$SRC"
   [ -f "$tarball" ] || fetch "$url" "$tarball"
-  dir="$(tar tf "$tarball" 2>/dev/null | head -1 | cut -d/ -f1)"
+  set +o pipefail
+  dir="$(tar tf "$tarball" 2>/dev/null | sed -e 's@/.*@@' | sort -u | grep . | head -1)"
+  set -o pipefail
   rm -rf "$dir"
   tar -xf "$tarball"
   cd "$dir"
