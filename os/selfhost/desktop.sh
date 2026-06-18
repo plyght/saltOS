@@ -2,6 +2,7 @@ set -euxo pipefail
 
 XR="https://www.x.org/releases/individual"
 export PKG_CONFIG_PATH="$X/usr/lib/pkgconfig:$X/usr/share/pkgconfig"
+export PKG_CONFIG_SYSROOT_DIR="$X"
 export ACLOCAL_PATH="$X/usr/share/aclocal"
 export PATH="$X/usr/bin:$PATH"
 export CPPFLAGS="-I$X/usr/include"
@@ -24,8 +25,8 @@ xbuild() {
   cd "$dir"
   if [ -f configure ]; then
     ./configure --prefix=/usr "$@"
-    make -j"$JOBS"
-    make DESTDIR="$X" install
+    make -j"$JOBS" ${XBUILD_MAKE_ARGS:-}
+    make DESTDIR="$X" install ${XBUILD_MAKE_ARGS:-}
   elif [ -f meson.build ]; then
     meson setup _b --prefix=/usr --buildtype=release "$@"
     ninja -C _b -j"$JOBS"
@@ -48,7 +49,7 @@ xbuild "$XR/lib/libXdmcp-1.1.5.tar.xz"
 xbuild "$XR/lib/libpthread-stubs-0.5.tar.xz"
 xbuild "https://xorg.freedesktop.org/archive/individual/proto/xcb-proto-1.17.0.tar.xz"
 export PYTHONPATH="$(dirname "$(find "$X" -type d -name xcbgen 2>/dev/null | head -1)")"
-xbuild "$XR/lib/libxcb-1.17.0.tar.xz"
+XBUILD_MAKE_ARGS="XCBPROTO_XCBINCLUDEDIR=$X/usr/share/xcb" xbuild "$XR/lib/libxcb-1.17.0.tar.xz"
 xbuild "$XR/lib/xtrans-1.5.2.tar.xz"
 xbuild "$XR/lib/libX11-1.8.10.tar.xz"
 xbuild "$XR/lib/libXext-1.3.6.tar.xz"
