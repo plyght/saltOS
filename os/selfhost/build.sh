@@ -76,10 +76,8 @@ echo "===== static busybox ====="
   make oldconfig </dev/null
   grep -q '^CONFIG_STATIC=y' .config || { echo "FATAL: busybox CONFIG_STATIC was dropped"; exit 1; }
   make -j"$JOBS"
-  echo "DIAG build-dir busybox:"; file busybox
   file busybox | grep -q 'statically linked' || { echo "FATAL: busybox is not static"; exit 1; }
   make CONFIG_PREFIX="$WORK/bb-install" install )
-echo "DIAG bb-install busybox:"; file "$WORK/bb-install/bin/busybox"
 
 echo "===== static runit ====="
 RUNIT_SRC="$SRC/admin/runit-${RUNIT_VER}/src"
@@ -150,7 +148,6 @@ if [ ! -e "$ROOTFS/lib64/ld-linux-x86-64.so.2" ]; then
 fi
 [ -e "$ROOTFS/usr/bin/bash" ] && ln -sf /usr/bin/bash "$ROOTFS/bin/bash"
 ldconfig -r "$ROOTFS" 2>/dev/null || true
-echo "DIAG final rootfs busybox:"; file "$ROOTFS/bin/busybox"
 
 cat > "$ROOTFS/etc/profile" <<'EOF'
 export PATH=/usr/bin:/usr/sbin:/bin:/sbin

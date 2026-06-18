@@ -16,12 +16,15 @@ recipes, and a simple full-system rollback model built on Btrfs snapshots.
 ### Current status
 
 **A fully self-hosted, from-source bootable image** is produced by GitHub
-Actions and verified to boot in QEMU (the `selfhost-iso` workflow). It compiles
-the Linux kernel, BusyBox, runit, and `salt` (statically linked against
-from-source zstd/libsodium/sqlite) entirely from upstream source on the runner —
-**no Debian, no `apt`, no prebuilt distro packages in the image**. It boots with
-runit as PID 1 and `salt` running. This is the path the project is built around:
-saltOS built from saltOS's own sources.
+Actions and verified to boot in QEMU (the `selfhost-iso` workflow). It compiles,
+entirely from upstream source on the runner: the Linux kernel, **glibc**, **GNU
+bash**, **GNU coreutils**, BusyBox, runit, and `salt`. The init path uses a
+static BusyBox (no loader dependency at boot); the GNU userland (glibc + bash +
+coreutils) provides the real `/usr/bin` tools; `salt` is statically linked
+against from-source zstd/libsodium/sqlite. There is **no Debian, no `apt`, no
+prebuilt distro packages in the image** — it boots with runit as PID 1 and
+`salt`, GNU bash, and GNU coreutils all running. This is the path the project is
+built around: saltOS built from saltOS's own sources.
 
 There is also a `live-iso` workflow that produces a larger desktop image (LXQt +
 Calamares) layered on a glibc package base as a convenience bootstrap substrate
