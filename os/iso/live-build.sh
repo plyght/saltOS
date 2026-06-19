@@ -123,10 +123,25 @@ EOF
   cat > "$ROOTFS/etc/runit/sv/desktop-check/run" <<'EOF'
 #!/bin/sh
 exec 2>&1
-while ! pgrep -x lxqt-panel >/dev/null 2>&1; do
+n=0
+while [ "$n" -lt 120 ]; do
+  if pgrep -x lxqt-panel >/dev/null 2>&1; then
+    echo "SALTOS_DESKTOP_OK lxqt panel is running" > /dev/console
+    exec sleep infinity
+  fi
   sleep 2
+  n=$((n + 1))
 done
-echo "SALTOS_DESKTOP_OK lxqt panel is running" > /dev/console
+{
+  echo "SALTOS_DESKTOP_DIAG lxqt-panel not seen after 240s"
+  echo "--- processes ---"
+  ps -e -o pid,args 2>/dev/null | grep -iE "[X]org|[l]xqt|[o]penbox|[d]bus|[e]logind|[s]tartx" || true
+  echo "--- /var/log/Xorg.0.log (tail) ---"
+  tail -n 45 /var/log/Xorg.0.log 2>/dev/null || echo "(no Xorg.0.log)"
+  echo "--- /home/salt/.xsession-errors (tail) ---"
+  tail -n 80 /home/salt/.xsession-errors 2>/dev/null || echo "(no .xsession-errors)"
+  echo "SALTOS_DESKTOP_DIAG_END"
+} > /dev/console 2>&1
 exec sleep infinity
 EOF
   chmod +x "$ROOTFS/etc/runit/sv/desktop-check/run"
@@ -154,7 +169,7 @@ EOF
 
   cat > "$ROOTFS/home/salt/.bash_profile" <<'EOF'
 if [ -z "${DISPLAY:-}" ] && [ "$(tty)" = /dev/tty1 ]; then
-  exec startx /usr/bin/lxqt-session
+  exec startx /usr/bin/lxqt-session > "$HOME/.xsession-errors" 2>&1
 fi
 EOF
   chroot "$ROOTFS" chown salt:salt /home/salt/.bash_profile || true

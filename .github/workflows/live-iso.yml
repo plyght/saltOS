@@ -65,7 +65,7 @@ jobs:
           echo "boot-testing $ISO (edition=$EDITION)"
           rm -f /tmp/qmon
           if [ "$EDITION" = "desktop" ]; then
-            MARKER="SALTOS_DESKTOP_OK"; MEM=4096; TMO=600; TRIES=55
+            MARKER="SALTOS_DESKTOP_OK"; MEM=4096; TMO=420; TRIES=33
           else
             MARKER="SALTOS_BOOT_OK"; MEM=2560; TMO=420; TRIES=40
           fi
