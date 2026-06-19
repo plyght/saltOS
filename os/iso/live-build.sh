@@ -30,6 +30,7 @@ libzstd1,libsodium23,libsqlite3-0,zstd"
 DESKTOP_PKGS="xserver-xorg-core,xserver-xorg-legacy,xserver-xorg-input-libinput,\
 xserver-xorg-video-fbdev,xserver-xorg-video-vesa,xinit,xterm,openbox,lxqt-core,\
 qterminal,pcmanfm-qt,lximage-qt,lxqt-archiver,featherpad,\
+lxqt-themes,oxygen-icon-theme,breeze-icon-theme,adwaita-icon-theme,\
 firefox-esr,network-manager,nm-tray,\
 pipewire,pipewire-pulse,wireplumber,pavucontrol-qt,\
 elogind,libpam-elogind,policykit-1,\
@@ -60,6 +61,13 @@ VERSION_ID="$VERSION"
 HOME_URL="https://github.com/plyght/saltOS"
 EOF
 echo "saltos-live" > "$ROOTFS/etc/hostname"
+cat > "$ROOTFS/etc/hosts" <<'EOF'
+127.0.0.1   localhost
+127.0.1.1   saltos-live
+::1         localhost ip6-localhost ip6-loopback
+ff02::1     ip6-allnodes
+ff02::2     ip6-allrouters
+EOF
 cat > "$ROOTFS/etc/issue" <<'EOF'
 
 saltOS \r (\l)
