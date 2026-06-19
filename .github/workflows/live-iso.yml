@@ -5,18 +5,27 @@ on:
     inputs:
       edition:
         description: "console or desktop"
-        default: "console"
+        default: "desktop"
   push:
     paths:
       - "os/iso/live-build.sh"
       - ".github/workflows/live-iso.yml"
 
+env:
+  EDITION: ${{ github.event.inputs.edition || 'desktop' }}
+
 jobs:
   build:
-    name: live ISO (x86_64, ${{ github.event.inputs.edition || 'console' }})
+    name: live ISO (x86_64, ${{ github.event.inputs.edition || 'desktop' }})
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet \
+            /opt/hostedtoolcache/CodeQL /usr/local/.ghcup 2>/dev/null || true
+          df -h /
 
       - name: Install dependencies
         run: |
@@ -26,7 +35,7 @@ jobs:
             libzstd-dev libsodium-dev libsqlite3-dev build-essential \
             mmdebstrap debian-archive-keyring squashfs-tools xorriso mtools \
             grub-pc-bin grub-efi-amd64-bin grub-common \
-            qemu-system-x86 ovmf
+            qemu-system-x86 ovmf socat netpbm
 
       - name: Build salt against the Debian base
         run: |
@@ -44,7 +53,7 @@ jobs:
           sudo env \
             SALT_BIN="$PWD/build-iso/src/salt/salt" \
             REPO_DIR="$PWD" \
-            EDITION="${{ github.event.inputs.edition || 'console' }}" \
+            EDITION="$EDITION" \
             VERSION="0.1.0" \
             OUT="$PWD/out-iso" \
             bash os/iso/live-build.sh x86_64
@@ -53,24 +62,60 @@ jobs:
       - name: Boot test (QEMU)
         run: |
           ISO=$(ls out-iso/*.iso | head -1)
-          echo "boot-testing $ISO"
+          echo "boot-testing $ISO (edition=$EDITION)"
+          rm -f /tmp/qmon
+          if [ "$EDITION" = "desktop" ]; then
+            MARKER="SALTOS_DESKTOP_OK"; MEM=4096; TMO=600; TRIES=55
+          else
+            MARKER="SALTOS_BOOT_OK"; MEM=2560; TMO=420; TRIES=40
+          fi
           set +e
-          timeout 420 qemu-system-x86_64 \
-            -machine pc -m 2560 -display none -serial stdio -no-reboot \
-            -cdrom "$ISO" -boot d > qemu.log 2>&1
+          timeout "$TMO" qemu-system-x86_64 \
+            -machine pc -m "$MEM" -vga std -display none -no-reboot \
+            -serial file:qemu.log -monitor unix:/tmp/qmon,server,nowait \
+            -cdrom "$ISO" -boot d &
+          QPID=$!
+          for i in $(seq 1 "$TRIES"); do
+            sleep 10
+            grep -q "$MARKER" qemu.log 2>/dev/null && break
+          done
+          sleep 3
+          if [ "$EDITION" = "desktop" ]; then
+            printf 'screendump /tmp/screen.ppm\n' | socat - unix-connect:/tmp/qmon || true
+            sleep 3
+            [ -f /tmp/screen.ppm ] && pnmtopng /tmp/screen.ppm > saltos-desktop.png || echo "no screendump"
+          fi
+          kill $QPID 2>/dev/null || true
           set -e
           echo "----- qemu serial tail -----"
-          tail -n 60 qemu.log || true
-          if grep -q "SALTOS_BOOT_OK" qemu.log; then
-            echo "BOOT OK: saltOS reached runit stage 2 and salt is present"
+          tail -n 80 qemu.log || true
+          if grep -q "$MARKER" qemu.log; then
+            echo "BOOT OK: found $MARKER"
           else
-            echo "BOOT FAILED: marker not found"
+            echo "BOOT FAILED: $MARKER not found"
             exit 1
           fi
 
-      - name: Upload ISO
+      - name: Upload screenshot
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: saltos-live-x86_64-${{ github.event.inputs.edition || 'console' }}
+          name: saltos-desktop-screenshot
+          path: saltos-desktop.png
+          if-no-files-found: ignore
+
+      - name: Upload serial log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-serial-log
+          path: qemu.log
+          if-no-files-found: ignore
+
+      - name: Upload ISO
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: saltos-live-x86_64-${{ github.event.inputs.edition || 'desktop' }}
           path: out-iso/*.iso
-          if-no-files-found: error
+          if-no-files-found: warn

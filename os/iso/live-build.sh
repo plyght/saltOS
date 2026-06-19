@@ -29,6 +29,9 @@ libzstd1,libsodium23,libsqlite3-0,zstd"
 
 DESKTOP_PKGS="xserver-xorg-core,xserver-xorg-legacy,xserver-xorg-input-libinput,\
 xserver-xorg-video-fbdev,xserver-xorg-video-vesa,xinit,xterm,openbox,lxqt-core,\
+qterminal,pcmanfm-qt,lximage-qt,lxqt-archiver,featherpad,\
+firefox-esr,network-manager,nm-tray,\
+pipewire,pipewire-pulse,wireplumber,pavucontrol-qt,\
 dbus,dbus-x11,udev,calamares,calamares-settings-debian,parted,gdisk,\
 fonts-dejavu,fonts-liberation2,sudo"
 
@@ -90,6 +93,29 @@ enable_sv agetty-tty1
 enable_sv boot-check
 if [ "$EDITION" = "desktop" ]; then
   enable_sv dbus
+
+  mkdir -p "$ROOTFS/etc/runit/sv/NetworkManager"
+  cat > "$ROOTFS/etc/runit/sv/NetworkManager/run" <<'EOF'
+#!/bin/sh
+exec 2>&1
+[ -d /var/lib/NetworkManager ] || mkdir -p /var/lib/NetworkManager
+exec NetworkManager --no-daemon
+EOF
+  chmod +x "$ROOTFS/etc/runit/sv/NetworkManager/run"
+  enable_sv NetworkManager
+
+  mkdir -p "$ROOTFS/etc/runit/sv/desktop-check"
+  cat > "$ROOTFS/etc/runit/sv/desktop-check/run" <<'EOF'
+#!/bin/sh
+exec 2>&1
+while ! pgrep -x lxqt-session >/dev/null 2>&1; do
+  sleep 2
+done
+echo "SALTOS_DESKTOP_OK lxqt session is running" > /dev/console
+exec sleep infinity
+EOF
+  chmod +x "$ROOTFS/etc/runit/sv/desktop-check/run"
+  enable_sv desktop-check
 fi
 
 mkdir -p "$ROOTFS/etc/salt"
@@ -124,6 +150,28 @@ EOF
 
   install -Dm755 "$REPO/os/iso/live/Install-saltOS.desktop" \
     "$ROOTFS/home/salt/Desktop/Install-saltOS.desktop" 2>/dev/null || true
+
+  mkdir -p "$ROOTFS/usr/lib/saltos"
+  cat > "$ROOTFS/usr/lib/saltos/start-audio.sh" <<'EOF'
+#!/bin/sh
+/usr/bin/pipewire &
+sleep 1
+/usr/bin/wireplumber &
+/usr/bin/pipewire-pulse &
+EOF
+  chmod +x "$ROOTFS/usr/lib/saltos/start-audio.sh"
+
+  mkdir -p "$ROOTFS/etc/xdg/autostart"
+  cat > "$ROOTFS/etc/xdg/autostart/saltos-audio.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=saltOS audio (PipeWire)
+Exec=/usr/lib/saltos/start-audio.sh
+OnlyShowIn=LXQt;
+X-LXQt-Need-Tray=false
+NoDisplay=true
+EOF
+
   chroot "$ROOTFS" chown -R salt:salt /home/salt 2>/dev/null || true
 fi
 
