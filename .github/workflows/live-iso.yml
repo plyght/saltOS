@@ -79,11 +79,13 @@ jobs:
             sleep 10
             grep -q "$MARKER" qemu.log 2>/dev/null && break
           done
-          sleep 3
           if [ "$EDITION" = "desktop" ]; then
+            sleep 15
             printf 'screendump /tmp/screen.ppm\n' | socat - unix-connect:/tmp/qmon || true
             sleep 3
             [ -f /tmp/screen.ppm ] && pnmtopng /tmp/screen.ppm > saltos-desktop.png || echo "no screendump"
+          else
+            sleep 3
           fi
           kill $QPID 2>/dev/null || true
           set -e

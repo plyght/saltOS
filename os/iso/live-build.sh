@@ -32,6 +32,7 @@ xserver-xorg-video-fbdev,xserver-xorg-video-vesa,xinit,xterm,openbox,lxqt-core,\
 qterminal,pcmanfm-qt,lximage-qt,lxqt-archiver,featherpad,\
 firefox-esr,network-manager,nm-tray,\
 pipewire,pipewire-pulse,wireplumber,pavucontrol-qt,\
+elogind,libpam-elogind,policykit-1,\
 dbus,dbus-x11,udev,calamares,calamares-settings-debian,parted,gdisk,\
 fonts-dejavu,fonts-liberation2,sudo"
 
@@ -94,6 +95,20 @@ enable_sv boot-check
 if [ "$EDITION" = "desktop" ]; then
   enable_sv dbus
 
+  mkdir -p "$ROOTFS/etc/runit/sv/elogind"
+  cat > "$ROOTFS/etc/runit/sv/elogind/run" <<'EOF'
+#!/bin/sh
+exec 2>&1
+mkdir -p /run/dbus
+for d in /lib/elogind/elogind /usr/libexec/elogind/elogind /usr/lib/elogind/elogind; do
+  [ -x "$d" ] && exec "$d"
+done
+echo "elogind binary not found" >&2
+exec sleep 5
+EOF
+  chmod +x "$ROOTFS/etc/runit/sv/elogind/run"
+  enable_sv elogind
+
   mkdir -p "$ROOTFS/etc/runit/sv/NetworkManager"
   cat > "$ROOTFS/etc/runit/sv/NetworkManager/run" <<'EOF'
 #!/bin/sh
@@ -108,10 +123,10 @@ EOF
   cat > "$ROOTFS/etc/runit/sv/desktop-check/run" <<'EOF'
 #!/bin/sh
 exec 2>&1
-while ! pgrep -x lxqt-session >/dev/null 2>&1; do
+while ! pgrep -x lxqt-panel >/dev/null 2>&1; do
   sleep 2
 done
-echo "SALTOS_DESKTOP_OK lxqt session is running" > /dev/console
+echo "SALTOS_DESKTOP_OK lxqt panel is running" > /dev/console
 exec sleep infinity
 EOF
   chmod +x "$ROOTFS/etc/runit/sv/desktop-check/run"
