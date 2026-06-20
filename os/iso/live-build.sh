@@ -43,7 +43,7 @@ fonts-dejavu,fonts-liberation2,sudo"
 INSTALLER_PKGS="rsync,squashfs-tools,grub-pc-bin,grub-efi-amd64-bin,\
 grub-common,grub2-common,efibootmgr,cryptsetup,lvm2,mtools,\
 locales,console-setup,keyboard-configuration,kbd,chromium,\
-calamares-settings-debian"
+sddm,calamares-settings-debian"
 
 PKGS="$BASE_PKGS"
 if [ "$EDITION" = "desktop" ] || [ "$EDITION" = "installer" ]; then
