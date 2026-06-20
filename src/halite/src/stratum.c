@@ -522,6 +522,12 @@ static void write_repo_config(const salt_stratum_recipe *r, const char *target) 
     salt_write_file(path, b.data, b.len, 0644);
     free(path);
     salt_buf_free(&b);
+    salt_buf cmd;
+    salt_buf_init(&cmd);
+    salt_buf_printf(&cmd, "sed -i 's/^CheckSpace/#CheckSpace/' '%s/etc/pacman.conf' 2>/dev/null || true",
+                    target);
+    run_system(cmd.data);
+    salt_buf_free(&cmd);
   } else if (strcmp(r->family, "debian") == 0) {
     char *dir = salt_join_path(target, "etc/apt");
     salt_mkdirs(dir, 0755);

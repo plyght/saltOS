@@ -51,6 +51,10 @@ mmdebstrap \
 
 install -Dm755 "$SALT_BIN" "$ROOTFS/usr/bin/salt"
 
+mkdir -p "$ROOTFS/etc/salt/strata" "$ROOTFS/usr/local/salt/shims" "$ROOTFS/strata"
+cp "$REPO"/strata/*.toml "$ROOTFS/etc/salt/strata/" 2>/dev/null || true
+install -Dm644 "$REPO/os/profile.d/salt-shims.sh" "$ROOTFS/etc/profile.d/salt-shims.sh"
+
 cat > "$ROOTFS/etc/os-release" <<EOF
 NAME="saltOS"
 PRETTY_NAME="saltOS $VERSION (live)"
@@ -90,6 +94,11 @@ if salt --version > /dev/console 2>&1; then
   echo "SALTOS_BOOT_OK runit stage 2 reached; salt runs" > /dev/console
 else
   echo "SALTOS_BOOT_FAIL salt did not run" > /dev/console
+fi
+if salt --root / stratum list > /dev/console 2>&1; then
+  echo "SALTOS_STRATUM_OK stratum plane initialized" > /dev/console
+else
+  echo "SALTOS_STRATUM_FAIL stratum plane did not initialize" > /dev/console
 fi
 exec sleep infinity
 EOF

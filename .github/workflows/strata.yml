@@ -27,7 +27,7 @@ jobs:
       matrix:
         include:
           - { id: alpine,   pmname: apk,    recipe: strata/alpine.toml,   prep: none,        refresh: "apk update" }
-          - { id: void,     pmname: xbps,   recipe: /tmp/void.toml,        prep: void,        refresh: "xbps-install -Sy" }
+          - { id: void,     pmname: xbps,   recipe: /tmp/void.toml,        prep: void,        refresh: "xbps-install -Sy xbps" }
           - { id: arch,     pmname: pacman, recipe: strata/arch.toml,      prep: none,        refresh: "pacman-key --init && pacman-key --populate archlinux && pacman -Sy --noconfirm" }
           - { id: debian,   pmname: apt,    recipe: strata/debian.toml,    prep: debootstrap, refresh: "apt-get update" }
           - { id: fedora,   pmname: dnf,    recipe: strata/fedora.toml,    prep: none,        refresh: "true" }
