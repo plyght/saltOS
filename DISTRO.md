@@ -1114,6 +1114,35 @@ host + developer strata
 
 The installer should not force users to think in distro theory before they can boot the machine.
 
+### 20.1 Guided installer edition (Calamares)
+
+The `installer` ISO edition (`EDITION=installer` in `os/iso/live-build.sh`) boots
+a graphical LXQt live session and autostarts a guided Calamares installer. It is
+built by the same script as the `console` and `desktop` editions and is exercised
+by the `installer-iso` workflow, which builds the ISO and boots it in QEMU,
+gating on the `SALTOS_INSTALLER_OK` serial marker.
+
+Calamares is driven by `os/installer/settings-live.conf` and the module configs
+under `os/installer/modules-live/`. The guided flow offers:
+
+- timezone, keyboard layout, and locale (stock `locale` / `keyboard` modules)
+- user account creation and a root-password policy (`users`)
+- a login-manager choice — SDDM (default), greetd, or none (`netinstall` group)
+- a window-manager / desktop choice — LXQt (default), standalone Openbox, or
+  XFCE (`netinstall` group)
+- a browser choice — Firefox ESR (default), Chromium, or none (`netinstall` group)
+- Btrfs partitioning that lays down the canonical `@ @home @var @log @snapshots
+  @strata` subvolume layout (`partition` + `mount` + `saltos_btrfs`)
+- GRUB install with serial-console and saltOS deployment entries (`bootloader` +
+  `grubcfg` + `saltos_bootloader`)
+- the system itself, copied from the live squashfs (`unpackfs`), with the runit
+  service tree enabled (`saltos_runit`) and the stratum plane wired in —
+  `/etc/salt/strata` recipes, `/usr/local/salt/shims`, and the `salt-shims.sh`
+  `profile.d` hook (`saltos_stratum`)
+
+The installed system uses `salt` as its native package manager; the stratum
+plane is available immediately after first boot.
+
 ## 21. Bootloader
 
 Initial recommendation:

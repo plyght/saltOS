@@ -30,8 +30,7 @@ libzstd1,libsodium23,libsqlite3-0,zstd"
 
 DESKTOP_PKGS="xserver-xorg-core,xserver-xorg-legacy,xserver-xorg-input-libinput,\
 xserver-xorg-video-fbdev,xserver-xorg-video-vesa,xinit,xterm,openbox,lxqt-core,\
-lxqt-panel,lxqt-session,lxqt-runner,lxqt-globalkeys,lxqt-notificationd,\
-lxqt-policykit,lxqt-qtplugin,lxqt-configuration,lxqt-about,\
+lxqt-panel,lxqt-session,lxqt-config,lxqt-policykit,\
 qterminal,pcmanfm-qt,lximage-qt,lxqt-archiver,featherpad,\
 lxqt-themes,oxygen-icon-theme,breeze-icon-theme,adwaita-icon-theme,\
 libqt5svg5,xdg-user-dirs,xdg-utils,desktop-base,mesa-utils,libgl1-mesa-dri,\
@@ -41,9 +40,17 @@ elogind,libpam-elogind,policykit-1,\
 dbus,dbus-x11,udev,calamares,calamares-settings-debian,parted,gdisk,\
 fonts-dejavu,fonts-liberation2,sudo"
 
+INSTALLER_PKGS="rsync,squashfs-tools,grub-pc-bin,grub-efi-amd64-bin,\
+grub-common,grub2-common,efibootmgr,cryptsetup,lvm2,mtools,\
+locales,console-setup,keyboard-configuration,kbd,chromium,\
+calamares-settings-debian"
+
 PKGS="$BASE_PKGS"
-if [ "$EDITION" = "desktop" ]; then
+if [ "$EDITION" = "desktop" ] || [ "$EDITION" = "installer" ]; then
   PKGS="$PKGS,$DESKTOP_PKGS"
+fi
+if [ "$EDITION" = "installer" ]; then
+  PKGS="$PKGS,$INSTALLER_PKGS"
 fi
 
 mmdebstrap \
@@ -145,7 +152,7 @@ E2E
   enable_sv stratum-e2e
 fi
 
-if [ "$EDITION" = "desktop" ]; then
+if [ "$EDITION" = "desktop" ] || [ "$EDITION" = "installer" ]; then
   enable_sv dbus
 
   mkdir -p "$ROOTFS/etc/runit/sv/elogind"
@@ -202,7 +209,41 @@ done
 exec sleep infinity
 EOF
   chmod +x "$ROOTFS/etc/runit/sv/desktop-check/run"
-  enable_sv desktop-check
+
+  mkdir -p "$ROOTFS/etc/runit/sv/installer-check"
+  cat > "$ROOTFS/etc/runit/sv/installer-check/run" <<'EOF'
+#!/bin/sh
+exec 2>&1
+n=0
+while [ "$n" -lt 150 ]; do
+  if pgrep -f "calamares" >/dev/null 2>&1; then
+    echo "SALTOS_INSTALLER_OK calamares installer is running" > /dev/console
+    exec sleep infinity
+  fi
+  sleep 2
+  n=$((n + 1))
+done
+{
+  echo "SALTOS_INSTALLER_DIAG calamares not seen after 300s"
+  echo "--- processes ---"
+  ps -e -o pid,args 2>/dev/null | grep -iE "[X]org|[l]xqt|[o]penbox|[c]alamares|[d]bus|[e]logind|[s]tartx|[x]init" || true
+  echo "--- calamares config present ---"
+  ls -l /etc/calamares/settings.conf 2>/dev/null || echo "(no settings.conf)"
+  echo "--- calamares errors in .xsession-errors ---"
+  grep -iE "calamares|qt\.|qpa|symbol|undefined|cannot|No such|libGL|GLX|Could not|terminat|abort|segfault|assert|fatal|Traceback" /home/salt/.xsession-errors 2>/dev/null | tail -n 60 || echo "(none)"
+  echo "--- /home/salt/.xsession-errors (full) ---"
+  cat /home/salt/.xsession-errors 2>/dev/null || echo "(no .xsession-errors)"
+  echo "SALTOS_INSTALLER_DIAG_END"
+} > /dev/console 2>&1
+exec sleep infinity
+EOF
+  chmod +x "$ROOTFS/etc/runit/sv/installer-check/run"
+
+  if [ "$EDITION" = "installer" ]; then
+    enable_sv installer-check
+  else
+    enable_sv desktop-check
+  fi
 fi
 
 mkdir -p "$ROOTFS/etc/salt"
@@ -371,6 +412,54 @@ EOF
 
 if [ "$EDITION" = "desktop" ]; then
   setup_desktop_session
+fi
+
+if [ "$EDITION" = "installer" ]; then
+  setup_desktop_session
+
+  mkdir -p "$ROOTFS/etc/calamares" "$ROOTFS/usr/lib/calamares/modules" \
+    "$ROOTFS/usr/share/calamares/branding/saltos"
+
+  install -Dm644 "$REPO/os/installer/settings-live.conf" \
+    "$ROOTFS/etc/calamares/settings.conf"
+
+  for c in "$REPO"/os/installer/modules-live/*; do
+    [ -f "$c" ] && install -Dm644 "$c" "$ROOTFS/etc/calamares/$(basename "$c")"
+  done
+
+  cp -a "$REPO/os/installer/branding/saltos/." \
+    "$ROOTFS/usr/share/calamares/branding/saltos/"
+
+  for m in "$REPO"/os/installer/modules/*/; do
+    name="$(basename "$m")"
+    mkdir -p "$ROOTFS/usr/lib/calamares/modules/$name"
+    cp -a "$m". "$ROOTFS/usr/lib/calamares/modules/$name/"
+  done
+
+  cat > "$ROOTFS/usr/local/bin/saltos-installer" <<'EOF'
+#!/bin/sh
+export XDG_CURRENT_DESKTOP=LXQt
+exec pkexec calamares -c /etc/calamares 2>&1
+EOF
+  chmod +x "$ROOTFS/usr/local/bin/saltos-installer"
+
+  mkdir -p "$ROOTFS/etc/xdg/autostart"
+  cat > "$ROOTFS/etc/xdg/autostart/saltos-installer.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Install saltOS
+Comment=Launch the saltOS guided installer
+Exec=sh -c 'sleep 4; exec sudo -E calamares -c /etc/calamares'
+Terminal=false
+OnlyShowIn=LXQt;
+X-LXQt-Need-Tray=false
+EOF
+
+  mkdir -p "$ROOTFS/etc/sudoers.d"
+  echo "salt ALL=(ALL) NOPASSWD: /usr/bin/calamares" > "$ROOTFS/etc/sudoers.d/calamares"
+  chmod 0440 "$ROOTFS/etc/sudoers.d/calamares"
+
+  chroot "$ROOTFS" chown -R salt:salt /home/salt 2>/dev/null || true
 fi
 
 KVER="$(basename "$(ls -1 "$ROOTFS"/boot/vmlinuz-* | sort -V | tail -1)")"
