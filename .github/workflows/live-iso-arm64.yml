@@ -1,0 +1,131 @@
+name: live-iso-arm64
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "os/iso/live-build.sh"
+      - ".github/workflows/live-iso-arm64.yml"
+
+concurrency:
+  group: live-iso-arm64-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: live ISO (aarch64, ${{ matrix.label }})
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { edition: console, e2e: "0", label: console }
+          - { edition: console, e2e: "1", label: e2e }
+    env:
+      EDITION: ${{ matrix.edition }}
+      SALTOS_E2E: ${{ matrix.e2e }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet \
+            /opt/hostedtoolcache/CodeQL /usr/local/.ghcup 2>/dev/null || true
+          df -h /
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config \
+            libzstd-dev libsodium-dev libsqlite3-dev build-essential \
+            mmdebstrap debian-archive-keyring squashfs-tools xorriso mtools \
+            grub-efi-arm64-bin grub-common \
+            qemu-system-arm qemu-efi-aarch64
+
+      - name: Build salt against the Debian base (arm64)
+        run: |
+          docker run --rm -v "$PWD":/src -w /src debian:bookworm bash -c '
+            set -e
+            apt-get update
+            apt-get install -y --no-install-recommends \
+              cmake ninja-build pkg-config g++ ca-certificates \
+              libzstd-dev libsodium-dev libsqlite3-dev
+            cmake -G Ninja -B build-iso -DCMAKE_BUILD_TYPE=Release
+            cmake --build build-iso --target salt'
+
+      - name: Build live ISO (aarch64)
+        run: |
+          sudo env \
+            SALT_BIN="$PWD/build-iso/src/salt/salt" \
+            REPO_DIR="$PWD" \
+            EDITION="$EDITION" \
+            SALTOS_E2E="$SALTOS_E2E" \
+            VERSION="0.1.0" \
+            OUT="$PWD/out-iso" \
+            bash os/iso/live-build.sh aarch64
+          sudo chown -R "$USER" out-iso
+
+      - name: Boot test (QEMU aarch64, UEFI)
+        run: |
+          ISO=$(ls out-iso/*.iso | head -1)
+          echo "boot-testing $ISO (e2e=$SALTOS_E2E)"
+          CODE=""
+          for f in /usr/share/AAVMF/AAVMF_CODE.fd /usr/share/qemu-efi-aarch64/QEMU_EFI.fd; do
+            [ -f "$f" ] && CODE="$f" && break
+          done
+          test -n "$CODE"
+          VARS=""
+          for f in /usr/share/AAVMF/AAVMF_VARS.fd; do
+            [ -f "$f" ] && VARS="$f" && break
+          done
+          if [ -n "$VARS" ]; then cp "$VARS" /tmp/vars.fd; else
+            truncate -s 64m /tmp/vars.fd; fi
+          truncate -s 64m /tmp/code.fd
+          dd if="$CODE" of=/tmp/code.fd conv=notrunc 2>/dev/null
+          NET=""
+          if [ "$SALTOS_E2E" = "1" ]; then
+            MARKER="SALTOS_STRATUM_E2E_OK"; MEM=2560; TRIES=60; TMO=600; NET="-nic user,model=virtio-net-pci"
+          else
+            MARKER="SALTOS_BOOT_OK"; MEM=2560; TRIES=48; TMO=480
+          fi
+          set +e
+          timeout "$TMO" qemu-system-aarch64 \
+            -machine virt -cpu max -accel kvm:tcg -m "$MEM" -smp 2 \
+            -drive if=pflash,format=raw,readonly=on,file=/tmp/code.fd \
+            -drive if=pflash,format=raw,file=/tmp/vars.fd \
+            -drive file="$ISO",if=virtio,format=raw,media=disk \
+            -display none -no-reboot $NET \
+            -serial file:qemu.log &
+          QPID=$!
+          for i in $(seq 1 "$TRIES"); do
+            sleep 10
+            grep -q "$MARKER" qemu.log 2>/dev/null && break
+            grep -q "SALTOS_STRATUM_E2E_FAIL" qemu.log 2>/dev/null && break
+          done
+          kill $QPID 2>/dev/null || true
+          set -e
+          echo "----- qemu serial tail -----"
+          tail -n 80 qemu.log || true
+          if grep -q "$MARKER" qemu.log; then
+            echo "BOOT OK: found $MARKER"
+          else
+            echo "BOOT FAILED: $MARKER not found"
+            exit 1
+          fi
+
+      - name: Upload serial log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm64-serial-${{ matrix.label }}
+          path: qemu.log
+          if-no-files-found: ignore
+
+      - name: Upload ISO
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: saltos-live-aarch64-${{ matrix.label }}
+          path: out-iso/*.iso
+          if-no-files-found: warn
