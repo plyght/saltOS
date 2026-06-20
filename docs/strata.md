@@ -74,6 +74,16 @@ its recipe grants. For an interactive session inside the stratum:
 salt stratum shell arch
 ```
 
+There is also a shorthand that drops the `run` keyword: `salt <stratum>/<command>`.
+
+```sh
+salt arch/nvim notes.txt
+salt debian/gcc --version
+```
+
+`salt <stratum>/<command> [args...]` is exactly equivalent to
+`salt run <stratum> <command> [args...]`.
+
 ## 4. Package passthrough
 
 Drive a stratum's native package manager through `salt` so the operation is
@@ -91,6 +101,83 @@ salt pkg void update
 (`xbps`, `pacman`, `apt`) and records the operation against that stratum. You
 can also run the package manager directly from `salt stratum shell`, but going
 through `salt pkg` keeps saltOS's record of what changed.
+
+### 4a. The `<stratum>/<pkg>` shortcuts
+
+For everyday use the top-level package verbs accept a `<stratum>/<pkg>` form, so
+the same word (`install`, `remove`, `search`, `update`) works for both the
+native plane and any stratum:
+
+```sh
+salt install alpine/neovim     # apk add neovim, then offer to expose its binaries
+salt remove alpine/neovim      # apk del neovim, then drop the host shims it added
+salt search alpine/ripgrep     # search the alpine repositories
+salt update alpine             # upgrade everything inside the alpine stratum
+```
+
+A bare name with no `<stratum>/` prefix is resolved against the native
+repository first; if it is not a native package, `salt` lists the available
+strata and asks which one to install from.
+
+If the named stratum has not been bootstrapped yet, `salt install` offers to
+bootstrap it from its built-in recipe first, so you do not have to run
+`salt stratum add` by hand:
+
+```sh
+salt install arch/neofetch     # offers to bootstrap arch, then installs neofetch
+```
+
+After a stratum install, `salt` diffs the stratum's `bin` directories *and* its
+`usr/share/applications` desktop entries, finds what the package added (for
+example `neovim` provides the `nvim` command; `firefox` provides both the
+`firefox` command and a `firefox.desktop` launcher), and — by default — asks once
+before exposing them. Commands go on `PATH`; desktop apps get a host menu entry.
+So a GUI app appears in your application menu and a CLI tool is on your path with
+no extra `salt expose` / `salt expose-desktop` step. This is governed by
+`/etc/salt/salt.conf`:
+
+```toml
+[install]
+auto_expose = "prompt"   # always | prompt | never
+```
+
+`--expose` and `--no-expose` override the configured mode for a single command,
+and `--yes` accepts the expose prompt non-interactively.
+
+### 4b. Using a stratum's package manager directly
+
+When a stratum is bootstrapped, saltOS also exposes its native package manager as
+a host command, so the tools you already know work straight from the host:
+
+```sh
+sudo pacman -S neofetch     # in an arch stratum
+sudo apt install neofetch   # in a debian stratum
+sudo apk add neofetch       # in an alpine stratum
+```
+
+These are thin host shims (`/usr/local/salt/shims/pacman`, ...) that run the real
+package manager *as root inside the owning stratum*, using that stratum's
+configuration and mirrors. They behave like raw `pacman`/`apt`/`apk`: arbitrary
+flags pass straight through. saltOS takes a safety snapshot before **mutating**
+operations (install/remove/upgrade) and skips it for read-only ones
+(`pacman -Q`, `apt search`, ...), so queries stay fast.
+
+This is controlled by `/etc/salt/salt.conf`:
+
+```toml
+[strata]
+expose_pm = true   # set false to keep foreign package managers off the host
+```
+
+with `expose_pm = false` (or a one-off `--no-expose`) you keep raw access through
+`salt stratum shell <name>` instead. The shim is named after the package manager,
+so two strata of the *same* family (e.g. two pacman strata) would share one
+`pacman` shim — the most recently bootstrapped one wins; use `salt pkg <stratum>`
+or `salt stratum shell` to disambiguate. Equivalent explicit form:
+
+```sh
+salt pm arch pacman -S neofetch
+```
 
 ## 5. Exposing commands as host shims
 
@@ -125,18 +212,23 @@ overwrite native host files.
 
 ## 6. Exposing desktop applications
 
-Graphical apps from strata are a first-class daily-driver case. Expose a
-stratum app's desktop entry so it shows up in your menu:
+Graphical apps from strata are a first-class daily-driver case. In normal use you
+do not run this command at all: `salt install <stratum>/<app>` already detects the
+`.desktop` entries the package added and offers to expose them (see §4a), so the
+app shows up in your menu right after install.
+
+`salt expose-desktop` is the manual form, for re-exposing an app you skipped or
+for apps installed some other way:
 
 ```sh
 salt expose-desktop arch firefox
 salt expose-desktop debian libreoffice
 ```
 
-`salt expose-desktop` installs a host desktop entry that launches the app
-through its stratum, wiring up Wayland/X11 sockets, audio sockets, D-Bus session
-access, fonts, icons, and GPU device access according to the stratum's
-`[integration]` permissions.
+Either way, saltOS installs a host desktop entry that launches the app through
+its stratum, wiring up Wayland/X11 sockets, audio sockets, D-Bus session access,
+fonts, icons, and GPU device access according to the stratum's `[integration]`
+permissions.
 
 ## 7. Component providers and adoption
 
@@ -183,6 +275,16 @@ Host services are runit services. A stratum may ship daemons, but they are
 integrated through saltOS-managed service wrappers rather than letting a foreign
 init control the host:
 
+In normal use this is automatic: when `salt install <stratum>/<pkg>` adds a
+daemon, salt detects the new systemd unit(s) the package shipped, reads each
+unit's `ExecStart`, generates a runit service that runs that daemon **inside its
+stratum**, and enables it (under `auto_expose = "always"` it does so silently;
+under `prompt` it lists the daemons and asks first). `salt remove` tears the
+service back down. So installing, say, a web server brings its daemon up under
+runit with no extra step.
+
+The manual commands remain for tuning or for daemons added another way:
+
 ```sh
 salt service import arch docker
 salt service enable arch docker
@@ -192,6 +294,19 @@ salt service start arch docker
 `salt service import <stratum> <service>` wraps a stratum daemon as a host
 runit service; `enable` and `start` then manage it the same way as any native
 service.
+
+Automatic import is governed by `/etc/salt/salt.conf`:
+
+```toml
+[strata]
+auto_service = true   # set false to import daemons only by hand
+```
+
+Two honest limits: the conversion is best-effort from the unit's `ExecStart`
+(systemd `Type=forking`, `User=`, socket activation, and `EnvironmentFile`
+semantics are not fully reproduced under runit), and it covers systemd units
+(Debian/Arch/Fedora/openSUSE). Alpine (OpenRC) and Void (runit) daemons are not
+auto-detected yet — import those with `salt service import`.
 
 ## 10. Trust boundaries
 

@@ -252,6 +252,14 @@ repo = "current"
 source = ""
 key = ""
 EOF
+cat > "$ROOTFS/etc/salt/salt.conf" <<'EOF'
+[install]
+auto_expose = "prompt"
+
+[strata]
+expose_pm = true
+auto_service = true
+EOF
 chroot "$ROOTFS" /usr/bin/salt --root / list >/dev/null 2>&1 || true
 
 chroot "$ROOTFS" useradd -m -s /bin/bash salt 2>/dev/null || true

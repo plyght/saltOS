@@ -59,9 +59,11 @@ A stratum is a managed foreign userspace rooted under /strata/<name>. saltOS own
 the bootstrap, snapshots, command routing, and rollback; the foreign package
 manager only owns its own root.
 
-    salt stratum add arch              bootstrap an Arch userspace
+    salt install arch/ripgrep          bootstrap arch if needed, install, offer to expose
     salt stratum list                  show managed strata
-    salt run arch firefox              run foreign software (Wayland/X11/dbus/audio/GPU pass through)
+    sudo pacman -S firefox             use the stratum's own package manager from the host
+    salt arch/firefox                  run foreign software (Wayland/X11/dbus/audio/GPU pass through)
+    salt run arch firefox              the same, long form
     salt pkg arch install ripgrep      foreign package-manager passthrough (pre-op snapshot taken)
     salt expose arch rg                expose a command as a host shim on PATH
     salt expose-desktop arch firefox   expose a desktop app
@@ -170,16 +172,34 @@ SALT COMMAND CHEAT-SHEET
     salt verify               verify installed files against recorded hashes
     salt query|files|owner    inspect packages and file ownership
 
+  stratum shortcuts (<stratum>/<pkg>)
+    salt install <stratum>/<pkg>      install foreign software, then offer to expose it
+    salt remove <stratum>/<pkg>       remove foreign software and its host shims
+    salt search <stratum>/<term>      search a stratum's repositories
+    salt update <stratum>             upgrade packages inside a stratum (snapshot first)
+    salt <stratum>/<cmd> [args]       run a stratum command without the 'run' keyword
+    sudo pacman|apt|apk ... [args]    a stratum's own package manager, exposed on the host
+
   strata + integration
     salt stratum add <name>           bootstrap a foreign distro stratum
     salt stratum list|status|remove   manage strata
     salt stratum snapshot|rollback    per-stratum rollback
     salt run <stratum> <cmd> [args]   run a command inside a stratum
     salt pkg <stratum> <op> [pkg]     foreign package-manager passthrough
+    salt pm <stratum> <pm> [args]     run a stratum's package manager as root (snapshots on mutate)
     salt expose <stratum> <cmd>       expose a command as a host shim
     salt expose-desktop <stratum> <a> expose a desktop app
     salt provider set|rollback        adopt/revert component providers
     salt service import|enable|start  integrate stratum daemons under runit
+
+Installing foreign software auto-detects the commands, the desktop/menu entries,
+and the daemons (systemd units) a package adds and offers to wire them up -
+commands onto PATH, apps into the menu, daemons into runit - so install-and-run
+needs no separate expose/import step. This is controlled by /etc/salt/salt.conf
+([install] auto_expose = always|prompt|never; default prompt) and overridable per
+command with --expose and --no-expose. Exposing each stratum's package manager on
+the host is [strata] expose_pm (default true); auto-importing daemons is [strata]
+auto_service (default true).
 
   maintainer
     salt build <recipe-dir>   build a .grain from a recipe

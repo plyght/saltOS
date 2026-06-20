@@ -114,6 +114,15 @@ url = "file:///var/cache/salt/repo"
 key = "/etc/salt/trusted.pub"
 EOF
 
+cat > "$ROOTFS/etc/salt/salt.conf" <<'EOF'
+[install]
+auto_expose = "prompt"
+
+[strata]
+expose_pm = true
+auto_service = true
+EOF
+
 log "wiring stratum plane (shims on PATH + builtin recipes)"
 mkdir -p "$ROOTFS/etc/profile.d" "$ROOTFS/usr/local/salt/shims" \
          "$ROOTFS/etc/salt/strata" "$ROOTFS/strata"

@@ -147,6 +147,7 @@ int salt_stratum_rollback(const salt_strata_ctx *c, salt_strata_db *db, const ch
 
 int salt_expose_add(salt_strata_db *db, const char *root, const char *stratum, const char *command,
                     const char *alias, const char *kind);
+int salt_expose_pm(salt_strata_db *db, const char *root, const char *stratum, const char *binary);
 int salt_expose_remove(salt_strata_db *db, const char *root, const char *alias);
 int salt_expose_list(salt_strata_db *db, salt_exposed_list *out);
 int salt_expose_desktop(salt_strata_db *db, const salt_stratum *s, const char *root,

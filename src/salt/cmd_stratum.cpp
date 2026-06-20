@@ -25,7 +25,7 @@ static void stratum_usage() {
           "  lint <recipe>                 lint a stratum recipe\n");
 }
 
-static std::string resolve_recipe(const Options &o, const std::string &arg) {
+std::string resolve_stratum_recipe(const Options &o, const std::string &arg) {
   if (arg.find('/') != std::string::npos ||
       (arg.size() >= 5 && arg.compare(arg.size() - 5, 5, ".toml") == 0))
     return arg;
@@ -89,7 +89,7 @@ int cmd_stratum(const Options &o, const std::vector<std::string> &args) {
       stratum_usage();
       ret = 2;
     } else {
-      std::string path = resolve_recipe(o, args[1]);
+      std::string path = resolve_stratum_recipe(o, args[1]);
       if (path.empty()) {
         fprintf(stderr, "salt: recipe not found: %s\n", args[1].c_str());
         ret = 1;
@@ -109,6 +109,7 @@ int cmd_stratum(const Options &o, const std::vector<std::string> &args) {
             ret = 1;
           } else {
             printf("bootstrapped %s\n", r.name ? r.name : args[1].c_str());
+            if (r.name && expose_pm_enabled(o)) expose_pm_for(o, r.name);
           }
         }
         salt_stratum_recipe_free(&r);
