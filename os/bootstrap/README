@@ -62,7 +62,7 @@ Environment variables:
   JOBS   build parallelism (default nproc)
   SALT   path to the salt binary (default: salt on PATH)
 
-Built .saltpkg files land in $OUT/$ARCH/packages and per-package logs in
+Built .grain files land in $OUT/$ARCH/packages and per-package logs in
 $OUT/$ARCH/logs.
 
 Assembling the rootfs

@@ -89,9 +89,11 @@ xbuild "$XR/app/xkbcomp-1.4.7.tar.gz"
 xbuild "https://www.x.org/releases/individual/data/xkeyboard-config/xkeyboard-config-2.41.tar.xz"
 
 echo "===== X server (fbdev) + input/video drivers ====="
+xbuild "$XR/lib/libpciaccess-0.18.1.tar.xz"
 xbuild "$XR/xserver/xorg-server-21.1.13.tar.xz" \
   --disable-glx --disable-dri --disable-dri2 --disable-dri3 --disable-glamor \
   --disable-xvfb --disable-xnest --disable-xephyr --disable-dmx --disable-xwin \
+  --disable-xwayland \
   --disable-docs --disable-devel-docs --disable-unit-tests \
   --disable-systemd-logind --disable-libunwind --without-dtrace \
   --enable-xorg --with-fontrootdir="$FONTROOTDIR"

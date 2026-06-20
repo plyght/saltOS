@@ -184,6 +184,6 @@ int salt_manifest_from_toml(const char *text, size_t len, salt_manifest *out) {
 char *salt_pkg_filename(const salt_pkg_meta *m) {
   salt_buf b;
   salt_buf_init(&b);
-  salt_buf_printf(&b, "%s-%s-%d-%s.saltpkg", m->name, m->version, m->release, m->arch);
+  salt_buf_printf(&b, "%s-%s-%d-%s.grain", m->name, m->version, m->release, m->arch);
   return b.data;
 }

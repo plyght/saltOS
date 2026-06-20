@@ -66,7 +66,7 @@ mechanically but turn out to be bad in use.
 
 ### Core types
 
-The transaction and rollback logic is exposed by `salt_core` (see
+The transaction and rollback logic is exposed by `halite` (see
 `include/salt/txn.h`):
 
 - `salt_ctx` — the root, database path, state directory, snapshot directory, and

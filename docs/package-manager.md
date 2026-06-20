@@ -1,7 +1,7 @@
 # salt — Package Manager
 
 `salt` is the saltOS package manager and package builder. It is implemented as a
-native C core library (`salt_core`) with a C++23 command-line interface. There is
+native C core library (`halite`) with a C++23 command-line interface. There is
 no daemon: every operation runs in the foreground of the invoking process and
 exits when it is done.
 
@@ -21,9 +21,9 @@ The companion documents describe the formats and policies referenced here:
 [recipes.md](recipes.md), [repository.md](repository.md),
 [trust-model.md](trust-model.md), and [rollback.md](rollback.md).
 
-## Package format: `.saltpkg`
+## Package format: `.grain`
 
-A `.saltpkg` file is an **uncompressed POSIX ustar archive**. It contains the
+A `.grain` file is an **uncompressed POSIX ustar archive**. It contains the
 following members, in this exact order:
 
 ```
@@ -40,11 +40,11 @@ the payload (`files.tar.zst`) is compressed, with zstd.
 Package files are named:
 
 ```
-<name>-<version>-<release>-<arch>.saltpkg
+<name>-<version>-<release>-<arch>.grain
 ```
 
-for example `zlib-1.3.1-1-x86_64.saltpkg` or
-`helium-0.13.4-1-aarch64.saltpkg`.
+for example `zlib-1.3.1-1-x86_64.grain` or
+`helium-0.13.4-1-aarch64.grain`.
 
 ### In-memory representation
 
@@ -62,7 +62,7 @@ typedef struct {
 ```
 
 `salt_archive_build_from_dir()` constructs a package from a staging directory
-plus the package metadata; `salt_archive_write()` serializes it to a `.saltpkg`
+plus the package metadata; `salt_archive_write()` serializes it to a `.grain`
 file; `salt_archive_open()` parses an existing one; and
 `salt_archive_extract_payload()` decompresses and unpacks `files.tar.zst` into a
 destination root, recording the installed paths.
@@ -88,7 +88,7 @@ typedef struct {
 
 `salt_pkg_meta_to_toml()` / `salt_pkg_meta_from_toml()` serialize and parse this
 structure, and `salt_pkg_filename()` derives the
-`<name>-<version>-<release>-<arch>.saltpkg` filename from it.
+`<name>-<version>-<release>-<arch>.grain` filename from it.
 
 ### `manifest.toml`
 
@@ -393,7 +393,7 @@ salt owner /usr/bin/mpv
 
 ### `salt build <recipe-dir>`
 
-Build a `.saltpkg` from a recipe directory. The source is fetched and its hash
+Build a `.grain` from a recipe directory. The source is fetched and its hash
 verified, the build runs in a clean environment with network access denied after
 the fetch, and the resulting tree is packaged with a generated manifest and
 reproducibility metadata. See [recipes.md](recipes.md) for the recipe format and
@@ -417,11 +417,11 @@ salt lint recipes/zlib
 
 ### `salt sign <pkg>`
 
-Sign a built `.saltpkg` (or a repository index) with the maintainer's secret
+Sign a built `.grain` (or a repository index) with the maintainer's secret
 key, producing the ed25519 signature used in the trust chain.
 
 ```sh
-salt sign out/zlib-1.3.1-1-x86_64.saltpkg --key /path/to/secret.key
+salt sign out/zlib-1.3.1-1-x86_64.grain --key /path/to/secret.key
 ```
 
 ### `salt repo publish <out-dir>`

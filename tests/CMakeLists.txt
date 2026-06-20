@@ -1,7 +1,7 @@
 add_executable(salt_tests
   test_main.c
 )
-target_link_libraries(salt_tests PRIVATE salt_core)
+target_link_libraries(salt_tests PRIVATE halite)
 add_test(NAME salt_tests COMMAND salt_tests)
 
 add_test(

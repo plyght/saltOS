@@ -17,7 +17,7 @@ binary repository, makes full-system rollback a first-class feature via Btrfs
 snapshots, and is built from simple native tools that one maintainer can
 understand.
 
-The package manager, `salt`, is a C core library (`salt_core`) wrapped by a
+The package manager, `salt`, is a C core library (`halite`) wrapped by a
 C++23 CLI. Local state lives in a SQLite database. Every system-mutating
 operation runs as a transaction that snapshots the root subvolume first and can
 roll back automatically on failure.
@@ -34,7 +34,7 @@ From the metal up:
 | C library | glibc | Chosen for binary compatibility and desktop support. |
 | Init | runit | Service supervision, fronted by the `svc` wrapper. |
 | Filesystem | Btrfs | Subvolumes `@ @home @var @log @snapshots`. |
-| Package manager | `salt` (`salt_core` + C++23 CLI) | Transactional, signature-checking, daemonless. |
+| Package manager | `salt` (`halite` + C++23 CLI) | Transactional, signature-checking, daemonless. |
 | Local state | SQLite | `/var/lib/salt/db.sqlite`: packages, transactions, deployments. |
 | Repository | curated, signed | One signed `index.toml` per arch. |
 | Desktop | LXQt | Wayland-first where practical, X11 where needed. |
@@ -88,9 +88,9 @@ update can still boot the previous known-good deployment.
 
 `salt` is split into:
 
-- `salt_core` — the C core library: archive handling, the SQLite database,
+- `halite` — the C core library: archive handling, the SQLite database,
   hashing, signing, TOML parsing, the transaction engine, and the trust/
-  supply-chain logic. Headers live in `src/libsalt/include/salt/`.
+  supply-chain logic. Headers live in `src/halite/include/salt/`.
 - the C++23 CLI — argument parsing and higher-level orchestration of the core.
 
 Key core concepts (see the headers for exact signatures):
@@ -101,7 +101,7 @@ Key core concepts (see the headers for exact signatures):
 - `salt_db` — a handle to the SQLite database, with SQL-level
   begin/commit/rollback, transaction bookkeeping (`salt_db_txn_new`,
   `salt_db_txn_finish`), and install/remove recording.
-- `salt_archive` — an opened `.saltpkg`: its `metadata.toml`, `manifest.toml`,
+- `salt_archive` — an opened `.grain`: its `metadata.toml`, `manifest.toml`,
   the zstd payload, and any scripts. Built from a staging directory, written to
   a file, opened, and extracted into a target tree.
 - the transaction layer (`txn.h`) — `salt_snapshot_create` /
@@ -120,7 +120,7 @@ per architecture:
 repo/<arch>/
   index.toml          signed list: name/version/release/sha256/size/deps
   index.toml.sig      ed25519 signature (hex) of index.toml
-  packages/<name>-<version>-<release>-<arch>.saltpkg
+  packages/<name>-<version>-<release>-<arch>.grain
 ```
 
 There is no untrusted user repository. The trust order is fixed: verify
@@ -157,7 +157,7 @@ Default applications:
                          |  curated signed repo      |
                          |  repo/<arch>/index.toml   |
                          |  + index.toml.sig         |
-                         |  packages/*.saltpkg       |
+                         |  packages/*.grain         |
                          +-------------+-------------+
                                        | sync / fetch (verify sig, then hash)
                                        v
@@ -167,7 +167,7 @@ Default applications:
                                               | calls
                                               v
                                 +---------------------------+
-                                |  salt_core (C library)    |
+                                |  halite (C library)       |
                                 |  archive | toml | hash    |
                                 |  sign    | zst  | tar     |
                                 |  db      | txn  | trust   |
@@ -195,7 +195,7 @@ deployment of `@` to boot.
 ## 4. Source layout
 
 ```
-src/libsalt/       C core library (salt_core), headers in include/salt/
+src/halite/        C core library (halite), headers in include/salt/
 src/salt/          C++23 CLI (salt)
 recipes/<name>/    package recipes (recipe.toml [+ patches/, files/])
 repo/<arch>/       built repository (index.toml, index.toml.sig, packages/)
@@ -265,7 +265,7 @@ an alternate root (used by the installer and by tests).
 2. **Resolve.** Runtime dependencies declared in the index are resolved into an
    ordered install set, skipping packages already recorded as installed in the
    database.
-3. **Fetch.** Each required `.saltpkg` is fetched (from a URL or local path) by
+3. **Fetch.** Each required `.grain` is fetched (from a URL or local path) by
    the filename recorded in the signed index.
 4. **Verify hash.** Each fetched package's `sha256` is checked against the value
    in the signed index. A mismatch aborts the transaction. (Trust order:

@@ -122,7 +122,7 @@ static void test_pkg_roundtrip(void) {
   CHECK(strcmp(m2.name, "zlib") == 0 && m2.release == 1, "meta roundtrip");
   CHECK(m2.deps.len == 1 && strcmp(m2.deps.items[0], "glibc") == 0, "meta deps");
   char *fn = salt_pkg_filename(&m);
-  CHECK(strcmp(fn, "zlib-1.3.1-1-x86_64.saltpkg") == 0, "pkg filename");
+  CHECK(strcmp(fn, "zlib-1.3.1-1-x86_64.grain") == 0, "pkg filename");
   free(fn);
   salt_buf_free(&out);
   salt_pkg_meta_free(&m);
@@ -178,7 +178,7 @@ static void test_archive_db(void) {
   salt_archive ar;
   CHECK(salt_archive_build_from_dir(staging, &m, NULL, &ar) == SALT_OK, "archive build");
   CHECK(ar.manifest.len >= 2, "archive manifest");
-  char *pkgpath = salt_join_path(d, "hello-1.0-1-x86_64.saltpkg");
+  char *pkgpath = salt_join_path(d, "hello-1.0-1-x86_64.grain");
   CHECK(salt_archive_write(&ar, pkgpath) == SALT_OK, "archive write");
 
   salt_archive ar2;
@@ -245,7 +245,7 @@ static void test_repo(void) {
   m.repro_status = salt_strdup("verified");
   salt_archive ar;
   salt_archive_build_from_dir(staging, &m, NULL, &ar);
-  char *pp = salt_join_path(pkgdir, "x-1-1-x86_64.saltpkg");
+  char *pp = salt_join_path(pkgdir, "x-1-1-x86_64.grain");
   salt_archive_write(&ar, pp);
 
   salt_repo_index idx;

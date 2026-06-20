@@ -1,0 +1,21 @@
+name = "debian"
+family = "debian"
+arch = "x86_64"
+package_manager = "apt"
+root = "/strata/debian"
+trust = "official"
+
+[bootstrap]
+method = "debootstrap"
+url = ""
+sha256 = ""
+strip = 0
+
+[integration]
+graphics = true
+audio = true
+dbus = true
+
+[[repository]]
+name = "stable"
+url = "http://deb.debian.org/debian"

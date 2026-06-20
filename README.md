@@ -6,7 +6,7 @@ supply-chain failure modes.
 
 It is not trying to be another general-purpose community distro. It is a small,
 coherent operating system with its own package manager (`salt`), its own package
-format (`.saltpkg`), a curated and signed binary repository, TOML package
+format (`.grain`), a curated and signed binary repository, TOML package
 recipes, and a simple full-system rollback model built on Btrfs snapshots.
 
 > Status: experimental. The model and tooling are under active construction.
@@ -38,7 +38,7 @@ Verified working (built and tested in CI on both x86_64 and aarch64):
   install → query/verify → remove → rollback).
 - The maintainer pipeline on real upstream software: `salt build` downloads a
   pinned source, verifies its sha256, builds it, and produces an installable
-  signed `.saltpkg` (proven with `zlib`).
+  signed `.grain` (proven with `zlib`).
 - All 111 package recipes pass `salt lint`; 52 are admission-ready today, the
   rest pin real upstream URLs and are pending verified source hashes.
 
@@ -65,7 +65,7 @@ In progress (written as source, not yet assembled end-to-end):
 
 - `salt` package manager: native, transactional, rollback-aware,
   signature-checking, source-hash-aware, daemonless.
-- `.saltpkg` format: ustar container of `metadata.toml`, `manifest.toml`, a
+- `.grain` format: ustar container of `metadata.toml`, `manifest.toml`, a
   zstd-compressed payload, and optional (discouraged) scripts.
 - Curated binary repository with an ed25519-signed `index.toml`.
 - Explicit contributor trust model (unknown / vouched / maintainer / denounced)
@@ -84,7 +84,7 @@ In progress (written as source, not yet assembled end-to-end):
 | Init | runit (`svc` wrapper) |
 | Filesystem | Btrfs (`@ @home @var @log @snapshots`) |
 | Bootloader | GRUB (snapshot/deployment entries) |
-| Package manager | `salt` (C core `salt_core` + C++23 CLI) |
+| Package manager | `salt` (C core `halite` + C++23 CLI) |
 | Package DB | SQLite at `/var/lib/salt/db.sqlite` |
 | Repository | curated, signed `index.toml` per arch |
 | Desktop | LXQt, Wayland-first where practical |
@@ -122,7 +122,7 @@ The `salt` binary is produced under `build/src/salt/salt`.
 ## Building a package
 
 Recipes live in `recipes/<name>/recipe.toml`. To lint, scan, and build one into
-a `.saltpkg`:
+a `.grain`:
 
 ```sh
 salt lint recipes/zlib
@@ -133,7 +133,7 @@ salt build recipes/zlib
 Then sign the artifact and publish a signed repository index:
 
 ```sh
-salt sign out/zlib-1.3.1-1-x86_64.saltpkg
+salt sign out/zlib-1.3.1-1-x86_64.grain
 salt repo publish out/
 ```
 
@@ -169,9 +169,9 @@ salt verify               verify installed files against recorded hashes
 salt query <pkg>          show package details
 salt files <pkg>          list files owned by a package
 salt owner <path>         show which package owns a path
-salt build <recipe-dir>   build a .saltpkg from a recipe
+salt build <recipe-dir>   build a .grain from a recipe
 salt lint <recipe-dir>    lint a recipe
-salt sign <pkg>           sign a .saltpkg / index
+salt sign <pkg>           sign a .grain / index
 salt repo publish <dir>   build and sign a repository index
 salt trust <subcommand>   manage contributor trust and supply-chain scans
 ```

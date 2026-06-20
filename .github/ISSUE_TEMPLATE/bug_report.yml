@@ -9,7 +9,7 @@ body:
       label: Component
       options:
         - salt (package manager)
-        - libsalt (core library)
+        - halite (core library)
         - repository / signed index
         - rollback / btrfs deployments
         - runit / svc

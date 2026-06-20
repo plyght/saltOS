@@ -218,7 +218,7 @@ int salt_archive_open(const char *path, salt_archive *out) {
   int rc = salt_tar_read(b.data, b.len, open_cb, &ctx);
   salt_buf_free(&b);
   if (rc != SALT_OK || !ctx.got_meta || !ctx.got_manifest) {
-    salt_set_error("invalid .saltpkg: %s", path);
+    salt_set_error("invalid .grain: %s", path);
     salt_archive_free(out);
     return SALT_ERR_FORMAT;
   }

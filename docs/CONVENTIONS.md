@@ -18,7 +18,7 @@ normalizing `arm64` -> `aarch64`, `amd64` -> `x86_64`).
 ## Source layout
 
 ```
-src/libsalt/       C core library (salt_core), headers in include/salt/
+src/halite/        C core library (halite), headers in include/salt/
 src/salt/          C++23 CLI (salt)
 recipes/<name>/    package recipes (recipe.toml [+ patches/, files/])
 repo/<arch>/       built repository (index.toml, index.toml.sig, packages/)
@@ -82,9 +82,9 @@ Build environment variables provided to recipe scripts:
 
 Network access is permitted only during source fetch, then denied for the build.
 
-## Package format (`.saltpkg`)
+## Package format (`.grain`)
 
-A `.saltpkg` is an uncompressed POSIX ustar archive containing, in order:
+A `.grain` is an uncompressed POSIX ustar archive containing, in order:
 
 ```
 metadata.toml      package identity + deps + reproducibility
@@ -93,7 +93,7 @@ files.tar.zst      zstd-compressed ustar of the payload, paths relative to /
 scripts/           optional, discouraged; post-install hooks
 ```
 
-Naming: `<name>-<version>-<release>-<arch>.saltpkg`
+Naming: `<name>-<version>-<release>-<arch>.grain`
 
 ## Repository layout
 
@@ -101,7 +101,7 @@ Naming: `<name>-<version>-<release>-<arch>.saltpkg`
 repo/<arch>/
   index.toml          signed list of packages with name/version/release/sha256/size/deps
   index.toml.sig      ed25519 signature (hex) of index.toml
-  packages/<name>-<version>-<release>-<arch>.saltpkg
+  packages/<name>-<version>-<release>-<arch>.grain
 ```
 
 Trust order: verify `index.toml.sig` against the trusted public key, then verify each

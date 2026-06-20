@@ -117,7 +117,7 @@ int salt_repo_build_index(const char *packages_dir, const char *repo_name, const
   struct dirent *de;
   while ((de = readdir(d)) != NULL) {
     size_t l = strlen(de->d_name);
-    if (l > 8 && strcmp(de->d_name + l - 8, ".saltpkg") == 0) salt_strlist_push(&names, de->d_name);
+    if (l > 6 && strcmp(de->d_name + l - 6, ".grain") == 0) salt_strlist_push(&names, de->d_name);
   }
   closedir(d);
   for (size_t i = 0; i + 1 < names.len; i++)

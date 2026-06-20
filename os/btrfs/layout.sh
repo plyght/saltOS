@@ -27,7 +27,7 @@ options:
   -o <file>        also write generated fstab entries to <file>
   -h               show this help
 
-Subvolumes created: @ @home @var @log @snapshots
+Subvolumes created: @ @home @var @log @snapshots @strata
 EOF
 }
 
@@ -69,7 +69,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-for sub in @ @home @var @log @snapshots; do
+for sub in @ @home @var @log @snapshots @strata; do
 	if [ -d "$TOPLEVEL/$sub" ]; then
 		printf '%s: subvolume already exists: %s\n' "$prog" "$sub"
 	else
@@ -85,12 +85,13 @@ COMMON="rw,noatime,compress=$COMPRESS,space_cache=v2"
 
 mkdir -p "$MOUNTPOINT"
 mount -o "$COMMON,subvol=@" "$DEVICE" "$MOUNTPOINT"
-mkdir -p "$MOUNTPOINT/home" "$MOUNTPOINT/var" "$MOUNTPOINT/var/log" "$MOUNTPOINT/.snapshots"
+mkdir -p "$MOUNTPOINT/home" "$MOUNTPOINT/var" "$MOUNTPOINT/var/log" "$MOUNTPOINT/.snapshots" "$MOUNTPOINT/strata"
 mount -o "$COMMON,subvol=@home" "$DEVICE" "$MOUNTPOINT/home"
 mount -o "$COMMON,subvol=@var" "$DEVICE" "$MOUNTPOINT/var"
 mkdir -p "$MOUNTPOINT/var/log"
 mount -o "$COMMON,subvol=@log" "$DEVICE" "$MOUNTPOINT/var/log"
 mount -o "$COMMON,subvol=@snapshots" "$DEVICE" "$MOUNTPOINT/.snapshots"
+mount -o "$COMMON,subvol=@strata" "$DEVICE" "$MOUNTPOINT/strata"
 
 UUID=$(blkid -s UUID -o value "$DEVICE" 2>/dev/null || true)
 if [ -n "$UUID" ]; then
@@ -106,6 +107,7 @@ $SRC  /home        btrfs  $COMMON,subvol=@home       0 0
 $SRC  /var         btrfs  $COMMON,subvol=@var        0 0
 $SRC  /var/log     btrfs  $COMMON,subvol=@log        0 0
 $SRC  /.snapshots  btrfs  $COMMON,subvol=@snapshots  0 0
+$SRC  /strata      btrfs  $COMMON,subvol=@strata     0 0
 EOF
 }
 

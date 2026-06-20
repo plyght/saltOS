@@ -24,6 +24,7 @@ std::string db_path_for(const Options &o);
 std::string cache_dir_for(const Options &o);
 std::string index_path_for(const Options &o);
 std::string trustdb_for(const Options &o);
+std::string strata_db_path_for(const Options &o);
 bool confirm(const Options &o, const std::string &prompt);
 
 int cmd_sync(const Options &o, const std::vector<std::string> &args);
@@ -47,5 +48,15 @@ int cmd_repo(const Options &o, const std::vector<std::string> &args);
 int cmd_keygen(const Options &o, const std::vector<std::string> &args);
 
 int cmd_trust(const Options &o, const std::vector<std::string> &args);
+
+int cmd_stratum(const Options &o, const std::vector<std::string> &args);
+int cmd_run(const Options &o, const std::vector<std::string> &args);
+int cmd_pkg(const Options &o, const std::vector<std::string> &args);
+int cmd_expose(const Options &o, const std::vector<std::string> &args);
+int cmd_unexpose(const Options &o, const std::vector<std::string> &args);
+int cmd_exposed(const Options &o, const std::vector<std::string> &args);
+int cmd_expose_desktop(const Options &o, const std::vector<std::string> &args);
+int cmd_provider(const Options &o, const std::vector<std::string> &args);
+int cmd_service(const Options &o, const std::vector<std::string> &args);
 
 #endif

@@ -18,7 +18,7 @@ pkg_check_modules(ZSTD REQUIRED libzstd)
 pkg_check_modules(SODIUM REQUIRED libsodium)
 pkg_check_modules(SQLITE3 REQUIRED sqlite3)
 
-add_subdirectory(src/libsalt)
+add_subdirectory(src/halite)
 add_subdirectory(src/salt)
 
 enable_testing()

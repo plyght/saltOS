@@ -104,9 +104,9 @@ jobs:
       - name: Upload packages
         uses: actions/upload-artifact@v4
         with:
-          name: saltpkg-${{ matrix.arch }}
+          name: grain-${{ matrix.arch }}
           path: |
-            out/**/*.saltpkg
+            out/**/*.grain
             out/**/index.toml
             out/**/index.toml.sig
           if-no-files-found: warn

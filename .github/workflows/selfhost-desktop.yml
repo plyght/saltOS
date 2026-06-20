@@ -37,7 +37,7 @@ jobs:
             apt-get install -y --no-install-recommends \
               build-essential cmake pkg-config musl-tools gcc-12 g++-12 \
               bison flex bc libssl-dev libelf-dev \
-              gawk texinfo python3 meson ninja-build gperf \
+              gawk texinfo python3 meson ninja-build gperf gettext \
               xz-utils bzip2 curl file cpio ca-certificates \
               grub-pc-bin grub-efi-amd64-bin grub-common xorriso mtools
             REPO_DIR=/src OUT=/src/out-iso VERSION=0.1.0 EDITION=desktop \

@@ -2,7 +2,7 @@ build/
 out/
 *.o
 *.a
-*.saltpkg
+*.grain
 keys/*.sec
 keys/*.secret
 .DS_Store

@@ -47,6 +47,10 @@ std::string trustdb_for(const Options &o) {
   return path_join(o.root, "var/lib/salt/trust.toml");
 }
 
+std::string strata_db_path_for(const Options &o) {
+  return path_join(o.root, "var/lib/salt/strata.sqlite");
+}
+
 RepoConf load_repo_conf(const Options &o) {
   RepoConf rc;
   std::string conf = path_join(o.root, "etc/salt/repo.conf");
@@ -92,7 +96,25 @@ static void usage() {
           "  sign <file>          sign a file with the repo secret key\n"
           "  repo publish <dir>   build and sign a repository index\n"
           "  keygen <dir> <name>  generate a signing keypair\n"
-          "  trust <subcommand>   manage the contributor trust model\n");
+          "  trust <subcommand>   manage the contributor trust model\n\n"
+          "stratum commands:\n"
+          "  stratum list                  list managed strata\n"
+          "  stratum add <recipe|name>     bootstrap a foreign distro stratum\n"
+          "  stratum remove <name>         destroy a stratum\n"
+          "  stratum status <name>         show stratum details\n"
+          "  stratum snapshot <name>       snapshot a stratum\n"
+          "  stratum rollback <name> [id]  roll a stratum back to a snapshot\n"
+          "  stratum shell <name>          open a shell inside a stratum\n"
+          "  stratum lint <recipe>         validate a stratum recipe\n\n"
+          "integration commands:\n"
+          "  run <stratum> <cmd> [args]    run a command inside a stratum\n"
+          "  pkg <stratum> <op> [pkg]      foreign package manager passthrough\n"
+          "  expose <stratum> <cmd> [as A] expose a stratum command on the host\n"
+          "  unexpose <alias>              remove an exposed command\n"
+          "  exposed                       list exposed commands\n"
+          "  expose-desktop <stratum> <a>  expose a stratum desktop app\n"
+          "  provider <subcommand>         manage component providers\n"
+          "  service <subcommand>          integrate stratum daemons under runit\n");
 }
 
 static int dispatch(const Options &o, const std::string &cmd,
@@ -115,6 +137,15 @@ static int dispatch(const Options &o, const std::string &cmd,
   if (cmd == "repo") return cmd_repo(o, args);
   if (cmd == "keygen") return cmd_keygen(o, args);
   if (cmd == "trust") return cmd_trust(o, args);
+  if (cmd == "stratum") return cmd_stratum(o, args);
+  if (cmd == "run") return cmd_run(o, args);
+  if (cmd == "pkg") return cmd_pkg(o, args);
+  if (cmd == "expose") return cmd_expose(o, args);
+  if (cmd == "unexpose") return cmd_unexpose(o, args);
+  if (cmd == "exposed") return cmd_exposed(o, args);
+  if (cmd == "expose-desktop") return cmd_expose_desktop(o, args);
+  if (cmd == "provider") return cmd_provider(o, args);
+  if (cmd == "service") return cmd_service(o, args);
   fprintf(stderr, "salt: unknown command '%s'\n", cmd.c_str());
   usage();
   return 2;

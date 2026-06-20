@@ -26,14 +26,14 @@ repo/
     index.toml
     index.toml.sig
     packages/
-      zlib-1.3.1-1-x86_64.saltpkg
-      helium-0.13.4-1-x86_64.saltpkg
+      zlib-1.3.1-1-x86_64.grain
+      helium-0.13.4-1-x86_64.grain
   aarch64/
     index.toml
     index.toml.sig
     packages/
-      zlib-1.3.1-1-aarch64.saltpkg
-      helium-0.13.4-1-aarch64.saltpkg
+      zlib-1.3.1-1-aarch64.grain
+      helium-0.13.4-1-aarch64.grain
 ```
 
 Each architecture tree contains exactly three things:
@@ -42,8 +42,8 @@ Each architecture tree contains exactly three things:
   entry records `name`, `version`, `release`, `arch`, `filename`, `sha256`,
   `size`, and `deps`.
 - `index.toml.sig` — an ed25519 signature of `index.toml`, stored as hex.
-- `packages/` — the `.saltpkg` files, named
-  `<name>-<version>-<release>-<arch>.saltpkg`.
+- `packages/` — the `.grain` files, named
+  `<name>-<version>-<release>-<arch>.grain`.
 
 Packages are **hash-addressed by the index**: the authoritative record of what a
 package is and what it contains is the `sha256` in the signed index, not the
@@ -83,7 +83,7 @@ anything. This is the heart of the repository's security model:
 2. **Trust the signed index.** Once the index signature is verified, the
    contents of `index.toml` are trusted — including every package's recorded
    `sha256` and `size`.
-3. **Verify each package hash.** Before installing a `.saltpkg`, `salt`
+3. **Verify each package hash.** Before installing a `.grain`, `salt`
    recomputes its sha256 and checks it against the hash recorded in the signed
    index. A package whose contents do not match the signed index is rejected.
 
@@ -96,7 +96,7 @@ because the signed index vouches for its hash.
 The repository tooling lives in `include/salt/repo.h`:
 
 - `salt_repo_build_index(packages_dir, repo_name, arch, out)` scans a directory
-  of `.saltpkg` files, reads each package's identity and dependencies, computes
+  of `.grain` files, reads each package's identity and dependencies, computes
   each package's `sha256` and `size`, and assembles a `salt_repo_index`.
 - `salt_repo_index_to_toml(idx, out)` serializes that index to `index.toml`.
 - `salt_repo_publish(out_dir, repo_name, arch, sec_key_hex)` performs the full
@@ -110,8 +110,8 @@ The repository tooling lives in `include/salt/repo.h`:
 The maintainer-facing workflow uses the `salt` CLI:
 
 ```sh
-salt build recipes/zlib                          # produce out/zlib-1.3.1-1-<arch>.saltpkg
-salt sign out/zlib-1.3.1-1-x86_64.saltpkg        # sign an individual artifact
+salt build recipes/zlib                          # produce out/zlib-1.3.1-1-<arch>.grain
+salt sign out/zlib-1.3.1-1-x86_64.grain        # sign an individual artifact
 salt repo publish out/                           # build + sign the repository index
 ```
 
@@ -148,7 +148,7 @@ source (`--repo`, or the source in `/etc/salt/repo.conf`). It:
    `salt update`.
 
 From then on, `salt install <pkg>` and `salt update` resolve packages against
-the verified index, fetch the corresponding `.saltpkg` from `packages/`, and
+the verified index, fetch the corresponding `.grain` from `packages/`, and
 re-verify each package's sha256 against the signed index before it is installed.
 
 ## Release model

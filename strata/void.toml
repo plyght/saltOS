@@ -1,0 +1,21 @@
+name = "void"
+family = "void"
+arch = "x86_64"
+package_manager = "xbps"
+root = "/strata/void"
+trust = "official"
+
+[bootstrap]
+method = "rootfs"
+url = "https://repo-default.voidlinux.org/live/current/void-x86_64-ROOTFS-20240314.tar.xz"
+sha256 = ""
+strip = 0
+
+[integration]
+graphics = true
+audio = true
+dbus = true
+
+[[repository]]
+name = "main"
+url = "https://repo-default.voidlinux.org/current"

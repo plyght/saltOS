@@ -42,7 +42,7 @@ stage_packages() {
 build_one() {
   name="$1"
   recipe="$REPO_ROOT/recipes/$name"
-  out="$PKGDIR/$name-$ARCH.saltpkg"
+  out="$PKGDIR/$name-$ARCH.grain"
   if [ ! -d "$recipe" ]; then
     echo "missing recipe: $name" >&2
     return 1

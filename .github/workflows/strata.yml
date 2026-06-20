@@ -1,0 +1,96 @@
+name: strata
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "src/halite/src/stratum.c"
+      - "src/halite/src/run.c"
+      - "src/halite/include/salt/stratum.h"
+      - "src/halite/include/salt/run.h"
+      - "src/salt/cmd_stratum.cpp"
+      - "src/salt/cmd_run.cpp"
+      - "src/salt/cmd_expose.cpp"
+      - "strata/**"
+      - ".github/workflows/strata.yml"
+
+concurrency:
+  group: strata-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: stratum end-to-end (x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config \
+            libzstd-dev libsodium-dev libsqlite3-dev \
+            build-essential
+
+      - name: Build salt
+        run: |
+          cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target salt
+
+      - name: Lint stratum recipes
+        run: |
+          salt=build/src/salt/salt
+          status=0
+          for r in strata/*.toml; do
+            echo "::group::lint $r"
+            "$salt" stratum lint "$r" || status=1
+            echo "::endgroup::"
+          done
+          exit $status
+
+      - name: Bootstrap the Alpine stratum
+        run: |
+          salt=build/src/salt/salt
+          sudo "$salt" --yes stratum add strata/alpine.toml
+          sudo "$salt" stratum list
+          test -x /strata/alpine/bin/busybox
+
+      - name: Run a command through the native engine (chroot + namespaces)
+        run: |
+          salt=build/src/salt/salt
+          out=$(sudo env -u SUDO_UID -u SUDO_GID -u SUDO_USER \
+            "$salt" run alpine /bin/busybox echo hello-from-stratum)
+          echo "engine said: $out"
+          test "$out" = "hello-from-stratum"
+
+      - name: Prove per-stratum snapshot + rollback
+        run: |
+          salt=build/src/salt/salt
+          echo v1 | sudo tee /strata/alpine/marker >/dev/null
+          sudo "$salt" stratum snapshot alpine
+          echo v2 | sudo tee /strata/alpine/marker >/dev/null
+          sudo "$salt" stratum rollback alpine
+          got=$(sudo cat /strata/alpine/marker)
+          echo "after rollback marker = $got"
+          test "$got" = "v1"
+
+      - name: Prove command exposure (host shim)
+        run: |
+          salt=build/src/salt/salt
+          sudo "$salt" expose alpine /bin/busybox as bbox
+          test -x /usr/local/salt/shims/bbox
+          sudo "$salt" exposed
+
+      - name: Prove install through foreign package manager (apk)
+        run: |
+          salt=build/src/salt/salt
+          sudo cp /etc/resolv.conf /strata/alpine/etc/resolv.conf
+          sudo "$salt" pkg alpine install ripgrep
+          sudo "$salt" run alpine /usr/bin/rg --version
+
+      - name: Tear the stratum down
+        run: |
+          salt=build/src/salt/salt
+          sudo "$salt" --yes stratum remove alpine
+          test ! -e /strata/alpine

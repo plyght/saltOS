@@ -45,7 +45,7 @@ log "installing base + desktop packages into $ROOTFS"
 for stage in base desktop; do
   stage_packages "$stage" | while IFS= read -r pkg; do
     [ -n "$pkg" ] || continue
-    p="$PKGDIR/$pkg-$ARCH.saltpkg"
+    p="$PKGDIR/$pkg-$ARCH.grain"
     [ -f "$p" ] || { log "skip missing package $pkg"; continue; }
     "$SALT" install "$p" --root "$ROOTFS" --yes
   done
@@ -113,6 +113,17 @@ cat > "$ROOTFS/etc/salt/repo.conf" <<'EOF'
 url = "file:///var/cache/salt/repo"
 key = "/etc/salt/trusted.pub"
 EOF
+
+log "wiring stratum plane (shims on PATH + builtin recipes)"
+mkdir -p "$ROOTFS/etc/profile.d" "$ROOTFS/usr/local/salt/shims" \
+         "$ROOTFS/etc/salt/strata" "$ROOTFS/strata"
+if [ -f "$REPO_ROOT/os/profile.d/salt-shims.sh" ]; then
+  cp "$REPO_ROOT/os/profile.d/salt-shims.sh" "$ROOTFS/etc/profile.d/salt-shims.sh"
+  chmod 0644 "$ROOTFS/etc/profile.d/salt-shims.sh"
+fi
+if [ -d "$REPO_ROOT/strata" ]; then
+  cp "$REPO_ROOT"/strata/*.toml "$ROOTFS/etc/salt/strata/" 2>/dev/null || true
+fi
 
 ln -sf usr/bin "$ROOTFS/bin" 2>/dev/null || true
 ln -sf usr/sbin "$ROOTFS/sbin" 2>/dev/null || true

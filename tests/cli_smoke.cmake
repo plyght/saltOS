@@ -50,8 +50,8 @@ execute_process(
           "${SALT_BIN}" build "${RECIPE}"
   COMMAND_ERROR_IS_FATAL ANY)
 
-if(NOT EXISTS "${OUT}/${ARCH}/packages/hello-1.0-1-${ARCH}.saltpkg")
-  message(FATAL_ERROR "build did not produce the expected .saltpkg")
+if(NOT EXISTS "${OUT}/${ARCH}/packages/hello-1.0-1-${ARCH}.grain")
+  message(FATAL_ERROR "build did not produce the expected .grain")
 endif()
 
 execute_process(COMMAND "${SALT_BIN}" keygen "${KEYS}" repo COMMAND_ERROR_IS_FATAL ANY)
