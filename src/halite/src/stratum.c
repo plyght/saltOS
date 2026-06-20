@@ -10,7 +10,38 @@
 #include <stdio.h>
 #include <sqlite3.h>
 #include <sys/stat.h>
+#include <sys/utsname.h>
 #include <dirent.h>
+
+static const char *salt_host_arch(void) {
+  static char buf[32];
+  struct utsname u;
+  if (uname(&u) == 0) {
+    if (strcmp(u.machine, "aarch64") == 0 || strcmp(u.machine, "arm64") == 0) return "aarch64";
+    if (strcmp(u.machine, "x86_64") == 0 || strcmp(u.machine, "amd64") == 0) return "x86_64";
+    snprintf(buf, sizeof(buf), "%s", u.machine);
+    return buf;
+  }
+  return "x86_64";
+}
+
+static char *salt_subst(const char *s, const char *tok, const char *val) {
+  if (!s) return NULL;
+  size_t tl = strlen(tok);
+  salt_buf b;
+  salt_buf_init(&b);
+  const char *p = s;
+  const char *hit;
+  while ((hit = strstr(p, tok)) != NULL) {
+    salt_buf_append(&b, p, (size_t)(hit - p));
+    salt_buf_append_str(&b, val);
+    p = hit + tl;
+  }
+  salt_buf_append_str(&b, p);
+  char *r = salt_strdup(b.data ? b.data : "");
+  salt_buf_free(&b);
+  return r;
+}
 
 struct salt_strata_db {
   sqlite3 *h;
@@ -201,7 +232,7 @@ int salt_stratum_recipe_load(const char *path, salt_stratum_recipe *out) {
   }
   out->name = salt_strdup(salt_toml_string(t, "name", ""));
   out->family = salt_strdup(salt_toml_string(t, "family", ""));
-  out->arch = salt_strdup(salt_toml_string(t, "arch", "x86_64"));
+  out->arch = salt_strdup(salt_toml_string(t, "arch", "{arch}"));
   out->root = salt_strdup(salt_toml_string(t, "root", ""));
   out->package_manager = salt_strdup(salt_toml_string(t, "package_manager", ""));
   out->trust = salt_strdup(salt_toml_string(t, "trust", ""));
@@ -212,12 +243,24 @@ int salt_stratum_recipe_load(const char *path, salt_stratum_recipe *out) {
   out->graphics = salt_toml_bool(t, "integration.graphics", false);
   out->audio = salt_toml_bool(t, "integration.audio", false);
   out->dbus = salt_toml_bool(t, "integration.dbus", false);
+
+  const char *ha = salt_host_arch();
+  if (!out->arch || !out->arch[0] || strcmp(out->arch, "{arch}") == 0) {
+    free(out->arch);
+    out->arch = salt_strdup(ha);
+  }
+  char *u = salt_subst(out->rootfs_url, "{arch}", out->arch);
+  free(out->rootfs_url);
+  out->rootfs_url = u;
+
   const salt_toml *repos = salt_toml_get(t, "repository");
   size_t n = salt_toml_array_len(repos);
   for (size_t i = 0; i < n; i++) {
     const salt_toml *r = salt_toml_array_at(repos, i);
     salt_strlist_push(&out->repo_names, salt_toml_string(r, "name", ""));
-    salt_strlist_push(&out->repo_urls, salt_toml_string(r, "url", ""));
+    char *ru = salt_subst(salt_toml_string(r, "url", ""), "{arch}", out->arch);
+    salt_strlist_push(&out->repo_urls, ru ? ru : "");
+    free(ru);
   }
   salt_toml_free(t);
   return SALT_OK;

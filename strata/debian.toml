@@ -1,6 +1,6 @@
 name = "debian"
 family = "debian"
-arch = "x86_64"
+arch = "{arch}"
 package_manager = "apt"
 root = "/strata/debian"
 trust = "official"

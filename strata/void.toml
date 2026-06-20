@@ -1,13 +1,13 @@
 name = "void"
 family = "void"
-arch = "x86_64"
+arch = "{arch}"
 package_manager = "xbps"
 root = "/strata/void"
 trust = "official"
 
 [bootstrap]
 method = "rootfs"
-url = "https://repo-default.voidlinux.org/live/current/void-x86_64-ROOTFS-20240314.tar.xz"
+url = "https://repo-default.voidlinux.org/live/current/void-{arch}-ROOTFS-20240314.tar.xz"
 sha256 = ""
 strip = 0
 

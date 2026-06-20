@@ -1,6 +1,6 @@
 name = "fedora"
 family = "fedora"
-arch = "x86_64"
+arch = "{arch}"
 package_manager = "dnf"
 root = "/strata/fedora"
 trust = "official"

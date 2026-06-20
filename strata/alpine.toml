@@ -1,13 +1,13 @@
 name = "alpine"
 family = "alpine"
-arch = "x86_64"
+arch = "{arch}"
 package_manager = "apk"
 root = "/strata/alpine"
 trust = "official"
 
 [bootstrap]
 method = "rootfs"
-url = "https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/x86_64/alpine-minirootfs-3.20.3-x86_64.tar.gz"
+url = "https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/{arch}/alpine-minirootfs-3.20.3-{arch}.tar.gz"
 sha256 = ""
 strip = 0
 
