@@ -265,7 +265,7 @@ chmod 0440 "$ROOTFS/etc/sudoers.d/salt"
 cat > "$ROOTFS/etc/runit/sv/agetty-tty1/run" <<'EOF'
 #!/bin/sh
 exec 2>&1
-exec agetty --noclear --autologin salt tty1 38400 linux
+exec setsid -w agetty --noclear --autologin salt tty1 38400 linux
 EOF
 chmod +x "$ROOTFS/etc/runit/sv/agetty-tty1/run"
 
@@ -273,7 +273,7 @@ mkdir -p "$ROOTFS/etc/runit/sv/agetty-serial"
 cat > "$ROOTFS/etc/runit/sv/agetty-serial/run" <<EOF
 #!/bin/sh
 exec 2>&1
-exec agetty --noclear --autologin salt $SERIAL 115200 linux
+exec setsid -w agetty --noclear --autologin salt $SERIAL 115200 linux
 EOF
 chmod +x "$ROOTFS/etc/runit/sv/agetty-serial/run"
 enable_sv agetty-serial
