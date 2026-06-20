@@ -11,13 +11,17 @@ on:
       - "os/iso/live-build.sh"
       - ".github/workflows/live-iso.yml"
 
-env:
-  EDITION: ${{ github.event.inputs.edition || 'desktop' }}
-
 jobs:
   build:
-    name: live ISO (x86_64, ${{ github.event.inputs.edition || 'desktop' }})
+    name: live ISO (x86_64, ${{ matrix.edition }})
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.edition == 'desktop' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        edition: [console, desktop]
+    env:
+      EDITION: ${{ matrix.edition }}
     steps:
       - uses: actions/checkout@v4
 
@@ -97,6 +101,14 @@ jobs:
             echo "BOOT FAILED: $MARKER not found"
             exit 1
           fi
+          if [ "$EDITION" != "desktop" ]; then
+            if grep -q "SALTOS_STRATUM_OK" qemu.log; then
+              echo "STRATUM PLANE OK: found SALTOS_STRATUM_OK"
+            else
+              echo "STRATUM PLANE FAILED: SALTOS_STRATUM_OK not found"
+              exit 1
+            fi
+          fi
 
       - name: Upload screenshot
         if: always()
@@ -118,6 +130,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: saltos-live-x86_64-${{ github.event.inputs.edition || 'desktop' }}
+          name: saltos-live-x86_64-${{ matrix.edition }}
           path: out-iso/*.iso
           if-no-files-found: warn
