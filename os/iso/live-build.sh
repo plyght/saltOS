@@ -189,6 +189,17 @@ EOF
   install -Dm755 "$REPO/os/iso/live/Install-saltOS.desktop" \
     "$ROOTFS/home/salt/Desktop/Install-saltOS.desktop" 2>/dev/null || true
 
+  mkdir -p "$ROOTFS/etc/xdg/lxqt"
+  cat > "$ROOTFS/etc/xdg/lxqt/session.conf" <<'EOF'
+[General]
+__userfile__=true
+window_manager=openbox
+
+[Environment]
+EOF
+  mkdir -p "$ROOTFS/home/salt/.config/lxqt"
+  cp "$ROOTFS/etc/xdg/lxqt/session.conf" "$ROOTFS/home/salt/.config/lxqt/session.conf"
+
   mkdir -p "$ROOTFS/usr/lib/saltos"
   cat > "$ROOTFS/usr/lib/saltos/start-audio.sh" <<'EOF'
 #!/bin/sh
