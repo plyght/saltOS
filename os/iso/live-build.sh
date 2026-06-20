@@ -110,6 +110,38 @@ enable_sv() {
 }
 enable_sv agetty-tty1
 enable_sv boot-check
+
+if [ "${SALTOS_E2E:-0}" = "1" ] && [ "$EDITION" != "desktop" ]; then
+  mkdir -p "$ROOTFS/etc/runit/sv/stratum-e2e"
+  cat > "$ROOTFS/etc/runit/sv/stratum-e2e/run" <<'E2E'
+#!/bin/sh
+exec 2>&1
+echo "SALTOS_E2E starting" > /dev/console
+sleep 3
+iface=$(ip -o link show 2>/dev/null | awk -F': ' '$2 != "lo" {print $2; exit}')
+echo "SALTOS_E2E iface=$iface" > /dev/console
+[ -n "$iface" ] && ip link set "$iface" up 2>/dev/null
+dhclient -1 "$iface" > /dev/console 2>&1 || dhclient "$iface" > /dev/console 2>&1
+net=0
+for i in $(seq 1 40); do
+  if getent hosts dl-cdn.alpinelinux.org > /dev/null 2>&1; then net=1; break; fi
+  sleep 2
+done
+echo "SALTOS_E2E net=$net" > /dev/console
+if salt --yes stratum add alpine > /dev/console 2>&1 \
+  && salt run alpine apk update > /dev/console 2>&1 \
+  && salt pkg alpine install nano > /dev/console 2>&1 \
+  && salt run alpine /usr/bin/nano --version > /dev/console 2>&1; then
+  echo "SALTOS_STRATUM_E2E_OK booted saltOS bootstrapped alpine, apk-installed nano, and ran it" > /dev/console
+else
+  echo "SALTOS_STRATUM_E2E_FAIL stratum end-to-end failed" > /dev/console
+fi
+exec sleep infinity
+E2E
+  chmod +x "$ROOTFS/etc/runit/sv/stratum-e2e/run"
+  enable_sv stratum-e2e
+fi
+
 if [ "$EDITION" = "desktop" ]; then
   enable_sv dbus
 

@@ -13,15 +13,19 @@ on:
 
 jobs:
   build:
-    name: live ISO (x86_64, ${{ matrix.edition }})
+    name: live ISO (x86_64, ${{ matrix.label }})
     runs-on: ubuntu-latest
     continue-on-error: ${{ matrix.edition == 'desktop' }}
     strategy:
       fail-fast: false
       matrix:
-        edition: [console, desktop]
+        include:
+          - { edition: console, e2e: "0", label: console }
+          - { edition: console, e2e: "1", label: e2e }
+          - { edition: desktop, e2e: "0", label: desktop }
     env:
       EDITION: ${{ matrix.edition }}
+      SALTOS_E2E: ${{ matrix.e2e }}
     steps:
       - uses: actions/checkout@v4
 
@@ -58,6 +62,7 @@ jobs:
             SALT_BIN="$PWD/build-iso/src/salt/salt" \
             REPO_DIR="$PWD" \
             EDITION="$EDITION" \
+            SALTOS_E2E="$SALTOS_E2E" \
             VERSION="0.1.0" \
             OUT="$PWD/out-iso" \
             bash os/iso/live-build.sh x86_64
@@ -66,22 +71,26 @@ jobs:
       - name: Boot test (QEMU)
         run: |
           ISO=$(ls out-iso/*.iso | head -1)
-          echo "boot-testing $ISO (edition=$EDITION)"
+          echo "boot-testing $ISO (edition=$EDITION e2e=$SALTOS_E2E)"
           rm -f /tmp/qmon
-          if [ "$EDITION" = "desktop" ]; then
+          NET=""
+          if [ "$SALTOS_E2E" = "1" ]; then
+            MARKER="SALTOS_STRATUM_E2E_OK"; MEM=2560; TMO=540; TRIES=53; NET="-nic user,model=e1000"
+          elif [ "$EDITION" = "desktop" ]; then
             MARKER="SALTOS_DESKTOP_OK"; MEM=4096; TMO=420; TRIES=33
           else
             MARKER="SALTOS_BOOT_OK"; MEM=2560; TMO=420; TRIES=40
           fi
           set +e
           timeout "$TMO" qemu-system-x86_64 \
-            -machine pc -m "$MEM" -vga std -display none -no-reboot \
+            -machine pc -m "$MEM" -vga std -display none -no-reboot $NET \
             -serial file:qemu.log -monitor unix:/tmp/qmon,server,nowait \
             -cdrom "$ISO" -boot d &
           QPID=$!
           for i in $(seq 1 "$TRIES"); do
             sleep 10
             grep -q "$MARKER" qemu.log 2>/dev/null && break
+            grep -q "SALTOS_STRATUM_E2E_FAIL" qemu.log 2>/dev/null && break
           done
           if [ "$EDITION" = "desktop" ]; then
             sleep 15
