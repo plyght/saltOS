@@ -12,8 +12,8 @@ SUITE="${SUITE:-bookworm}"
 MIRROR="${MIRROR:-http://deb.debian.org/debian}"
 
 case "$ARCH" in
-  x86_64) DARCH=amd64; SERIAL=ttyS0 ;;
-  aarch64) DARCH=arm64; SERIAL=ttyAMA0 ;;
+  x86_64) DARCH=amd64; SERIAL=ttyS0; GRUB_PKGS="grub-pc-bin,grub-efi-amd64-bin" ;;
+  aarch64) DARCH=arm64; SERIAL=ttyAMA0; GRUB_PKGS="grub-efi-arm64-bin" ;;
   *) echo "unsupported arch: $ARCH" >&2; exit 1 ;;
 esac
 
@@ -40,7 +40,7 @@ elogind,libpam-elogind,policykit-1,\
 dbus,dbus-x11,udev,calamares,calamares-settings-debian,parted,gdisk,\
 fonts-dejavu,fonts-liberation2,sudo"
 
-INSTALLER_PKGS="rsync,squashfs-tools,grub-pc-bin,grub-efi-amd64-bin,\
+INSTALLER_PKGS="rsync,squashfs-tools,$GRUB_PKGS,\
 grub-common,grub2-common,efibootmgr,cryptsetup,lvm2,mtools,\
 locales,console-setup,keyboard-configuration,kbd,chromium,\
 sddm,calamares-settings-debian"
@@ -347,6 +347,18 @@ EOF
   sed -i 's/^allowed_users=.*/allowed_users=anybody/; s/^#\?needs_root_rights=.*/needs_root_rights=yes/' \
     "$ROOTFS/etc/X11/Xwrapper.config" 2>/dev/null || \
     printf 'allowed_users=anybody\nneeds_root_rights=yes\n' > "$ROOTFS/etc/X11/Xwrapper.config"
+
+  mkdir -p "$ROOTFS/etc/X11/xorg.conf.d"
+  cat > "$ROOTFS/etc/X11/xorg.conf.d/20-modesetting.conf" <<'EOF'
+Section "OutputClass"
+    Identifier "vm-kms"
+    MatchDriver "virtio_gpu,bochs-drm,vmwgfx,qxl,simpledrm"
+    Driver "modesetting"
+EndSection
+EOF
+
+  mkdir -p "$ROOTFS/etc/modules-load.d"
+  printf 'virtio_gpu\nvirtio_pci\n' > "$ROOTFS/etc/modules-load.d/saltos-virtio-gpu.conf"
 
   install -Dm755 "$REPO/os/iso/live/Install-saltOS.desktop" \
     "$ROOTFS/home/salt/Desktop/Install-saltOS.desktop" 2>/dev/null || true
