@@ -91,7 +91,7 @@ jobs:
           fi
           set +e
           timeout "$TMO" qemu-system-aarch64 \
-            -machine virt -cpu max -accel kvm:tcg -m "$MEM" -smp 2 \
+            -machine virt,accel=kvm:tcg -cpu max -m "$MEM" -smp 2 \
             -drive if=pflash,format=raw,readonly=on,file=/tmp/code.fd \
             -drive if=pflash,format=raw,file=/tmp/vars.fd \
             -drive file="$ISO",if=virtio,format=raw,media=disk \
