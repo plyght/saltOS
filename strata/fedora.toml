@@ -1,0 +1,21 @@
+name = "fedora"
+family = "fedora"
+arch = "x86_64"
+package_manager = "dnf"
+root = "/strata/fedora"
+trust = "official"
+
+[bootstrap]
+method = "oci"
+url = "fedora:40"
+sha256 = ""
+strip = 0
+
+[integration]
+graphics = true
+audio = true
+dbus = true
+
+[[repository]]
+name = "fedora"
+url = "https://download.fedoraproject.org/pub/fedora/linux/releases/40/Everything/x86_64/os/"

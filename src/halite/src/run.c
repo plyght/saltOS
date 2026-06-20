@@ -296,6 +296,13 @@ static const char *salt_pkg_kind(const salt_stratum *s) {
       return "apt";
     if (strcmp(v, "xbps") == 0 || strcmp(v, "void") == 0) return "xbps";
     if (strcmp(v, "apk") == 0 || strcmp(v, "alpine") == 0) return "apk";
+    if (strcmp(v, "dnf") == 0 || strcmp(v, "yum") == 0 || strcmp(v, "fedora") == 0 ||
+        strcmp(v, "rhel") == 0 || strcmp(v, "centos") == 0 || strcmp(v, "rocky") == 0 ||
+        strcmp(v, "almalinux") == 0)
+      return "dnf";
+    if (strcmp(v, "zypper") == 0 || strcmp(v, "opensuse") == 0 || strcmp(v, "suse") == 0 ||
+        strcmp(v, "sles") == 0)
+      return "zypper";
   }
   return NULL;
 }
@@ -332,15 +339,61 @@ int salt_stratum_pkg(const salt_stratum *s, const char *op, char *const pkgs[], 
       base[nbase++] = "pacman";
       base[nbase++] = "-S";
       base[nbase++] = "--needed";
+      base[nbase++] = "--noconfirm";
     } else if (strcmp(op, "remove") == 0) {
       base[nbase++] = "pacman";
       base[nbase++] = "-Rns";
+      base[nbase++] = "--noconfirm";
     } else if (strcmp(op, "update") == 0) {
       base[nbase++] = "pacman";
       base[nbase++] = "-Syu";
+      base[nbase++] = "--noconfirm";
     } else if (strcmp(op, "search") == 0) {
       base[nbase++] = "pacman";
       base[nbase++] = "-Ss";
+    } else {
+      known_op = false;
+    }
+  } else if (strcmp(kind, "dnf") == 0) {
+    pm_binary = "dnf";
+    if (strcmp(op, "install") == 0) {
+      base[nbase++] = "dnf";
+      base[nbase++] = "install";
+      base[nbase++] = "-y";
+    } else if (strcmp(op, "remove") == 0) {
+      base[nbase++] = "dnf";
+      base[nbase++] = "remove";
+      base[nbase++] = "-y";
+    } else if (strcmp(op, "update") == 0) {
+      base[nbase++] = "dnf";
+      base[nbase++] = "upgrade";
+      base[nbase++] = "-y";
+      append_pkgs = false;
+    } else if (strcmp(op, "search") == 0) {
+      base[nbase++] = "dnf";
+      base[nbase++] = "search";
+    } else {
+      known_op = false;
+    }
+  } else if (strcmp(kind, "zypper") == 0) {
+    pm_binary = "zypper";
+    if (strcmp(op, "install") == 0) {
+      base[nbase++] = "zypper";
+      base[nbase++] = "-n";
+      base[nbase++] = "install";
+    } else if (strcmp(op, "remove") == 0) {
+      base[nbase++] = "zypper";
+      base[nbase++] = "-n";
+      base[nbase++] = "remove";
+    } else if (strcmp(op, "update") == 0) {
+      base[nbase++] = "zypper";
+      base[nbase++] = "-n";
+      base[nbase++] = "update";
+      append_pkgs = false;
+    } else if (strcmp(op, "search") == 0) {
+      base[nbase++] = "zypper";
+      base[nbase++] = "-n";
+      base[nbase++] = "search";
     } else {
       known_op = false;
     }

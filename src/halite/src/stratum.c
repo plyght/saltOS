@@ -575,7 +575,47 @@ int salt_stratum_bootstrap(const salt_strata_ctx *c, salt_strata_db *db,
     }
   }
 
-  if (r->rootfs_url && r->rootfs_url[0]) {
+  if (r->bootstrap && strcmp(r->bootstrap, "oci") == 0) {
+    if (!r->rootfs_url || !r->rootfs_url[0]) {
+      salt_set_error("oci bootstrap needs an image reference in bootstrap.url");
+      free(target);
+      return SALT_ERR;
+    }
+    const char *runtime = command_exists("docker") ? "docker"
+                          : command_exists("podman") ? "podman"
+                                                     : NULL;
+    if (!runtime) {
+      salt_set_error("oci bootstrap needs docker or podman on the host");
+      free(target);
+      return SALT_ERR;
+    }
+    salt_buf cachebuf;
+    salt_buf_init(&cachebuf);
+    salt_buf_printf(&cachebuf, "%s.oci.tar", r->name);
+    char *archive = salt_join_path(c->cache_dir, cachebuf.data);
+    salt_buf_free(&cachebuf);
+    salt_buf cmd;
+    salt_buf_init(&cmd);
+    salt_buf_printf(&cmd,
+                    "set -e; %s pull '%s'; cid=$(%s create '%s'); "
+                    "%s export \"$cid\" -o '%s'; %s rm \"$cid\" >/dev/null 2>&1",
+                    runtime, r->rootfs_url, runtime, r->rootfs_url, runtime, archive, runtime);
+    int rc = run_system(cmd.data);
+    salt_buf_free(&cmd);
+    if (rc != SALT_OK) {
+      salt_set_error("oci export failed for image %s", r->rootfs_url);
+      free(archive);
+      free(target);
+      return SALT_ERR;
+    }
+    if (extract_rootfs("rootfs.tar", archive, target, 0) != SALT_OK) {
+      salt_set_error("rootfs extract failed for %s", r->name);
+      free(archive);
+      free(target);
+      return SALT_ERR;
+    }
+    free(archive);
+  } else if (r->rootfs_url && r->rootfs_url[0]) {
     salt_buf cachebuf;
     salt_buf_init(&cachebuf);
     salt_buf_printf(&cachebuf, "%s.rootfs", r->name);
@@ -611,10 +651,12 @@ int salt_stratum_bootstrap(const salt_strata_ctx *c, salt_strata_db *db,
     }
     const char *suite = r->repo_names.len > 0 ? r->repo_names.items[0] : "stable";
     const char *mirror = r->repo_urls.len > 0 ? r->repo_urls.items[0] : "";
+    const char *deb_arch = "amd64";
+    if (r->arch && strcmp(r->arch, "aarch64") == 0) deb_arch = "arm64";
+    else if (r->arch && strcmp(r->arch, "x86_64") != 0 && r->arch[0]) deb_arch = r->arch;
     salt_buf b;
     salt_buf_init(&b);
-    salt_buf_printf(&b, "debootstrap --arch='%s' '%s' '%s' '%s'",
-                    r->arch ? r->arch : "amd64", suite, target, mirror);
+    salt_buf_printf(&b, "debootstrap --arch='%s' '%s' '%s' '%s'", deb_arch, suite, target, mirror);
     int rc = run_system(b.data);
     salt_buf_free(&b);
     if (rc != SALT_OK) {

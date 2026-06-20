@@ -19,9 +19,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  e2e:
-    name: stratum end-to-end (x86_64)
+  pm:
+    name: ${{ matrix.id }} (${{ matrix.pmname }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { id: alpine,   pmname: apk,    recipe: strata/alpine.toml,   prep: none,        refresh: "apk update" }
+          - { id: void,     pmname: xbps,   recipe: /tmp/void.toml,        prep: void,        refresh: "xbps-install -Sy" }
+          - { id: arch,     pmname: pacman, recipe: strata/arch.toml,      prep: none,        refresh: "pacman-key --init && pacman-key --populate archlinux && pacman -Sy --noconfirm" }
+          - { id: debian,   pmname: apt,    recipe: strata/debian.toml,    prep: debootstrap, refresh: "apt-get update" }
+          - { id: fedora,   pmname: dnf,    recipe: strata/fedora.toml,    prep: none,        refresh: "true" }
+          - { id: opensuse, pmname: zypper, recipe: strata/opensuse.toml,  prep: none,        refresh: "zypper -n refresh" }
     steps:
       - uses: actions/checkout@v4
 
@@ -38,59 +48,74 @@ jobs:
           cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --target salt
 
-      - name: Lint stratum recipes
+      - name: Prepare bootstrap source
         run: |
-          salt=build/src/salt/salt
-          status=0
-          for r in strata/*.toml; do
-            echo "::group::lint $r"
-            "$salt" stratum lint "$r" || status=1
-            echo "::endgroup::"
-          done
-          exit $status
+          case "${{ matrix.prep }}" in
+            debootstrap)
+              sudo apt-get install -y --no-install-recommends debootstrap
+              ;;
+            void)
+              base="https://repo-default.voidlinux.org/live/current"
+              file=$(curl -fsSL "$base/" \
+                | grep -oE 'void-x86_64-ROOTFS-[0-9]+\.tar\.xz' | sort | tail -1)
+              test -n "$file"
+              sed "s|^url = .*ROOTFS.*|url = \"$base/$file\"|" strata/void.toml > /tmp/void.toml
+              echo "resolved void rootfs: $file"
+              grep '^url' /tmp/void.toml
+              ;;
+            *) echo "no prep needed" ;;
+          esac
 
-      - name: Bootstrap the Alpine stratum
+      - name: Lint the recipe
+        run: build/src/salt/salt stratum lint "${{ matrix.recipe }}"
+
+      - name: Bootstrap the ${{ matrix.id }} stratum
         run: |
           salt=build/src/salt/salt
-          sudo "$salt" --yes stratum add strata/alpine.toml
+          sudo "$salt" --yes stratum add "${{ matrix.recipe }}"
           sudo "$salt" stratum list
-          test -x /strata/alpine/bin/busybox
 
       - name: Run a command through the native engine (chroot + namespaces)
         run: |
           salt=build/src/salt/salt
-          out=$(sudo env -u SUDO_UID -u SUDO_GID -u SUDO_USER \
-            "$salt" run alpine /bin/busybox echo hello-from-stratum)
-          echo "engine said: $out"
-          test "$out" = "hello-from-stratum"
+          echo "::group::os-release inside the stratum"
+          out=$(sudo "$salt" run ${{ matrix.id }} /bin/sh -c 'cat /etc/os-release')
+          echo "$out"
+          echo "::endgroup::"
+          echo "$out" | grep -iq '${{ matrix.id }}'
+
+      - name: Refresh the foreign package manager
+        run: |
+          salt=build/src/salt/salt
+          sudo env -u SUDO_UID -u SUDO_GID -u SUDO_USER \
+            "$salt" run ${{ matrix.id }} /bin/sh -c '${{ matrix.refresh }}'
+
+      - name: Install a package through ${{ matrix.pmname }}
+        run: |
+          salt=build/src/salt/salt
+          sudo "$salt" pkg ${{ matrix.id }} install nano
+          sudo "$salt" run ${{ matrix.id }} /bin/sh -c 'command -v nano'
 
       - name: Prove per-stratum snapshot + rollback
         run: |
           salt=build/src/salt/salt
-          echo v1 | sudo tee /strata/alpine/marker >/dev/null
-          sudo "$salt" stratum snapshot alpine
-          echo v2 | sudo tee /strata/alpine/marker >/dev/null
-          sudo "$salt" stratum rollback alpine
-          got=$(sudo cat /strata/alpine/marker)
-          echo "after rollback marker = $got"
+          echo v1 | sudo tee /strata/${{ matrix.id }}/saltos-marker >/dev/null
+          sudo "$salt" stratum snapshot ${{ matrix.id }}
+          echo v2 | sudo tee /strata/${{ matrix.id }}/saltos-marker >/dev/null
+          sudo "$salt" stratum rollback ${{ matrix.id }}
+          got=$(sudo cat /strata/${{ matrix.id }}/saltos-marker)
+          echo "marker after rollback = $got"
           test "$got" = "v1"
 
       - name: Prove command exposure (host shim)
         run: |
           salt=build/src/salt/salt
-          sudo "$salt" expose alpine /bin/busybox as bbox
-          test -x /usr/local/salt/shims/bbox
+          sudo "$salt" expose ${{ matrix.id }} /bin/sh as ${{ matrix.id }}sh
+          test -x /usr/local/salt/shims/${{ matrix.id }}sh
           sudo "$salt" exposed
-
-      - name: Prove install through foreign package manager (apk)
-        run: |
-          salt=build/src/salt/salt
-          sudo cp /etc/resolv.conf /strata/alpine/etc/resolv.conf
-          sudo "$salt" pkg alpine install ripgrep
-          sudo "$salt" run alpine /usr/bin/rg --version
 
       - name: Tear the stratum down
         run: |
           salt=build/src/salt/salt
-          sudo "$salt" --yes stratum remove alpine
-          test ! -e /strata/alpine
+          sudo "$salt" --yes stratum remove ${{ matrix.id }}
+          test ! -e /strata/${{ matrix.id }}
