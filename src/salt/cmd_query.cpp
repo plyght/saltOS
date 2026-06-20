@@ -160,7 +160,43 @@ int cmd_list(const Options &o, const std::vector<std::string> &args) {
 }
 
 int cmd_deployments(const Options &o, const std::vector<std::string> &args) {
-  (void)args;
+  bool register_current = false;
+  for (const auto &a : args) {
+    if (a == "--register-current") {
+      register_current = true;
+    } else {
+      fprintf(stderr, "usage: salt deployments [--register-current]\n");
+      return 2;
+    }
+  }
+
+  if (register_current) {
+    salt_ctx ctx;
+    salt_ctx_init(&ctx, o.root.c_str());
+    salt_db *db = nullptr;
+    if (salt_db_open(ctx.db_path, &db) != SALT_OK) {
+      fprintf(stderr, "salt: %s\n", salt_last_error());
+      salt_ctx_free(&ctx);
+      return 1;
+    }
+    int64_t txn_id = 0;
+    if (salt_db_txn_new(db, "deploy", &txn_id) != SALT_OK) {
+      fprintf(stderr, "salt: %s\n", salt_last_error());
+      salt_db_close(db);
+      salt_ctx_free(&ctx);
+      return 1;
+    }
+    char *snap = nullptr;
+    if (salt_snapshot_create(&ctx, db, txn_id, &snap) == SALT_OK && snap)
+      salt_db_txn_set_snapshot(db, txn_id, snap);
+    free(snap);
+    salt_db_txn_finish(db, txn_id, "ok");
+    printf("registered current deployment (transaction %lld)\n", (long long)txn_id);
+    salt_db_close(db);
+    salt_ctx_free(&ctx);
+    return 0;
+  }
+
   salt_db *db = open_db(o);
   if (!db) return 1;
   salt_deployment_list l;
