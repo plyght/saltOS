@@ -30,17 +30,27 @@ libzstd1,libsodium23,libsqlite3-0,zstd"
 
 DESKTOP_PKGS="xserver-xorg-core,xserver-xorg-legacy,xserver-xorg-input-libinput,\
 xserver-xorg-video-fbdev,xserver-xorg-video-vesa,xinit,xterm,openbox,lxqt-core,\
+lxqt-panel,lxqt-session,lxqt-config,lxqt-policykit,\
 qterminal,pcmanfm-qt,lximage-qt,lxqt-archiver,featherpad,\
 lxqt-themes,oxygen-icon-theme,breeze-icon-theme,adwaita-icon-theme,\
+libqt5svg5,xdg-user-dirs,xdg-utils,desktop-base,mesa-utils,libgl1-mesa-dri,\
 firefox-esr,network-manager,nm-tray,\
 pipewire,pipewire-pulse,wireplumber,pavucontrol-qt,\
 elogind,libpam-elogind,policykit-1,\
 dbus,dbus-x11,udev,calamares,calamares-settings-debian,parted,gdisk,\
 fonts-dejavu,fonts-liberation2,sudo"
 
+INSTALLER_PKGS="rsync,squashfs-tools,grub-pc-bin,grub-efi-amd64-bin,\
+grub-common,grub2-common,efibootmgr,cryptsetup,lvm2,mtools,\
+locales,console-setup,keyboard-configuration,kbd,chromium,\
+sddm,calamares-settings-debian"
+
 PKGS="$BASE_PKGS"
-if [ "$EDITION" = "desktop" ]; then
+if [ "$EDITION" = "desktop" ] || [ "$EDITION" = "installer" ]; then
   PKGS="$PKGS,$DESKTOP_PKGS"
+fi
+if [ "$EDITION" = "installer" ]; then
+  PKGS="$PKGS,$INSTALLER_PKGS"
 fi
 
 mmdebstrap \
@@ -142,7 +152,7 @@ E2E
   enable_sv stratum-e2e
 fi
 
-if [ "$EDITION" = "desktop" ]; then
+if [ "$EDITION" = "desktop" ] || [ "$EDITION" = "installer" ]; then
   enable_sv dbus
 
   mkdir -p "$ROOTFS/etc/runit/sv/elogind"
@@ -185,17 +195,55 @@ done
 {
   echo "SALTOS_DESKTOP_DIAG lxqt-panel not seen after 240s"
   echo "--- processes ---"
-  ps -e -o pid,args 2>/dev/null | grep -iE "[X]org|[l]xqt|[o]penbox|[d]bus|[e]logind|[s]tartx" || true
-  echo "--- /var/log/Xorg.0.log (tail) ---"
-  tail -n 45 /var/log/Xorg.0.log 2>/dev/null || echo "(no Xorg.0.log)"
-  echo "--- /home/salt/.xsession-errors (tail) ---"
-  tail -n 80 /home/salt/.xsession-errors 2>/dev/null || echo "(no .xsession-errors)"
+  ps -e -o pid,args 2>/dev/null | grep -iE "[X]org|[l]xqt|[o]penbox|[d]bus|[e]logind|[s]tartx|[x]init" || true
+  echo "--- lxqt-panel manual launch ---"
+  su - salt -c 'DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/$(id -u salt) timeout 10 lxqt-panel 2>&1 | head -40' 2>&1 || true
+  echo "--- panel/qt errors in .xsession-errors ---"
+  grep -iE "panel|qt\.|qpa|QStandardPaths|symbol|undefined|cannot|No such|libGL|GLX|Could not|terminat|abort|segfault|core dump|assert|fatal" /home/salt/.xsession-errors 2>/dev/null | tail -n 50 || echo "(none)"
+  echo "--- /var/log/Xorg.0.log (EE/WW) ---"
+  grep -E "\(EE\)|\(WW\)" /var/log/Xorg.0.log 2>/dev/null | tail -n 30 || echo "(no Xorg.0.log)"
+  echo "--- /home/salt/.xsession-errors (full) ---"
+  cat /home/salt/.xsession-errors 2>/dev/null || echo "(no .xsession-errors)"
   echo "SALTOS_DESKTOP_DIAG_END"
 } > /dev/console 2>&1
 exec sleep infinity
 EOF
   chmod +x "$ROOTFS/etc/runit/sv/desktop-check/run"
-  enable_sv desktop-check
+
+  mkdir -p "$ROOTFS/etc/runit/sv/installer-check"
+  cat > "$ROOTFS/etc/runit/sv/installer-check/run" <<'EOF'
+#!/bin/sh
+exec 2>&1
+n=0
+while [ "$n" -lt 150 ]; do
+  if pgrep -f "calamares" >/dev/null 2>&1; then
+    echo "SALTOS_INSTALLER_OK calamares installer is running" > /dev/console
+    exec sleep infinity
+  fi
+  sleep 2
+  n=$((n + 1))
+done
+{
+  echo "SALTOS_INSTALLER_DIAG calamares not seen after 300s"
+  echo "--- processes ---"
+  ps -e -o pid,args 2>/dev/null | grep -iE "[X]org|[l]xqt|[o]penbox|[c]alamares|[d]bus|[e]logind|[s]tartx|[x]init" || true
+  echo "--- calamares config present ---"
+  ls -l /etc/calamares/settings.conf 2>/dev/null || echo "(no settings.conf)"
+  echo "--- calamares errors in .xsession-errors ---"
+  grep -iE "calamares|qt\.|qpa|symbol|undefined|cannot|No such|libGL|GLX|Could not|terminat|abort|segfault|assert|fatal|Traceback" /home/salt/.xsession-errors 2>/dev/null | tail -n 60 || echo "(none)"
+  echo "--- /home/salt/.xsession-errors (full) ---"
+  cat /home/salt/.xsession-errors 2>/dev/null || echo "(no .xsession-errors)"
+  echo "SALTOS_INSTALLER_DIAG_END"
+} > /dev/console 2>&1
+exec sleep infinity
+EOF
+  chmod +x "$ROOTFS/etc/runit/sv/installer-check/run"
+
+  if [ "$EDITION" = "installer" ]; then
+    enable_sv installer-check
+  else
+    enable_sv desktop-check
+  fi
 fi
 
 mkdir -p "$ROOTFS/etc/salt"
@@ -255,13 +303,38 @@ EOF
   enable_sv netdhcp
 fi
 
-if [ "$EDITION" = "desktop" ]; then
+setup_desktop_session() {
   cat > "$ROOTFS/home/salt/.bash_profile" <<'EOF'
 if [ -z "${DISPLAY:-}" ] && [ "$(tty)" = /dev/tty1 ]; then
-  exec startx /usr/bin/lxqt-session > "$HOME/.xsession-errors" 2>&1
+  exec startx > "$HOME/.xsession-errors" 2>&1
 fi
 EOF
   chroot "$ROOTFS" chown salt:salt /home/salt/.bash_profile || true
+
+  cat > "$ROOTFS/home/salt/.xinitrc" <<'EOF'
+#!/bin/sh
+export XDG_CURRENT_DESKTOP=LXQt
+export XDG_SESSION_DESKTOP=LXQt
+export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+export QT_QPA_PLATFORM=xcb
+export QT_QPA_PLATFORMTHEME=lxqt
+mkdir -p "$XDG_RUNTIME_DIR"
+chmod 0700 "$XDG_RUNTIME_DIR"
+xrdb -merge /dev/null 2>/dev/null
+xdg-user-dirs-update 2>/dev/null
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
+  eval "$(dbus-launch --sh-syntax --exit-with-session)"
+fi
+exec lxqt-session
+EOF
+  chroot "$ROOTFS" chown salt:salt /home/salt/.xinitrc || true
+  chmod +x "$ROOTFS/home/salt/.xinitrc"
+
+  cat > "$ROOTFS/etc/X11/xinit/xserverrc" <<'EOF'
+#!/bin/sh
+exec /usr/bin/X -nolisten tcp "$@" vt1
+EOF
+  chmod +x "$ROOTFS/etc/X11/xinit/xserverrc"
 
   sed -i 's/^allowed_users=.*/allowed_users=anybody/; s/^#\?needs_root_rights=.*/needs_root_rights=yes/' \
     "$ROOTFS/etc/X11/Xwrapper.config" 2>/dev/null || \
@@ -269,6 +342,11 @@ EOF
 
   install -Dm755 "$REPO/os/iso/live/Install-saltOS.desktop" \
     "$ROOTFS/home/salt/Desktop/Install-saltOS.desktop" 2>/dev/null || true
+
+  for d in /etc/xdg/autostart; do
+    [ -f "$ROOTFS$d/add-calamares-desktop-icon.desktop" ] && rm -f "$ROOTFS$d/add-calamares-desktop-icon.desktop"
+  done
+  rm -f "$ROOTFS/usr/bin/add-calamares-desktop-icon" 2>/dev/null || true
 
   mkdir -p "$ROOTFS/etc/xdg/lxqt"
   cat > "$ROOTFS/etc/xdg/lxqt/session.conf" <<'EOF'
@@ -280,6 +358,33 @@ window_manager=openbox
 EOF
   mkdir -p "$ROOTFS/home/salt/.config/lxqt"
   cp "$ROOTFS/etc/xdg/lxqt/session.conf" "$ROOTFS/home/salt/.config/lxqt/session.conf"
+
+  cat > "$ROOTFS/home/salt/.config/lxqt/lxqt.conf" <<'EOF'
+[General]
+icon_theme=oxygen
+theme=ambiance
+
+[Qt]
+style=Fusion
+EOF
+
+  cat > "$ROOTFS/home/salt/.config/lxqt/panel.conf" <<'EOF'
+[General]
+__userfile__=true
+
+[panel1]
+alignment=-1
+background_color=@Variant(\0\0\0\x43\0\xff\xff\0\0\0\0\0\0\0\0)
+desktop=0
+hidable=false
+iconSize=22
+lineCount=1
+panelSize=32
+plugins=mainmenu, quicklaunch, taskbar, tray, statusnotifier, clock
+position=Bottom
+width=100
+width-percent=true
+EOF
 
   mkdir -p "$ROOTFS/usr/lib/saltos"
   cat > "$ROOTFS/usr/lib/saltos/start-audio.sh" <<'EOF'
@@ -301,6 +406,58 @@ OnlyShowIn=LXQt;
 X-LXQt-Need-Tray=false
 NoDisplay=true
 EOF
+
+  chroot "$ROOTFS" chown -R salt:salt /home/salt 2>/dev/null || true
+}
+
+if [ "$EDITION" = "desktop" ]; then
+  setup_desktop_session
+fi
+
+if [ "$EDITION" = "installer" ]; then
+  setup_desktop_session
+
+  mkdir -p "$ROOTFS/etc/calamares" "$ROOTFS/usr/lib/calamares/modules" \
+    "$ROOTFS/usr/share/calamares/branding/saltos"
+
+  install -Dm644 "$REPO/os/installer/settings-live.conf" \
+    "$ROOTFS/etc/calamares/settings.conf"
+
+  for c in "$REPO"/os/installer/modules-live/*; do
+    [ -f "$c" ] && install -Dm644 "$c" "$ROOTFS/etc/calamares/$(basename "$c")"
+  done
+
+  cp -a "$REPO/os/installer/branding/saltos/." \
+    "$ROOTFS/usr/share/calamares/branding/saltos/"
+
+  for m in "$REPO"/os/installer/modules/*/; do
+    name="$(basename "$m")"
+    mkdir -p "$ROOTFS/usr/lib/calamares/modules/$name"
+    cp -a "$m". "$ROOTFS/usr/lib/calamares/modules/$name/"
+  done
+
+  cat > "$ROOTFS/usr/local/bin/saltos-installer" <<'EOF'
+#!/bin/sh
+export XDG_CURRENT_DESKTOP=LXQt
+exec pkexec calamares -c /etc/calamares 2>&1
+EOF
+  chmod +x "$ROOTFS/usr/local/bin/saltos-installer"
+
+  mkdir -p "$ROOTFS/etc/xdg/autostart"
+  cat > "$ROOTFS/etc/xdg/autostart/saltos-installer.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Install saltOS
+Comment=Launch the saltOS guided installer
+Exec=sh -c 'sleep 4; exec sudo -E calamares -c /etc/calamares'
+Terminal=false
+OnlyShowIn=LXQt;
+X-LXQt-Need-Tray=false
+EOF
+
+  mkdir -p "$ROOTFS/etc/sudoers.d"
+  echo "salt ALL=(ALL) NOPASSWD: /usr/bin/calamares" > "$ROOTFS/etc/sudoers.d/calamares"
+  chmod 0440 "$ROOTFS/etc/sudoers.d/calamares"
 
   chroot "$ROOTFS" chown -R salt:salt /home/salt 2>/dev/null || true
 fi

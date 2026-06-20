@@ -1,0 +1,111 @@
+name: installer-iso
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "os/iso/live-build.sh"
+      - "os/installer/**"
+      - ".github/workflows/installer-iso.yml"
+
+jobs:
+  build:
+    name: installer ISO (x86_64)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet \
+            /opt/hostedtoolcache/CodeQL /usr/local/.ghcup 2>/dev/null || true
+          df -h /
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config \
+            libzstd-dev libsodium-dev libsqlite3-dev build-essential \
+            mmdebstrap debian-archive-keyring squashfs-tools xorriso mtools \
+            grub-pc-bin grub-efi-amd64-bin grub-common \
+            qemu-system-x86 ovmf socat netpbm
+
+      - name: Build salt against the Debian base
+        run: |
+          docker run --rm -v "$PWD":/src -w /src debian:bookworm bash -c '
+            set -e
+            apt-get update
+            apt-get install -y --no-install-recommends \
+              cmake ninja-build pkg-config g++ ca-certificates \
+              libzstd-dev libsodium-dev libsqlite3-dev
+            cmake -G Ninja -B build-iso -DCMAKE_BUILD_TYPE=Release
+            cmake --build build-iso --target salt'
+
+      - name: Build installer ISO
+        run: |
+          sudo env \
+            SALT_BIN="$PWD/build-iso/src/salt/salt" \
+            REPO_DIR="$PWD" \
+            EDITION="installer" \
+            VERSION="0.1.0" \
+            OUT="$PWD/out-iso" \
+            bash os/iso/live-build.sh x86_64
+          sudo chown -R "$USER" out-iso
+
+      - name: Boot test (QEMU)
+        run: |
+          ISO=$(ls out-iso/*.iso | head -1)
+          echo "boot-testing installer ISO $ISO"
+          rm -f /tmp/qmon
+          MARKER="SALTOS_INSTALLER_OK"; MEM=4096; TMO=480; TRIES=40
+          set +e
+          timeout "$TMO" qemu-system-x86_64 \
+            -machine pc -m "$MEM" -vga std -display none -no-reboot \
+            -serial file:qemu.log -monitor unix:/tmp/qmon,server,nowait \
+            -cdrom "$ISO" -boot d &
+          QPID=$!
+          for i in $(seq 1 "$TRIES"); do
+            sleep 10
+            grep -q "$MARKER" qemu.log 2>/dev/null && break
+            grep -q "SALTOS_INSTALLER_DIAG_END" qemu.log 2>/dev/null && break
+          done
+          sleep 15
+          printf 'screendump /tmp/screen.ppm\n' | socat - unix-connect:/tmp/qmon || true
+          sleep 3
+          [ -f /tmp/screen.ppm ] && pnmtopng /tmp/screen.ppm > saltos-installer.png || echo "no screendump"
+          kill $QPID 2>/dev/null || true
+          set -e
+          echo "----- qemu serial tail -----"
+          tail -n 120 qemu.log || true
+          if grep -q "$MARKER" qemu.log; then
+            echo "INSTALLER OK: found $MARKER"
+          else
+            echo "INSTALLER FAILED: $MARKER not found"
+            exit 1
+          fi
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: saltos-installer-screenshot
+          path: saltos-installer.png
+          if-no-files-found: ignore
+
+      - name: Upload serial log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-serial-log
+          path: qemu.log
+          if-no-files-found: ignore
+
+      - name: Upload ISO
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: saltos-installer-x86_64
+          path: out-iso/*.iso
+          if-no-files-found: warn
