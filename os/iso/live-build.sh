@@ -25,6 +25,7 @@ mkdir -p "$ROOTFS" "$ISODIR/live" "$ISODIR/boot/grub" "$OUT"
 BASE_PKGS="linux-image-$DARCH,live-boot,runit-init,btrfs-progs,dosfstools,e2fsprogs,\
 util-linux,kmod,pciutils,file,less,nano,bash,coreutils,procps,\
 iproute2,iputils-ping,isc-dhcp-client,ca-certificates,\
+curl,tar,xz-utils,debootstrap,\
 libzstd1,libsodium23,libsqlite3-0,zstd"
 
 DESKTOP_PKGS="xserver-xorg-core,xserver-xorg-legacy,xserver-xorg-input-libinput,\
