@@ -12,8 +12,8 @@ SUITE="${SUITE:-bookworm}"
 MIRROR="${MIRROR:-http://deb.debian.org/debian}"
 
 case "$ARCH" in
-  x86_64) DARCH=amd64 ;;
-  aarch64) DARCH=arm64 ;;
+  x86_64) DARCH=amd64; SERIAL=ttyS0 ;;
+  aarch64) DARCH=arm64; SERIAL=ttyAMA0 ;;
   *) echo "unsupported arch: $ARCH" >&2; exit 1 ;;
 esac
 
@@ -25,7 +25,7 @@ mkdir -p "$ROOTFS" "$ISODIR/live" "$ISODIR/boot/grub" "$OUT"
 BASE_PKGS="linux-image-$DARCH,live-boot,runit-init,btrfs-progs,dosfstools,e2fsprogs,\
 util-linux,kmod,pciutils,file,less,nano,bash,coreutils,procps,\
 iproute2,iputils-ping,isc-dhcp-client,ca-certificates,\
-curl,tar,xz-utils,debootstrap,\
+curl,tar,xz-utils,debootstrap,sudo,\
 libzstd1,libsodium23,libsqlite3-0,zstd"
 
 DESKTOP_PKGS="xserver-xorg-core,xserver-xorg-legacy,xserver-xorg-input-libinput,\
@@ -206,17 +206,56 @@ key = ""
 EOF
 chroot "$ROOTFS" /usr/bin/salt --root / list >/dev/null 2>&1 || true
 
-if [ "$EDITION" = "desktop" ]; then
-  chroot "$ROOTFS" useradd -m -s /bin/bash -G sudo salt 2>/dev/null || true
-  echo "salt:salt" | chroot "$ROOTFS" chpasswd || true
+chroot "$ROOTFS" useradd -m -s /bin/bash salt 2>/dev/null || true
+echo "salt:salt" | chroot "$ROOTFS" chpasswd || true
+echo "root:root" | chroot "$ROOTFS" chpasswd || true
+chroot "$ROOTFS" usermod -aG sudo salt 2>/dev/null || true
+mkdir -p "$ROOTFS/etc/sudoers.d"
+echo "salt ALL=(ALL) NOPASSWD: ALL" > "$ROOTFS/etc/sudoers.d/salt"
+chmod 0440 "$ROOTFS/etc/sudoers.d/salt"
 
-  cat > "$ROOTFS/etc/runit/sv/agetty-tty1/run" <<'EOF'
+cat > "$ROOTFS/etc/runit/sv/agetty-tty1/run" <<'EOF'
 #!/bin/sh
 exec 2>&1
 exec agetty --noclear --autologin salt tty1 38400 linux
 EOF
-  chmod +x "$ROOTFS/etc/runit/sv/agetty-tty1/run"
+chmod +x "$ROOTFS/etc/runit/sv/agetty-tty1/run"
 
+mkdir -p "$ROOTFS/etc/runit/sv/agetty-serial"
+cat > "$ROOTFS/etc/runit/sv/agetty-serial/run" <<EOF
+#!/bin/sh
+exec 2>&1
+exec agetty --noclear --autologin salt $SERIAL 115200 linux
+EOF
+chmod +x "$ROOTFS/etc/runit/sv/agetty-serial/run"
+enable_sv agetty-serial
+
+cat > "$ROOTFS/etc/motd" <<'EOF'
+
+  saltOS live -- you are 'salt' (passwordless sudo).
+
+  sudo salt stratum add alpine
+  sudo salt run alpine /bin/busybox echo hello-from-alpine
+  sudo salt pkg alpine install ripgrep && sudo salt run alpine rg --version
+  salt --help
+
+EOF
+
+if [ "$EDITION" != "desktop" ]; then
+  mkdir -p "$ROOTFS/etc/runit/sv/netdhcp"
+  cat > "$ROOTFS/etc/runit/sv/netdhcp/run" <<'EOF'
+#!/bin/sh
+exec 2>&1
+iface=$(ip -o link show 2>/dev/null | awk -F': ' '$2 != "lo" {print $2; exit}')
+[ -n "$iface" ] || { sleep 5; exec sleep 30; }
+ip link set "$iface" up 2>/dev/null
+exec dhclient -d "$iface"
+EOF
+  chmod +x "$ROOTFS/etc/runit/sv/netdhcp/run"
+  enable_sv netdhcp
+fi
+
+if [ "$EDITION" = "desktop" ]; then
   cat > "$ROOTFS/home/salt/.bash_profile" <<'EOF'
 if [ -z "${DISPLAY:-}" ] && [ "$(tty)" = /dev/tty1 ]; then
   exec startx /usr/bin/lxqt-session > "$HOME/.xsession-errors" 2>&1
@@ -280,11 +319,11 @@ set default=0
 set timeout=5
 insmod all_video
 menuentry "saltOS $VERSION (live)" {
-  linux /live/vmlinuz boot=live components init=/sbin/runit-init console=tty0 console=ttyS0,115200
+  linux /live/vmlinuz boot=live components init=/sbin/runit-init console=tty0 console=$SERIAL,115200
   initrd /live/initrd
 }
 menuentry "saltOS $VERSION (live, to RAM)" {
-  linux /live/vmlinuz boot=live components toram init=/sbin/runit-init console=tty0 console=ttyS0,115200
+  linux /live/vmlinuz boot=live components toram init=/sbin/runit-init console=tty0 console=$SERIAL,115200
   initrd /live/initrd
 }
 EOF
