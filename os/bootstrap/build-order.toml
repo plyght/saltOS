@@ -107,6 +107,9 @@ packages = [
   "salt",
   "git",
   "curl",
+  "rsync",
+  "parted",
+  "gptfdisk",
 ]
 
 [desktop]

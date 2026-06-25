@@ -1,0 +1,195 @@
+name: native-base
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "recipes/**"
+      - "os/bootstrap/**"
+      - "os/iso/build-iso.sh"
+      - "src/**"
+      - ".github/workflows/native-base.yml"
+
+concurrency:
+  group: native-base-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  toolchain:
+    name: stage cross-toolchain + temp-tools (x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet \
+            /opt/hostedtoolcache/CodeQL /usr/local/.ghcup 2>/dev/null || true
+          df -h /
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config build-essential \
+            libzstd-dev libsodium-dev libsqlite3-dev \
+            bison flex bc libssl-dev libelf-dev gawk texinfo python3 \
+            xz-utils bzip2 curl file cpio ca-certificates
+      - name: Build salt
+        run: |
+          cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target salt salt-setup
+      - name: Restore grain cache
+        uses: actions/cache/restore@v4
+        with:
+          path: saltos-build
+          key: native-base-x86_64-tc-${{ hashFiles('recipes/**', 'os/bootstrap/build-order.toml') }}
+      - name: Build cross-toolchain + temp-tools
+        run: |
+          export PATH="$PWD/build/src/salt:$PATH"
+          export SALT_ARCH=x86_64 OUT="$PWD/saltos-build"
+          export STAGES="cross-toolchain temp-tools"
+          sudo --preserve-env=PATH,SALT_ARCH,OUT,STAGES os/bootstrap/bootstrap.sh
+          sudo chown -R "$USER" saltos-build 2>/dev/null || true
+      - name: Save grain cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: saltos-build
+          key: native-base-x86_64-tc-${{ hashFiles('recipes/**', 'os/bootstrap/build-order.toml') }}
+      - name: Upload stage output
+        uses: actions/upload-artifact@v4
+        with:
+          name: saltos-build-x86_64
+          path: saltos-build
+          retention-days: 1
+
+  base:
+    name: stage base (x86_64)
+    needs: toolchain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet \
+            /opt/hostedtoolcache/CodeQL /usr/local/.ghcup 2>/dev/null || true
+          df -h /
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config build-essential \
+            libzstd-dev libsodium-dev libsqlite3-dev \
+            bison flex bc libssl-dev libelf-dev gawk texinfo python3 \
+            xz-utils bzip2 curl file cpio ca-certificates
+      - name: Build salt
+        run: |
+          cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target salt salt-setup
+      - name: Download toolchain output
+        uses: actions/download-artifact@v4
+        with:
+          name: saltos-build-x86_64
+          path: saltos-build
+      - name: Build base stage
+        run: |
+          export PATH="$PWD/build/src/salt:$PATH"
+          export SALT_ARCH=x86_64 OUT="$PWD/saltos-build"
+          export STAGES="base"
+          sudo --preserve-env=PATH,SALT_ARCH,OUT,STAGES os/bootstrap/bootstrap.sh
+          sudo chown -R "$USER" saltos-build 2>/dev/null || true
+      - name: Upload base output
+        uses: actions/upload-artifact@v4
+        with:
+          name: saltos-build-x86_64
+          path: saltos-build
+          overwrite: true
+          retention-days: 1
+
+  iso:
+    name: assemble + boot-test native ISO (x86_64)
+    needs: base
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet \
+            /opt/hostedtoolcache/CodeQL /usr/local/.ghcup 2>/dev/null || true
+          df -h /
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config build-essential \
+            libzstd-dev libsodium-dev libsqlite3-dev \
+            xorriso squashfs-tools dosfstools mtools \
+            grub-pc-bin grub-efi-amd64-bin grub-common \
+            qemu-system-x86
+      - name: Build salt
+        run: |
+          cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target salt salt-setup
+      - name: Download base output
+        uses: actions/download-artifact@v4
+        with:
+          name: saltos-build-x86_64
+          path: saltos-build
+      - name: Assemble rootfs and ISO
+        run: |
+          SYSROOT="$PWD/saltos-build/x86_64/sysroot"
+          if [ ! -x "$SYSROOT/usr/bin/salt" ] || ! ls "$SYSROOT"/lib/modules >/dev/null 2>&1; then
+            echo "base sysroot incomplete; cannot assemble ISO"
+            ls -la "$SYSROOT" 2>/dev/null || true
+            exit 1
+          fi
+          export PATH="$PWD/build/src/salt:$PATH"
+          ROOTFS="$PWD/saltos-build/x86_64/rootfs"
+          sudo rm -rf "$ROOTFS"
+          sudo --preserve-env=PATH ROOTFS="$ROOTFS" OUT="$PWD/saltos-build" \
+            ARCH=x86_64 STAGES="base" os/bootstrap/stage-rootfs.sh
+          mkdir -p out
+          sudo os/iso/build-iso.sh \
+            --arch x86_64 \
+            --rootfs "$ROOTFS" \
+            --installer salt-setup \
+            --salt-setup "$PWD/build/src/setup/salt-setup" \
+            --out out/saltos-native-base-x86_64.iso
+          sudo chown -R "$USER" out 2>/dev/null || true
+      - name: Boot test (QEMU)
+        run: |
+          ISO=$(ls out/*.iso 2>/dev/null | head -1)
+          [ -n "$ISO" ] || { echo "no ISO produced"; exit 1; }
+          MARKER="SALTOS_BOOT_OK"
+          set +e
+          timeout 300 qemu-system-x86_64 \
+            -machine pc -m 4096 -display none -no-reboot \
+            -serial file:qemu.log -cdrom "$ISO" -boot d &
+          QPID=$!
+          for i in $(seq 1 28); do
+            sleep 10
+            grep -q "$MARKER" qemu.log 2>/dev/null && break
+          done
+          kill $QPID 2>/dev/null || true
+          set -e
+          tail -n 80 qemu.log || true
+          if grep -q "$MARKER" qemu.log; then
+            echo "NATIVE BASE BOOT OK"
+          else
+            echo "NATIVE BASE BOOT FAILED: marker not found"
+            exit 1
+          fi
+      - name: Upload bootstrap logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-base-logs
+          path: saltos-build/x86_64/logs/*.log
+          if-no-files-found: ignore
+      - name: Upload ISO
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: saltos-native-base-iso-x86_64
+          path: out/*.iso
+          if-no-files-found: ignore

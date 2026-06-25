@@ -1,0 +1,31 @@
+name = "rsync"
+version = "3.4.1"
+release = 1
+summary = "Fast incremental file transfer utility"
+license = "GPL-3.0-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://download.samba.org/pub/rsync/src/rsync-3.4.1.tar.gz"
+sha256 = "2924bcb3a1ed8b551fc101f740b9f0fe0a202b115027647cf69850d65fd88c52"
+
+[build]
+system = "autotools"
+deps = ["gcc", "make", "zlib", "popt", "openssl"]
+script = """
+#!/bin/sh
+./configure --prefix=/usr \\
+    --disable-md2man \\
+    --disable-xxhash \\
+    --disable-zstd \\
+    --disable-lz4
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+"""
+
+[package]
+deps = ["glibc", "zlib", "popt", "openssl"]
+
+[reproducibility]
+status = "unverified"
+reason = "not yet built and bit-compared in a clean environment"

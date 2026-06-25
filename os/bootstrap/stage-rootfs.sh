@@ -5,6 +5,7 @@ ARCH="${ARCH:-x86_64}"
 OUT="${OUT:-/var/tmp/saltos-build}"
 REPO_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 SALT="${SALT:-salt}"
+STAGES="${STAGES:-base desktop}"
 
 case "$ARCH" in
   arm64) ARCH=aarch64 ;;
@@ -41,12 +42,12 @@ stage_packages() {
   ' "$ORDER"
 }
 
-log "installing base + desktop packages into $ROOTFS"
-for stage in base desktop; do
+log "installing $STAGES packages into $ROOTFS"
+for stage in $STAGES; do
   stage_packages "$stage" | while IFS= read -r pkg; do
     [ -n "$pkg" ] || continue
-    p="$PKGDIR/$pkg-$ARCH.grain"
-    [ -f "$p" ] || { log "skip missing package $pkg"; continue; }
+    p=$(ls -1t "$PKGDIR/$pkg"-*."$ARCH".grain 2>/dev/null | head -n1)
+    [ -n "$p" ] || { log "skip missing package $pkg"; continue; }
     "$SALT" install "$p" --root "$ROOTFS" --yes
   done
 done
