@@ -58,14 +58,15 @@ jobs:
             EDITION="installer" \
             VERSION="0.1.0" \
             OUT="$PWD/out-iso" \
+            SALTOS_E2E="1" \
             bash os/iso/void-build.sh x86_64
           sudo chown -R "$USER" out-iso
 
       - name: Boot test (QEMU)
         run: |
           ISO=$(ls out-iso/*.iso | head -1)
-          echo "boot-testing Void ISO $ISO"
-          MARKER="SALTOS_BOOT_OK"; MEM=4096; TMO=420; TRIES=36
+          echo "boot-testing Void ISO $ISO (boot + foreign-distro package install via salt)"
+          OK="SALTOS_PKG_E2E_OK"; FAIL="SALTOS_PKG_E2E_FAIL"; MEM=4096; TMO=1000; TRIES=95
           set +e
           timeout "$TMO" qemu-system-x86_64 \
             -machine pc -m "$MEM" -vga std -display none -no-reboot \
@@ -74,16 +75,17 @@ jobs:
           QPID=$!
           for i in $(seq 1 "$TRIES"); do
             sleep 10
-            grep -q "$MARKER" qemu.log 2>/dev/null && break
+            grep -qE "$OK|$FAIL" qemu.log 2>/dev/null && break
           done
           kill $QPID 2>/dev/null || true
           set -e
           echo "----- qemu serial tail -----"
-          tail -n 150 qemu.log || true
-          if grep -q "$MARKER" qemu.log; then
-            echo "VOID BOOT OK: found $MARKER"
+          tail -n 200 qemu.log || true
+          grep -q "SALTOS_BOOT_OK" qemu.log && echo "boot: OK" || echo "boot: marker missing"
+          if grep -q "$OK" qemu.log; then
+            echo "VOID PKG E2E OK: bootstrapped a foreign distro and installed+ran a package via salt"
           else
-            echo "VOID BOOT FAILED: $MARKER not found"
+            echo "VOID PKG E2E FAILED: $OK not found"
             exit 1
           fi
 

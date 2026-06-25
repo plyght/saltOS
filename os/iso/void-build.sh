@@ -152,6 +152,30 @@ EOF
 chmod 0755 "$ROOTFS/etc/sv/saltos-boot-check/run"
 enable_sv saltos-boot-check
 
+if [ "${SALTOS_E2E:-0}" = "1" ]; then
+  mkdir -p "$ROOTFS/etc/sv/saltos-pkg-e2e"
+  cat > "$ROOTFS/etc/sv/saltos-pkg-e2e/run" <<'EOF'
+#!/bin/sh
+exec 2>&1
+echo "SALTOS_PKG_E2E starting" > /dev/console
+for i in $(seq 1 90); do
+  getent hosts dl-cdn.alpinelinux.org >/dev/null 2>&1 && break
+  sleep 2
+done
+if salt --yes stratum add alpine > /dev/console 2>&1 \
+  && salt run alpine apk update > /dev/console 2>&1 \
+  && salt pkg alpine install nano > /dev/console 2>&1 \
+  && salt run alpine /usr/bin/nano --version > /dev/console 2>&1; then
+  echo "SALTOS_PKG_E2E_OK installed and ran a foreign-distro alpine package via salt" > /dev/console
+else
+  echo "SALTOS_PKG_E2E_FAIL" > /dev/console
+fi
+exec sleep infinity
+EOF
+  chmod 0755 "$ROOTFS/etc/sv/saltos-pkg-e2e/run"
+  enable_sv saltos-pkg-e2e
+fi
+
 if [ "$EDITION" = "desktop" ] || [ "$EDITION" = "installer" ]; then
   enable_sv sddm
   mkdir -p "$ROOTFS/etc/sddm.conf.d"
