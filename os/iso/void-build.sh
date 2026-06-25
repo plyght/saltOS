@@ -67,7 +67,7 @@ inchroot "xbps-install -Sy void-repo-nonfree"
 inchroot "xbps-install -Sy linux-firmware linux-firmware-network linux-firmware-intel linux-firmware-amd" || true
 
 echo "==> installing base, boot, and installer tooling"
-inchroot "xbps-install -Sy base-system linux dracut btrfs-progs dosfstools gptfdisk parted rsync squashfs-tools grub grub-${VOID_ARCH}-efi efibootmgr NetworkManager dbus elogind polkit seatd sudo"
+inchroot "xbps-install -Sy base-system linux dracut btrfs-progs dosfstools gptfdisk parted rsync squashfs-tools curl ca-certificates grub grub-${VOID_ARCH}-efi efibootmgr NetworkManager dbus elogind polkit seatd sudo"
 
 if [ "$EDITION" = "desktop" ] || [ "$EDITION" = "installer" ]; then
   echo "==> installing desktop"
