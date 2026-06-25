@@ -39,6 +39,16 @@ jobs:
           cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --target salt salt-setup
 
+      - name: Verify salt is portable (no third-party shared deps)
+        run: |
+          echo "ldd build/src/salt/salt:"
+          ldd build/src/salt/salt || true
+          if ldd build/src/salt/salt | grep -qiE 'libsodium|libzstd|libsqlite3'; then
+            echo "ERROR: salt still dynamically links a third-party lib that the base may not provide"
+            exit 1
+          fi
+          echo "OK: salt has no libsodium/libzstd/libsqlite3 dynamic deps"
+
       - name: Build Void-base ISO
         run: |
           sudo env \

@@ -20,19 +20,13 @@ target_include_directories(halite PUBLIC
 )
 
 target_include_directories(halite PRIVATE
-  ${ZSTD_INCLUDE_DIRS}
-  ${SODIUM_INCLUDE_DIRS}
-  ${SQLITE3_INCLUDE_DIRS}
+  ${SALT_DEP_INCLUDE_DIRS}
 )
 
 target_link_directories(halite PUBLIC
-  ${ZSTD_LIBRARY_DIRS}
-  ${SODIUM_LIBRARY_DIRS}
-  ${SQLITE3_LIBRARY_DIRS}
+  ${SALT_DEP_LIBRARY_DIRS}
 )
 
 target_link_libraries(halite PUBLIC
-  ${ZSTD_LIBRARIES}
-  ${SODIUM_LIBRARIES}
-  ${SQLITE3_LIBRARIES}
+  ${SALT_DEP_LIBS}
 )
