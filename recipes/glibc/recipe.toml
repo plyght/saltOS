@@ -7,7 +7,7 @@ arch = ["x86_64", "aarch64"]
 
 [source]
 url = "https://ftp.gnu.org/gnu/glibc/glibc-2.39.tar.xz"
-sha256 = "f77bd47cf8170c57365ae7f8e575d6a1bdde2da767bcb0c34a0e9d8bde5cc41a"
+sha256 = "f77bd47cf8170c57365ae7bf86696c118adb3b120d3259c64c502d3dc1e2d926"
 
 [build]
 system = "autotools"
