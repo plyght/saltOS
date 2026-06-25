@@ -136,7 +136,7 @@ enable_sv() {
     ln -sf "/etc/sv/$1" "$RUNDIR/$1"
   fi
 }
-for svc in udevd dbus NetworkManager polkitd seatd elogind; do enable_sv "$svc"; done
+for svc in udevd dbus NetworkManager polkitd seatd; do enable_sv "$svc"; done
 
 mkdir -p "$ROOTFS/etc/sv/saltos-boot-check"
 cat > "$ROOTFS/etc/sv/saltos-boot-check/run" <<'EOF'
