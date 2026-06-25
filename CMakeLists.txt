@@ -20,6 +20,7 @@ pkg_check_modules(SQLITE3 REQUIRED sqlite3)
 
 add_subdirectory(src/halite)
 add_subdirectory(src/salt)
+add_subdirectory(src/setup)
 
 enable_testing()
 add_subdirectory(tests)

@@ -7,7 +7,7 @@ arch = ["x86_64", "aarch64"]
 
 [source]
 url = "https://archive.mesa3d.org/mesa-24.1.5.tar.xz"
-sha256 = "TODO-sha256"
+sha256 = "02761ffd965dd64b95421ebfca1191d73724aba00f30034009237564f34cf976"
 
 [build]
 system = "meson"

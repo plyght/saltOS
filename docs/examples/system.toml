@@ -1,0 +1,38 @@
+schema = 1
+
+[system]
+hostname = "saltbox"
+arch = "x86_64"
+
+[native]
+repo = "current"
+packages = [
+  "glibc",
+  "linux",
+  "runit",
+  "salt",
+  "git",
+  "curl",
+]
+
+[native.pin]
+git = "2.47.0"
+
+[[strata]]
+name = "arch"
+recipe = "arch"
+packages = ["ripgrep", "fd"]
+
+[[strata]]
+name = "alpine"
+recipe = "alpine"
+packages = ["nano"]
+
+[expose]
+"arch/rg" = "rg"
+"arch/fd" = "fd"
+
+[policy]
+require_signed_native = true
+allow_unverified_repro = true
+on_missing_artifact = "fail"

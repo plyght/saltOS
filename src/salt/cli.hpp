@@ -85,4 +85,7 @@ int cmd_expose_desktop(const Options &o, const std::vector<std::string> &args);
 int cmd_provider(const Options &o, const std::vector<std::string> &args);
 int cmd_service(const Options &o, const std::vector<std::string> &args);
 
+int cmd_config(const Options &o, const std::vector<std::string> &args);
+int cmd_lock(const Options &o, const std::vector<std::string> &args);
+
 #endif

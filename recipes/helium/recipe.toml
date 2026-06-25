@@ -1,13 +1,13 @@
 name = "helium"
-version = "0.4.13"
+version = "0.13.5.1"
 release = 1
 summary = "Helium privacy-focused Chromium-derived web browser (prebuilt)"
 license = "BSD-3-Clause"
 arch = ["x86_64", "aarch64"]
 
 [source]
-url = "https://github.com/imputnet/helium-chromium/releases/download/0.4.13/helium-0.4.13-x86_64.AppImage"
-sha256 = "TODO-sha256"
+url = "https://github.com/imputnet/helium-linux/releases/download/0.13.5.1/helium-0.13.5.1-x86_64.AppImage"
+sha256 = "5409dc2fbf27c974513543d9d9cd10b9dc45adfc72eed5c4d8d14de2d79e7b39"
 
 [build]
 system = "custom"

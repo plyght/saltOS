@@ -7,7 +7,7 @@ arch = ["x86_64", "aarch64"]
 
 [source]
 url = "https://downloads.sourceforge.net/project/e2fsprogs/e2fsprogs/v1.47.1/e2fsprogs-1.47.1.tar.gz"
-sha256 = "TODO-sha256"
+sha256 = "9afcd201f39429d2db2492aeb13dba5e75d6cc50682b732dca35643bd5f092e3"
 
 [build]
 system = "autotools"

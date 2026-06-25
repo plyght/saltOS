@@ -7,7 +7,7 @@ arch = ["x86_64", "aarch64"]
 
 [source]
 url = "https://github.com/lxqt/liblxqt/releases/download/2.1.0/liblxqt-2.1.0.tar.xz"
-sha256 = "TODO-sha256"
+sha256 = "10820b62f83c5f53439b8690c9d71deaad7aa31e6506f9ec53cb789d47b13ce0"
 
 [build]
 system = "cmake"

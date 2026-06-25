@@ -12,6 +12,8 @@ add_executable(salt
   cmd_expose.cpp
   cmd_provider.cpp
   cmd_service.cpp
+  cmd_config.cpp
+  cmd_lock.cpp
 )
 
 target_link_libraries(salt PRIVATE halite)

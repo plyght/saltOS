@@ -206,6 +206,8 @@ static int dispatch(const Options &o, const std::string &cmd,
   if (cmd == "expose-desktop") return cmd_expose_desktop(o, args);
   if (cmd == "provider") return cmd_provider(o, args);
   if (cmd == "service") return cmd_service(o, args);
+  if (cmd == "config") return cmd_config(o, args);
+  if (cmd == "lock") return cmd_lock(o, args);
   if (cmd.find('/') != std::string::npos && cmd.find('/') != 0) {
     PkgRef r = parse_pkgref(cmd);
     std::vector<std::string> ra = {r.stratum, r.pkg};

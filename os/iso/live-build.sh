@@ -6,6 +6,7 @@ EDITION="${EDITION:-console}"
 WORK="${WORK:-$PWD/iso-work}"
 OUT="${OUT:-$PWD/out-iso}"
 SALT_BIN="${SALT_BIN:-$PWD/build/src/salt/salt}"
+SALTSETUP_BIN="${SALTSETUP_BIN:-$PWD/build/src/setup/salt-setup}"
 REPO="${REPO_DIR:-$PWD}"
 VERSION="${VERSION:-0.1.0}"
 SUITE="${SUITE:-bookworm}"
@@ -23,13 +24,16 @@ rm -rf "$WORK"
 mkdir -p "$ROOTFS" "$ISODIR/live" "$ISODIR/boot/grub" "$OUT"
 
 BASE_PKGS="linux-image-$DARCH,live-boot,runit-init,btrfs-progs,dosfstools,e2fsprogs,\
-util-linux,kmod,pciutils,file,less,nano,bash,coreutils,procps,\
+util-linux,kmod,pciutils,usbutils,file,less,nano,bash,coreutils,procps,\
 iproute2,iputils-ping,isc-dhcp-client,ca-certificates,\
 curl,tar,xz-utils,debootstrap,sudo,\
+firmware-linux,firmware-linux-nonfree,firmware-misc-nonfree,firmware-iwlwifi,\
+firmware-realtek,firmware-atheros,firmware-brcm80211,firmware-sof-signed,\
 libzstd1,libsodium23,libsqlite3-0,zstd"
 
 DESKTOP_PKGS="xserver-xorg-core,xserver-xorg-legacy,xserver-xorg-input-libinput,\
-xserver-xorg-video-fbdev,xserver-xorg-video-vesa,xinit,xterm,openbox,lxqt-core,\
+xserver-xorg-input-all,xserver-xorg-video-all,xserver-xorg-video-fbdev,\
+xserver-xorg-video-vesa,xinit,xterm,openbox,lxqt-core,\
 lxqt-panel,lxqt-session,lxqt-config,lxqt-policykit,\
 qterminal,pcmanfm-qt,lximage-qt,lxqt-archiver,featherpad,\
 lxqt-themes,oxygen-icon-theme,breeze-icon-theme,adwaita-icon-theme,\
@@ -45,7 +49,14 @@ grub-common,grub2-common,efibootmgr,cryptsetup,lvm2,mtools,\
 locales,console-setup,keyboard-configuration,kbd,chromium,\
 sddm,calamares-settings-debian"
 
+SETUP_PKGS="rsync,squashfs-tools,$GRUB_PKGS,\
+grub-common,grub2-common,efibootmgr,mtools,gdisk,parted,dosfstools,\
+debootstrap,locales,console-setup,kbd,network-manager,dbus,libpam-systemd"
+
 PKGS="$BASE_PKGS"
+if [ "$EDITION" = "base" ]; then
+  PKGS="$PKGS,$SETUP_PKGS"
+fi
 if [ "$EDITION" = "desktop" ] || [ "$EDITION" = "installer" ]; then
   PKGS="$PKGS,$DESKTOP_PKGS"
 fi
@@ -56,11 +67,15 @@ fi
 mmdebstrap \
   --variant=apt \
   --arch="$DARCH" \
-  --components="main contrib" \
+  --components="main contrib non-free-firmware non-free" \
   --include="$PKGS" \
   "$SUITE" "$ROOTFS" "$MIRROR"
 
 install -Dm755 "$SALT_BIN" "$ROOTFS/usr/bin/salt"
+if [ "$EDITION" = "base" ]; then
+  [ -f "$SALTSETUP_BIN" ] || { echo "salt-setup binary not found at $SALTSETUP_BIN" >&2; exit 1; }
+fi
+[ -f "$SALTSETUP_BIN" ] && install -Dm755 "$SALTSETUP_BIN" "$ROOTFS/usr/bin/salt-setup"
 
 mkdir -p "$ROOTFS/etc/salt/strata" "$ROOTFS/usr/local/salt/shims" "$ROOTFS/strata"
 cp "$REPO"/strata/*.toml "$ROOTFS/etc/salt/strata/" 2>/dev/null || true
@@ -246,6 +261,19 @@ EOF
   fi
 fi
 
+if [ "$EDITION" = "base" ]; then
+  enable_sv dbus
+  mkdir -p "$ROOTFS/etc/runit/sv/NetworkManager"
+  cat > "$ROOTFS/etc/runit/sv/NetworkManager/run" <<'EOF'
+#!/bin/sh
+exec 2>&1
+[ -d /var/lib/NetworkManager ] || mkdir -p /var/lib/NetworkManager
+exec NetworkManager --no-daemon
+EOF
+  chmod +x "$ROOTFS/etc/runit/sv/NetworkManager/run"
+  enable_sv NetworkManager
+fi
+
 mkdir -p "$ROOTFS/etc/salt"
 cat > "$ROOTFS/etc/salt/repo.conf" <<'EOF'
 repo = "current"
@@ -297,7 +325,7 @@ cat > "$ROOTFS/etc/motd" <<'EOF'
 
 EOF
 
-if [ "$EDITION" != "desktop" ]; then
+if [ "$EDITION" != "desktop" ] && [ "$EDITION" != "base" ]; then
   mkdir -p "$ROOTFS/etc/runit/sv/netdhcp"
   cat > "$ROOTFS/etc/runit/sv/netdhcp/run" <<'EOF'
 #!/bin/sh
@@ -309,6 +337,15 @@ exec dhclient -d "$iface"
 EOF
   chmod +x "$ROOTFS/etc/runit/sv/netdhcp/run"
   enable_sv netdhcp
+fi
+
+if [ "$EDITION" = "base" ]; then
+  cat > "$ROOTFS/home/salt/.bash_profile" <<'EOF'
+if [ "$(tty)" = /dev/tty1 ]; then
+  exec sudo salt-setup
+fi
+EOF
+  chroot "$ROOTFS" chown salt:salt /home/salt/.bash_profile || true
 fi
 
 setup_desktop_session() {
@@ -351,8 +388,8 @@ EOF
   mkdir -p "$ROOTFS/etc/X11/xorg.conf.d"
   cat > "$ROOTFS/etc/X11/xorg.conf.d/20-modesetting.conf" <<'EOF'
 Section "OutputClass"
-    Identifier "vm-kms"
-    MatchDriver "virtio_gpu,bochs-drm,vmwgfx,qxl,simpledrm"
+    Identifier "kms"
+    MatchDriver "virtio_gpu,bochs-drm,vmwgfx,qxl,simpledrm,i915,xe,amdgpu,radeon,nouveau"
     Driver "modesetting"
 EndSection
 EOF
@@ -487,7 +524,9 @@ KVER="${KVER#vmlinuz-}"
 cp "$ROOTFS/boot/vmlinuz-$KVER" "$ISODIR/live/vmlinuz"
 cp "$ROOTFS/boot/initrd.img-$KVER" "$ISODIR/live/initrd"
 
-rm -f "$ROOTFS"/boot/vmlinuz-* "$ROOTFS"/boot/initrd.img-* 2>/dev/null || true
+if [ "$EDITION" != "base" ]; then
+  rm -f "$ROOTFS"/boot/vmlinuz-* "$ROOTFS"/boot/initrd.img-* 2>/dev/null || true
+fi
 mksquashfs "$ROOTFS" "$ISODIR/live/filesystem.squashfs" \
   -comp zstd -Xcompression-level 19 -noappend -e boot
 
@@ -501,6 +540,10 @@ menuentry "saltOS $VERSION (live)" {
 }
 menuentry "saltOS $VERSION (live, to RAM)" {
   linux /live/vmlinuz boot=live components toram init=/sbin/runit-init console=tty0 console=$SERIAL,115200
+  initrd /live/initrd
+}
+menuentry "saltOS $VERSION (live, safe graphics)" {
+  linux /live/vmlinuz boot=live components init=/sbin/runit-init nomodeset console=tty0 console=$SERIAL,115200
   initrd /live/initrd
 }
 EOF

@@ -7,7 +7,7 @@ arch = ["x86_64", "aarch64"]
 
 [source]
 url = "https://github.com/NetworkConfiguration/dhcpcd/releases/download/v10.0.6/dhcpcd-10.0.6.tar.xz"
-sha256 = "TODO-sha256"
+sha256 = "779d3ae514e8f24d7449503e1f0a20f5137c773bd04ca98c62386bf81e99f482"
 
 [build]
 system = "custom"
