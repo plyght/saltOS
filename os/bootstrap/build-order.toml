@@ -5,13 +5,13 @@ stages = ["cross-toolchain", "temp-tools", "base", "desktop"]
 
 [cross-toolchain]
 packages = [
+  "gmp",
+  "mpfr",
+  "mpc",
   "binutils",
   "gcc",
   "linux",
   "glibc",
-  "gmp",
-  "mpfr",
-  "mpc",
 ]
 
 [temp-tools]
