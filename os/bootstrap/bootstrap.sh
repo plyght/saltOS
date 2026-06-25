@@ -64,8 +64,19 @@ build_one() {
     cat "$LOGDIR/$name.log" >&2 2>/dev/null || true
     return 1
   fi
+  log "publishing local index"
+  if ! "$SALT" repo publish "$WORK" >>"$LOGDIR/$name.log" 2>&1; then
+    echo "repo publish failed for $name; log follows:" >&2
+    cat "$LOGDIR/$name.log" >&2 || true
+    return 1
+  fi
+  if ! "$SALT" --root "$SYSROOT" --repo "$OUT" --yes sync >>"$LOGDIR/$name.log" 2>&1; then
+    echo "sync failed for $name; log follows:" >&2
+    cat "$LOGDIR/$name.log" >&2 || true
+    return 1
+  fi
   log "installing $name into sysroot"
-  if ! "$SALT" install "$grain" --root "$SYSROOT" --yes >>"$LOGDIR/$name.log" 2>&1; then
+  if ! "$SALT" --root "$SYSROOT" --repo "$OUT" --yes install "$name" >>"$LOGDIR/$name.log" 2>&1; then
     echo "install failed for $name; log follows:" >&2
     cat "$LOGDIR/$name.log" >&2 || true
     return 1

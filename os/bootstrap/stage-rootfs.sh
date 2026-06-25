@@ -42,13 +42,17 @@ stage_packages() {
   ' "$ORDER"
 }
 
+log "publishing local index"
+"$SALT" repo publish "$WORK"
+log "syncing index into $ROOTFS"
+"$SALT" --root "$ROOTFS" --repo "$OUT" --yes sync
 log "installing $STAGES packages into $ROOTFS"
 for stage in $STAGES; do
   stage_packages "$stage" | while IFS= read -r pkg; do
     [ -n "$pkg" ] || continue
     p=$(ls -1t "$PKGDIR/$pkg"-*-"$ARCH".grain 2>/dev/null | head -n1)
     [ -n "$p" ] || { log "skip missing package $pkg"; continue; }
-    "$SALT" install "$p" --root "$ROOTFS" --yes
+    "$SALT" --root "$ROOTFS" --repo "$OUT" --yes install "$pkg"
   done
 done
 
