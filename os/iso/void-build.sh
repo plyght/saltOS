@@ -227,12 +227,12 @@ terminal_input console serial
 terminal_output console serial
 menuentry "saltOS $VERSION (live, $ARCH)" {
   search --no-floppy --set=root --label $ISO_LABEL
-  linux /boot/vmlinuz-$ARCH boot=live live-media-path=/live root=live:LABEL=$ISO_LABEL rd.live.image console=tty0 console=ttyS0,115200
+  linux /boot/vmlinuz-$ARCH root=live:LABEL=$ISO_LABEL rd.live.image rd.live.dir=live rd.live.squashimg=filesystem.squashfs console=tty0 console=ttyS0,115200
   initrd /boot/initramfs-$ARCH.img
 }
 menuentry "saltOS $VERSION (live, $ARCH, safe graphics)" {
   search --no-floppy --set=root --label $ISO_LABEL
-  linux /boot/vmlinuz-$ARCH boot=live live-media-path=/live root=live:LABEL=$ISO_LABEL rd.live.image nomodeset console=tty0 console=ttyS0,115200
+  linux /boot/vmlinuz-$ARCH root=live:LABEL=$ISO_LABEL rd.live.image rd.live.dir=live rd.live.squashimg=filesystem.squashfs nomodeset console=tty0 console=ttyS0,115200
   initrd /boot/initramfs-$ARCH.img
 }
 EOF
