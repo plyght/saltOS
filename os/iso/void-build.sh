@@ -71,7 +71,11 @@ inchroot "xbps-install -Sy base-system linux dracut btrfs-progs dosfstools gptfd
 
 if [ "$EDITION" = "desktop" ] || [ "$EDITION" = "installer" ]; then
   echo "==> installing desktop"
-  inchroot "xbps-install -Sy xorg-minimal mesa-dri xf86-input-libinput lxqt sddm qterminal pcmanfm-qt featherpad dejavu-fonts-ttf"
+  inchroot "xbps-install -Sy xorg-minimal mesa-dri xf86-input-libinput lxqt sddm"
+  echo "==> installing desktop apps and fonts (best-effort; lxqt pulls core apps)"
+  for app in qterminal pcmanfm-qt featherpad dejavu-fonts-ttf; do
+    inchroot "xbps-install -Sy $app" || true
+  done
   echo "==> installing optional video drivers (best-effort; modesetting covers the rest)"
   for drv in xf86-video-intel xf86-video-amdgpu xf86-video-ati xf86-video-nouveau xf86-video-qxl xf86-video-fbdev xf86-video-vesa; do
     inchroot "xbps-install -Sy $drv" || true
