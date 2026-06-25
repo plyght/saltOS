@@ -1,0 +1,94 @@
+name: void-iso
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "os/iso/void-build.sh"
+      - "os/iso/build-iso.sh"
+      - "src/**"
+      - "strata/**"
+      - ".github/workflows/void-iso.yml"
+
+jobs:
+  build:
+    name: Void-base ISO (x86_64)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet \
+            /opt/hostedtoolcache/CodeQL /usr/local/.ghcup 2>/dev/null || true
+          df -h /
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config \
+            libzstd-dev libsodium-dev libsqlite3-dev build-essential \
+            squashfs-tools xorriso mtools dosfstools \
+            grub-pc-bin grub-efi-amd64-bin grub-common \
+            curl xz-utils qemu-system-x86 socat netpbm
+
+      - name: Build salt and salt-setup
+        run: |
+          cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target salt salt-setup
+
+      - name: Build Void-base ISO
+        run: |
+          sudo env \
+            SALT_BIN="$PWD/build/src/salt/salt" \
+            SALTSETUP_BIN="$PWD/build/src/setup/salt-setup" \
+            REPO_DIR="$PWD" \
+            EDITION="installer" \
+            VERSION="0.1.0" \
+            OUT="$PWD/out-iso" \
+            bash os/iso/void-build.sh x86_64
+          sudo chown -R "$USER" out-iso
+
+      - name: Boot test (QEMU)
+        run: |
+          ISO=$(ls out-iso/*.iso | head -1)
+          echo "boot-testing Void ISO $ISO"
+          MARKER="SALTOS_BOOT_OK"; MEM=4096; TMO=420; TRIES=36
+          set +e
+          timeout "$TMO" qemu-system-x86_64 \
+            -machine pc -m "$MEM" -vga std -display none -no-reboot \
+            -serial file:qemu.log \
+            -cdrom "$ISO" -boot d &
+          QPID=$!
+          for i in $(seq 1 "$TRIES"); do
+            sleep 10
+            grep -q "$MARKER" qemu.log 2>/dev/null && break
+          done
+          kill $QPID 2>/dev/null || true
+          set -e
+          echo "----- qemu serial tail -----"
+          tail -n 150 qemu.log || true
+          if grep -q "$MARKER" qemu.log; then
+            echo "VOID BOOT OK: found $MARKER"
+          else
+            echo "VOID BOOT FAILED: $MARKER not found"
+            exit 1
+          fi
+
+      - name: Upload serial log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: void-serial-log
+          path: qemu.log
+          if-no-files-found: ignore
+
+      - name: Upload ISO
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: saltos-void-x86_64
+          path: out-iso/*.iso
+          if-no-files-found: warn
