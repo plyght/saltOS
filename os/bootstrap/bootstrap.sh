@@ -46,23 +46,30 @@ build_one() {
     echo "missing recipe: $name" >&2
     return 1
   fi
-  grain=$(ls -1t "$PKGDIR/$name"-*."$ARCH".grain 2>/dev/null | head -n1)
+  grain=$(ls -1t "$PKGDIR/$name"-*-"$ARCH".grain 2>/dev/null | head -n1)
   if [ -n "$grain" ]; then
     log "reusing $name ($grain)"
   else
     log "building $name"
-    SALT_ARCH="$ARCH" SALT_JOBS="$JOBS" SALT_OUT="$OUT" \
-      "$SALT" build "$recipe" \
-        >"$LOGDIR/$name.log" 2>&1
-    grain=$(ls -1t "$PKGDIR/$name"-*."$ARCH".grain 2>/dev/null | head -n1)
+    if ! SALT_ARCH="$ARCH" SALT_JOBS="$JOBS" SALT_OUT="$OUT" \
+        "$SALT" build "$recipe" >"$LOGDIR/$name.log" 2>&1; then
+      echo "build failed for $name; log follows:" >&2
+      cat "$LOGDIR/$name.log" >&2 || true
+      return 1
+    fi
+    grain=$(ls -1t "$PKGDIR/$name"-*-"$ARCH".grain 2>/dev/null | head -n1)
   fi
   if [ -z "$grain" ]; then
-    echo "no grain produced for $name" >&2
+    echo "no grain produced for $name; build log follows:" >&2
+    cat "$LOGDIR/$name.log" >&2 2>/dev/null || true
     return 1
   fi
   log "installing $name into sysroot"
-  "$SALT" install "$grain" --root "$SYSROOT" --yes \
-    >>"$LOGDIR/$name.log" 2>&1
+  if ! "$SALT" install "$grain" --root "$SYSROOT" --yes >>"$LOGDIR/$name.log" 2>&1; then
+    echo "install failed for $name; log follows:" >&2
+    cat "$LOGDIR/$name.log" >&2 || true
+    return 1
+  fi
 }
 
 run_stage() {

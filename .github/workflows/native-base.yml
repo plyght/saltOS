@@ -49,6 +49,13 @@ jobs:
           export STAGES="cross-toolchain temp-tools"
           sudo --preserve-env=PATH,SALT_ARCH,OUT,STAGES os/bootstrap/bootstrap.sh
           sudo chown -R "$USER" saltos-build 2>/dev/null || true
+      - name: Upload bootstrap logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-base-logs-toolchain
+          path: saltos-build/x86_64/logs/*.log
+          if-no-files-found: ignore
       - name: Save grain cache
         if: always()
         uses: actions/cache/save@v4
@@ -97,6 +104,13 @@ jobs:
           export STAGES="base"
           sudo --preserve-env=PATH,SALT_ARCH,OUT,STAGES os/bootstrap/bootstrap.sh
           sudo chown -R "$USER" saltos-build 2>/dev/null || true
+      - name: Upload bootstrap logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-base-logs-base
+          path: saltos-build/x86_64/logs/*.log
+          if-no-files-found: ignore
       - name: Upload base output
         uses: actions/upload-artifact@v4
         with:
