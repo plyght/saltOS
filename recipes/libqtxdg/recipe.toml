@@ -7,7 +7,7 @@ arch = ["x86_64", "aarch64"]
 
 [source]
 url = "https://github.com/lxqt/libqtxdg/releases/download/4.1.0/libqtxdg-4.1.0.tar.xz"
-sha256 = "TODO-sha256"
+sha256 = "0604d397d9561a6a6148930a2b131f2bdee86cec6cca304f7513a8ec7b8e8809"
 
 [build]
 system = "cmake"

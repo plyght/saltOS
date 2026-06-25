@@ -3,6 +3,7 @@ set -eu
 
 SELF_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 INSTALLER_DIR=$(CDPATH= cd -- "$SELF_DIR/../installer" && pwd)
+REPO_ROOT=$(CDPATH= cd -- "$SELF_DIR/../.." && pwd)
 
 ARCH=""
 ROOTFS=""
@@ -11,6 +12,8 @@ OUT=""
 VERSION="0.1"
 ISO_LABEL="SALTOS"
 KERNEL_VERSION=""
+INSTALLER="salt-setup"
+SALTSETUP_BIN=""
 
 usage() {
 	cat <<EOF
@@ -26,6 +29,8 @@ Options:
   --version <ver>      version string for boot menu (default: $VERSION)
   --label <label>      ISO volume label (default: $ISO_LABEL)
   --kernel <ver>       kernel modules version under <rootfs>/lib/modules
+  --installer <name>   installer to wire in: salt-setup (default) or calamares
+  --salt-setup <path>  salt-setup binary to install into the rootfs (optional)
 EOF
 }
 
@@ -38,6 +43,8 @@ while [ $# -gt 0 ]; do
 		--version) VERSION="$2"; shift 2 ;;
 		--label) ISO_LABEL="$2"; shift 2 ;;
 		--kernel) KERNEL_VERSION="$2"; shift 2 ;;
+		--installer) INSTALLER="$2"; shift 2 ;;
+		--salt-setup) SALTSETUP_BIN="$2"; shift 2 ;;
 		-h|--help) usage; exit 0 ;;
 		*) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
 	esac
@@ -79,31 +86,64 @@ mkdir -p "$ISO_ROOT/live" "$ISO_ROOT/boot/grub" "$ISO_ROOT/EFI/BOOT"
 echo "Copying base rootfs"
 cp -a "$ROOTFS" "$LIVE_ROOT"
 
-echo "Installing installer assets into live rootfs"
-mkdir -p "$LIVE_ROOT/usr/share/calamares/branding" \
-	"$LIVE_ROOT/usr/lib/calamares/modules" \
-	"$LIVE_ROOT/etc/calamares" \
-	"$LIVE_ROOT/usr/share/applications" \
-	"$LIVE_ROOT/usr/lib/saltos" \
-	"$LIVE_ROOT/etc/runit/sv/live-setup" \
-	"$LIVE_ROOT/etc/runit/runsvdir/current"
+if [ "$INSTALLER" = "salt-setup" ]; then
+	echo "Wiring native salt-setup installer into live rootfs"
+	mkdir -p "$LIVE_ROOT/etc/salt/strata" \
+		"$LIVE_ROOT/etc/runit/sv/agetty-tty1" \
+		"$LIVE_ROOT/etc/runit/runsvdir/current" \
+		"$LIVE_ROOT/root"
 
-cp -a "$INSTALLER_DIR/branding/saltos" "$LIVE_ROOT/usr/share/calamares/branding/saltos"
-cp -a "$INSTALLER_DIR/modules/." "$LIVE_ROOT/usr/lib/calamares/modules/"
-cp -a "$INSTALLER_DIR/settings.conf" "$LIVE_ROOT/etc/calamares/settings.conf"
-
-cp -a "$SELF_DIR/live/Install-saltOS.desktop" "$LIVE_ROOT/usr/share/applications/Install-saltOS.desktop"
-cp -a "$SELF_DIR/live/live-setup.sh" "$LIVE_ROOT/usr/lib/saltos/live-setup.sh"
-chmod 0755 "$LIVE_ROOT/usr/lib/saltos/live-setup.sh"
-
-cp -a "$SELF_DIR/live/sv/live-setup/run" "$LIVE_ROOT/etc/runit/sv/live-setup/run"
-chmod 0755 "$LIVE_ROOT/etc/runit/sv/live-setup/run"
-
-for svc in udevd dbus seatd socklog dhcpcd chronyd sddm agetty-tty1 live-setup; do
-	if [ -d "$LIVE_ROOT/etc/runit/sv/$svc" ]; then
-		ln -sf "/etc/runit/sv/$svc" "$LIVE_ROOT/etc/runit/runsvdir/current/$svc"
+	if [ -n "$SALTSETUP_BIN" ] && [ -f "$SALTSETUP_BIN" ]; then
+		install -Dm755 "$SALTSETUP_BIN" "$LIVE_ROOT/usr/bin/salt-setup"
 	fi
-done
+
+	cp -a "$REPO_ROOT"/strata/*.toml "$LIVE_ROOT/etc/salt/strata/" 2>/dev/null || true
+
+	cat > "$LIVE_ROOT/etc/runit/sv/agetty-tty1/run" <<'GETTY'
+#!/bin/sh
+exec 2>&1
+exec setsid -w agetty --noclear --autologin root tty1 38400 linux
+GETTY
+	chmod 0755 "$LIVE_ROOT/etc/runit/sv/agetty-tty1/run"
+
+	cat > "$LIVE_ROOT/root/.bash_profile" <<'PROFILE'
+if [ "$(tty)" = /dev/tty1 ]; then
+  exec salt-setup
+fi
+PROFILE
+
+	for svc in udevd dbus socklog dhcpcd agetty-tty1; do
+		if [ -d "$LIVE_ROOT/etc/runit/sv/$svc" ]; then
+			ln -sf "/etc/runit/sv/$svc" "$LIVE_ROOT/etc/runit/runsvdir/current/$svc"
+		fi
+	done
+else
+	echo "Installing installer assets into live rootfs"
+	mkdir -p "$LIVE_ROOT/usr/share/calamares/branding" \
+		"$LIVE_ROOT/usr/lib/calamares/modules" \
+		"$LIVE_ROOT/etc/calamares" \
+		"$LIVE_ROOT/usr/share/applications" \
+		"$LIVE_ROOT/usr/lib/saltos" \
+		"$LIVE_ROOT/etc/runit/sv/live-setup" \
+		"$LIVE_ROOT/etc/runit/runsvdir/current"
+
+	cp -a "$INSTALLER_DIR/branding/saltos" "$LIVE_ROOT/usr/share/calamares/branding/saltos"
+	cp -a "$INSTALLER_DIR/modules/." "$LIVE_ROOT/usr/lib/calamares/modules/"
+	cp -a "$INSTALLER_DIR/settings.conf" "$LIVE_ROOT/etc/calamares/settings.conf"
+
+	cp -a "$SELF_DIR/live/Install-saltOS.desktop" "$LIVE_ROOT/usr/share/applications/Install-saltOS.desktop"
+	cp -a "$SELF_DIR/live/live-setup.sh" "$LIVE_ROOT/usr/lib/saltos/live-setup.sh"
+	chmod 0755 "$LIVE_ROOT/usr/lib/saltos/live-setup.sh"
+
+	cp -a "$SELF_DIR/live/sv/live-setup/run" "$LIVE_ROOT/etc/runit/sv/live-setup/run"
+	chmod 0755 "$LIVE_ROOT/etc/runit/sv/live-setup/run"
+
+	for svc in udevd dbus seatd socklog dhcpcd chronyd sddm agetty-tty1 live-setup; do
+		if [ -d "$LIVE_ROOT/etc/runit/sv/$svc" ]; then
+			ln -sf "/etc/runit/sv/$svc" "$LIVE_ROOT/etc/runit/runsvdir/current/$svc"
+		fi
+	done
+fi
 
 if [ -n "$REPO" ] && [ -d "$REPO" ]; then
 	echo "Bundling repository"

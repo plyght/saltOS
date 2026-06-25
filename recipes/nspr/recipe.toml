@@ -7,7 +7,7 @@ arch = ["x86_64", "aarch64"]
 
 [source]
 url = "https://archive.mozilla.org/pub/nspr/releases/v4.36/src/nspr-4.36.tar.gz"
-sha256 = "TODO-sha256"
+sha256 = "55dec317f1401cd2e5dba844d340b930ab7547f818179a4002bce62e6f1c6895"
 
 [build]
 system = "custom"

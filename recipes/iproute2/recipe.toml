@@ -7,7 +7,7 @@ arch = ["x86_64", "aarch64"]
 
 [source]
 url = "https://www.kernel.org/pub/linux/utils/net/iproute2/iproute2-6.9.0.tar.xz"
-sha256 = "TODO-sha256"
+sha256 = "2f643d09ea11a4a2a043c92e2b469b5f73228cbf241ae806760296ed0ec413d0"
 
 [build]
 system = "make"

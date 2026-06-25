@@ -8,9 +8,12 @@ add_executable(salt
   cmd_trust.cpp
   cmd_stratum.cpp
   cmd_run.cpp
+  cmd_strata_sugar.cpp
   cmd_expose.cpp
   cmd_provider.cpp
   cmd_service.cpp
+  cmd_config.cpp
+  cmd_lock.cpp
 )
 
 target_link_libraries(salt PRIVATE halite)

@@ -7,7 +7,7 @@ arch = ["x86_64", "aarch64"]
 
 [source]
 url = "https://github.com/harfbuzz/harfbuzz/releases/download/9.0.0/harfbuzz-9.0.0.tar.xz"
-sha256 = "TODO-sha256"
+sha256 = "a41b272ceeb920c57263ec851604542d9ec85ee3030506d94662067c7b6ab89e"
 
 [build]
 system = "meson"

@@ -7,7 +7,7 @@ arch = ["x86_64", "aarch64"]
 
 [source]
 url = "https://github.com/lxqt/qterminal/releases/download/2.1.0/qterminal-2.1.0.tar.xz"
-sha256 = "TODO-sha256"
+sha256 = "a65e788645bc694ede5d89de4118ee88443e0d6cbc388b0ce50d5c5d07b1213c"
 
 [build]
 system = "cmake"

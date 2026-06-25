@@ -42,23 +42,26 @@ stage_packages() {
 build_one() {
   name="$1"
   recipe="$REPO_ROOT/recipes/$name"
-  out="$PKGDIR/$name-$ARCH.grain"
   if [ ! -d "$recipe" ]; then
     echo "missing recipe: $name" >&2
     return 1
   fi
-  log "building $name"
-  SALT_ARCH="$ARCH" SALT_JOBS="$JOBS" \
-    "$SALT" build "$recipe" \
-      --arch "$ARCH" \
-      --jobs "$JOBS" \
-      --out "$PKGDIR" \
-      --sysroot "$SYSROOT" \
-      >"$LOGDIR/$name.log" 2>&1
+  grain=$(ls -1t "$PKGDIR/$name"-*."$ARCH".grain 2>/dev/null | head -n1)
+  if [ -n "$grain" ]; then
+    log "reusing $name ($grain)"
+  else
+    log "building $name"
+    SALT_ARCH="$ARCH" SALT_JOBS="$JOBS" SALT_OUT="$OUT" \
+      "$SALT" build "$recipe" \
+        >"$LOGDIR/$name.log" 2>&1
+    grain=$(ls -1t "$PKGDIR/$name"-*."$ARCH".grain 2>/dev/null | head -n1)
+  fi
+  if [ -z "$grain" ]; then
+    echo "no grain produced for $name" >&2
+    return 1
+  fi
   log "installing $name into sysroot"
-  "$SALT" install "$out" --root "$SYSROOT" --yes \
-    >>"$LOGDIR/$name.log" 2>&1 || \
-  "$SALT" install "$name" --root "$SYSROOT" --repo "$PKGDIR" --yes \
+  "$SALT" install "$grain" --root "$SYSROOT" --yes \
     >>"$LOGDIR/$name.log" 2>&1
 }
 
@@ -71,16 +74,19 @@ run_stage() {
   done
 }
 
+STAGES="${STAGES:-cross-toolchain temp-tools base desktop}"
+
 log "repo root: $REPO_ROOT"
 log "work dir:  $WORK"
 log "jobs:      $JOBS"
+log "stages:    $STAGES"
 
-SALT_NO_NETWORK=0 run_stage cross-toolchain
-SALT_NO_NETWORK=0 run_stage temp-tools
-
-export SALT_NO_NETWORK=1
-run_stage base
-run_stage desktop
+for stage in $STAGES; do
+  case "$stage" in
+    cross-toolchain|temp-tools) SALT_NO_NETWORK=0 run_stage "$stage" ;;
+    *) SALT_NO_NETWORK=1 run_stage "$stage" ;;
+  esac
+done
 
 log "base rootfs assembled under $SYSROOT"
 log "package outputs under $PKGDIR"

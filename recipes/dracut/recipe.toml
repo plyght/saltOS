@@ -6,8 +6,8 @@ license = "GPL-2.0-or-later"
 arch = ["x86_64", "aarch64"]
 
 [source]
-url = "https://github.com/dracutdevs/dracut/archive/refs/tags/060.tar.gz"
-sha256 = "TODO-sha256"
+url = "https://github.com/dracut-ng/dracut-ng/archive/refs/tags/060.tar.gz"
+sha256 = "ffcd81841b7e45ea1196871b95f1c2aafd4aaa85c73f098bfc5015f920b87375"
 
 [build]
 system = "custom"

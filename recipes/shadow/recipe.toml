@@ -7,7 +7,7 @@ arch = ["x86_64", "aarch64"]
 
 [source]
 url = "https://github.com/shadow-maint/shadow/releases/download/4.16.0/shadow-4.16.0.tar.xz"
-sha256 = "TODO-sha256"
+sha256 = "b78e3921a95d53282a38e90628880624736bf6235e36eea50c50835f59a3530b"
 
 [build]
 system = "autotools"

@@ -6,8 +6,8 @@ license = "GPL-3.0-or-later"
 arch = ["x86_64", "aarch64"]
 
 [source]
-url = "https://github.com/tsujan/FeatherPad/releases/download/V1.5.1/FeatherPad-1.5.1.tar.gz"
-sha256 = "TODO-sha256"
+url = "https://github.com/tsujan/FeatherPad/archive/refs/tags/V1.5.1.tar.gz"
+sha256 = "2826b3dc26877284d7bb5b62430e99b4fbcf45862af89549e4b4e9f40b16c3c5"
 
 [build]
 system = "cmake"

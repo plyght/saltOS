@@ -7,7 +7,7 @@ arch = ["x86_64", "aarch64"]
 
 [source]
 url = "https://www.kernel.org/pub/linux/kernel/people/kdave/btrfs-progs/btrfs-progs-v6.9.2.tar.xz"
-sha256 = "TODO-sha256"
+sha256 = "43865bb272dc0ab2585de3605434d81ba217578f0897bf700cd36c14ac40652a"
 
 [build]
 system = "autotools"

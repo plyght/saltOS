@@ -1040,6 +1040,48 @@ int salt_expose_add(salt_strata_db *db, const char *root, const char *stratum, c
   return SALT_OK;
 }
 
+int salt_expose_pm(salt_strata_db *db, const char *root, const char *stratum, const char *binary) {
+  if (!stratum_exists(db, stratum)) {
+    salt_set_error("expose: unknown stratum %s", stratum);
+    return SALT_ERR_NOTFOUND;
+  }
+  char *shimdir = salt_join_path(root, "usr/local/salt/shims");
+  salt_mkdirs(shimdir, 0755);
+  char *shimpath = salt_join_path(shimdir, binary);
+  free(shimdir);
+
+  salt_buf content;
+  salt_buf_init(&content);
+  salt_buf_printf(&content, "#!/bin/sh\nexec salt pm %s %s \"$@\"\n", stratum, binary);
+  int rc = salt_write_file(shimpath, content.data, content.len, 0755);
+  salt_buf_free(&content);
+  if (rc != SALT_OK) {
+    salt_set_error("expose: cannot write shim %s", shimpath);
+    free(shimpath);
+    return SALT_ERR_IO;
+  }
+
+  sqlite3_stmt *st;
+  sqlite3_prepare_v2(db->h,
+                     "INSERT OR REPLACE INTO exposed(alias,stratum,command,kind,shim_path,created) "
+                     "VALUES(?,?,?,?,?,?);",
+                     -1, &st, NULL);
+  sqlite3_bind_text(st, 1, binary, -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(st, 2, stratum, -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(st, 3, binary, -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(st, 4, "pm", -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(st, 5, shimpath, -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int64(st, 6, (int64_t)time(NULL));
+  int srr = sqlite3_step(st);
+  sqlite3_finalize(st);
+  free(shimpath);
+  if (srr != SQLITE_DONE) {
+    salt_set_error("expose record failed: %s", sqlite3_errmsg(db->h));
+    return SALT_ERR;
+  }
+  return SALT_OK;
+}
+
 int salt_expose_remove(salt_strata_db *db, const char *root, const char *alias) {
   (void)root;
   sqlite3_stmt *st;

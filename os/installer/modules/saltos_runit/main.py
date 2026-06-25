@@ -42,4 +42,14 @@ def run():
         if os.path.islink(link):
             os.unlink(link)
 
+    if conf.get("authoritative", True):
+        keep = set(enable) - disable
+        for entry in os.listdir(current):
+            if entry in keep:
+                continue
+            link = os.path.join(current, entry)
+            if os.path.islink(link):
+                debug("pruning non-enabled service {}".format(entry))
+                os.unlink(link)
+
     return None

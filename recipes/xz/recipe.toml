@@ -7,7 +7,7 @@ arch = ["x86_64", "aarch64"]
 
 [source]
 url = "https://github.com/tukaani-project/xz/releases/download/v5.4.6/xz-5.4.6.tar.xz"
-sha256 = "TODO-sha256"
+sha256 = "b92d4e3a438affcf13362a1305cd9d94ed47ddda22e456a42791e630a5644f5c"
 
 [build]
 system = "autotools"
@@ -25,5 +25,4 @@ make DESTDIR="$SALT_DEST" install
 deps = ["glibc"]
 
 [reproducibility]
-status = "unverified"
-reason = "upstream tarball sha256 set to TODO-sha256 pending verification"
+status = "verified"

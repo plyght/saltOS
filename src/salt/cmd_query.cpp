@@ -26,9 +26,11 @@ static salt_db *open_db(const Options &o) {
 
 int cmd_search(const Options &o, const std::vector<std::string> &args) {
   if (args.empty()) {
-    fprintf(stderr, "usage: salt search <term>\n");
+    fprintf(stderr, "usage: salt search <term> | <stratum>/<term>\n");
     return 2;
   }
+  PkgRef sref = parse_pkgref(args[0]);
+  if (sref.foreign) return stratum_search(o, sref.stratum, sref.pkg);
   const std::string &term = args[0];
   std::string idxp = index_path_for(o);
   salt_repo_index idx;

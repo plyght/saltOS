@@ -9,6 +9,13 @@ struct Options {
   std::string repo;
   std::string key;
   bool yes = false;
+  std::string expose_mode;
+};
+
+struct PkgRef {
+  std::string stratum;
+  std::string pkg;
+  bool foreign = false;
 };
 
 struct RepoConf {
@@ -26,6 +33,24 @@ std::string index_path_for(const Options &o);
 std::string trustdb_for(const Options &o);
 std::string strata_db_path_for(const Options &o);
 bool confirm(const Options &o, const std::string &prompt);
+
+PkgRef parse_pkgref(const std::string &arg);
+std::string auto_expose_mode(const Options &o);
+bool native_index_has(const Options &o, const std::string &name);
+
+int stratum_install(const Options &o, const std::string &stratum,
+                    const std::vector<std::string> &pkgs);
+int stratum_remove(const Options &o, const std::string &stratum,
+                   const std::vector<std::string> &pkgs);
+int stratum_search(const Options &o, const std::string &stratum, const std::string &term);
+int stratum_update(const Options &o, const std::string &stratum);
+std::vector<std::string> list_strata_names(const Options &o);
+std::string choose_stratum_for(const Options &o, const std::string &name);
+std::string resolve_stratum_recipe(const Options &o, const std::string &arg);
+int ensure_stratum(const Options &o, const std::string &name);
+bool expose_pm_enabled(const Options &o);
+bool auto_service_enabled(const Options &o);
+void expose_pm_for(const Options &o, const std::string &stratum);
 
 int cmd_sync(const Options &o, const std::vector<std::string> &args);
 int cmd_install(const Options &o, const std::vector<std::string> &args);
@@ -52,11 +77,15 @@ int cmd_trust(const Options &o, const std::vector<std::string> &args);
 int cmd_stratum(const Options &o, const std::vector<std::string> &args);
 int cmd_run(const Options &o, const std::vector<std::string> &args);
 int cmd_pkg(const Options &o, const std::vector<std::string> &args);
+int cmd_pm(const Options &o, const std::vector<std::string> &args);
 int cmd_expose(const Options &o, const std::vector<std::string> &args);
 int cmd_unexpose(const Options &o, const std::vector<std::string> &args);
 int cmd_exposed(const Options &o, const std::vector<std::string> &args);
 int cmd_expose_desktop(const Options &o, const std::vector<std::string> &args);
 int cmd_provider(const Options &o, const std::vector<std::string> &args);
 int cmd_service(const Options &o, const std::vector<std::string> &args);
+
+int cmd_config(const Options &o, const std::vector<std::string> &args);
+int cmd_lock(const Options &o, const std::vector<std::string> &args);
 
 #endif

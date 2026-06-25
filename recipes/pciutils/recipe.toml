@@ -7,7 +7,7 @@ arch = ["x86_64", "aarch64"]
 
 [source]
 url = "https://www.kernel.org/pub/software/utils/pciutils/pciutils-3.13.0.tar.xz"
-sha256 = "TODO-sha256"
+sha256 = "77f11f78298502634d1af50308f15a5788629f6cf45cba376f5009aea4cb4926"
 
 [build]
 system = "make"

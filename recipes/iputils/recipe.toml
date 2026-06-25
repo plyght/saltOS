@@ -7,7 +7,7 @@ arch = ["x86_64", "aarch64"]
 
 [source]
 url = "https://github.com/iputils/iputils/archive/20240117/iputils-20240117.tar.gz"
-sha256 = "TODO-sha256"
+sha256 = "a5d66e2997945b2541b8f780a7f5a5ec895d53a517ae1dc4f3ab762573edea9a"
 
 [build]
 system = "meson"

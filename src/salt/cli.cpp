@@ -73,16 +73,74 @@ bool confirm(const Options &o, const std::string &prompt) {
   return c == 'y' || c == 'Y';
 }
 
+PkgRef parse_pkgref(const std::string &arg) {
+  PkgRef r;
+  size_t p = arg.find('/');
+  if (p == std::string::npos || p == 0 || p + 1 >= arg.size()) {
+    r.pkg = arg;
+    return r;
+  }
+  r.foreign = true;
+  r.stratum = arg.substr(0, p);
+  r.pkg = arg.substr(p + 1);
+  return r;
+}
+
+std::string auto_expose_mode(const Options &o) {
+  if (!o.expose_mode.empty()) return o.expose_mode;
+  std::string conf = path_join(o.root, "etc/salt/salt.conf");
+  std::string mode = "prompt";
+  salt_toml *t = salt_toml_parse_file(conf.c_str());
+  if (t) {
+    const char *v = salt_toml_string(t, "install.auto_expose", "prompt");
+    if (v && v[0]) mode = v;
+    salt_toml_free(t);
+  }
+  if (mode != "always" && mode != "never" && mode != "prompt") mode = "prompt";
+  return mode;
+}
+
+bool expose_pm_enabled(const Options &o) {
+  if (o.expose_mode == "never") return false;
+  std::string conf = path_join(o.root, "etc/salt/salt.conf");
+  bool en = true;
+  salt_toml *t = salt_toml_parse_file(conf.c_str());
+  if (t) {
+    en = salt_toml_bool(t, "strata.expose_pm", true);
+    salt_toml_free(t);
+  }
+  return en;
+}
+
+bool auto_service_enabled(const Options &o) {
+  if (o.expose_mode == "never") return false;
+  std::string conf = path_join(o.root, "etc/salt/salt.conf");
+  bool en = true;
+  salt_toml *t = salt_toml_parse_file(conf.c_str());
+  if (t) {
+    en = salt_toml_bool(t, "strata.auto_service", true);
+    salt_toml_free(t);
+  }
+  return en;
+}
+
 static void usage() {
   fprintf(stderr,
           "salt - the saltOS package manager\n\n"
-          "usage: salt [--root DIR] [--repo URL] [--key HEX|FILE] [--yes] <command> [args]\n\n"
+          "usage: salt [--root DIR] [--repo URL] [--key HEX|FILE] [--yes]\n"
+          "            [--expose|--no-expose] <command> [args]\n\n"
+          "shortcuts (stratum/package):\n"
+          "  install <stratum>/<pkg>   install foreign software and offer to expose it\n"
+          "  remove  <stratum>/<pkg>   remove foreign software and its host shims\n"
+          "  search  <stratum>/<term>  search a stratum's repositories\n"
+          "  update  <stratum>         upgrade packages inside a stratum\n"
+          "  <stratum>/<cmd> [args]    run a stratum command (e.g. salt alpine/nvim file)\n\n"
           "package commands:\n"
           "  sync                 refresh the repository index\n"
           "  search <term>        search available packages\n"
-          "  install <pkg>...     install packages\n"
+          "  install <pkg>...     install packages (use <stratum>/<pkg> for foreign)\n"
           "  remove <pkg>...      remove packages\n"
-          "  update               upgrade all packages\n"
+          "  update [stratum...]  upgrade the host, or named strata\n"
           "  rollback             roll back the last transaction\n"
           "  deployments          list transactions/deployments\n"
           "  verify [pkg]         verify installed files against the database\n"
@@ -109,6 +167,7 @@ static void usage() {
           "integration commands:\n"
           "  run <stratum> <cmd> [args]    run a command inside a stratum\n"
           "  pkg <stratum> <op> [pkg]      foreign package manager passthrough\n"
+          "  pm <stratum> <pm> [args]      run a stratum's package manager as root\n"
           "  expose <stratum> <cmd> [as A] expose a stratum command on the host\n"
           "  unexpose <alias>              remove an exposed command\n"
           "  exposed                       list exposed commands\n"
@@ -140,12 +199,21 @@ static int dispatch(const Options &o, const std::string &cmd,
   if (cmd == "stratum") return cmd_stratum(o, args);
   if (cmd == "run") return cmd_run(o, args);
   if (cmd == "pkg") return cmd_pkg(o, args);
+  if (cmd == "pm") return cmd_pm(o, args);
   if (cmd == "expose") return cmd_expose(o, args);
   if (cmd == "unexpose") return cmd_unexpose(o, args);
   if (cmd == "exposed") return cmd_exposed(o, args);
   if (cmd == "expose-desktop") return cmd_expose_desktop(o, args);
   if (cmd == "provider") return cmd_provider(o, args);
   if (cmd == "service") return cmd_service(o, args);
+  if (cmd == "config") return cmd_config(o, args);
+  if (cmd == "lock") return cmd_lock(o, args);
+  if (cmd.find('/') != std::string::npos && cmd.find('/') != 0) {
+    PkgRef r = parse_pkgref(cmd);
+    std::vector<std::string> ra = {r.stratum, r.pkg};
+    ra.insert(ra.end(), args.begin(), args.end());
+    return cmd_run(o, ra);
+  }
   fprintf(stderr, "salt: unknown command '%s'\n", cmd.c_str());
   usage();
   return 2;
@@ -170,6 +238,10 @@ int cli_main(int argc, char **argv) {
       o.key = argv[++i];
     } else if (a == "--yes" || a == "-y") {
       o.yes = true;
+    } else if (a == "--expose") {
+      o.expose_mode = "always";
+    } else if (a == "--no-expose") {
+      o.expose_mode = "never";
     } else if (a == "-h" || a == "--help") {
       usage();
       return 0;

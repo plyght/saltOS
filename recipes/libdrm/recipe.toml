@@ -7,7 +7,7 @@ arch = ["x86_64", "aarch64"]
 
 [source]
 url = "https://dri.freedesktop.org/libdrm/libdrm-2.4.122.tar.xz"
-sha256 = "TODO-sha256"
+sha256 = "d9f5079b777dffca9300ccc56b10a93588cdfbc9dde2fae111940dfb6292f251"
 
 [build]
 system = "meson"

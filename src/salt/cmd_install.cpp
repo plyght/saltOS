@@ -15,6 +15,7 @@ extern "C" {
 #include <string>
 #include <vector>
 #include <set>
+#include <map>
 
 static std::string repo_url(const RepoConf &c, const std::string &rel) {
   std::string s = c.source;
@@ -234,24 +235,68 @@ static int do_install(const Options &o, const std::vector<std::string> &names, b
   return rc == SALT_OK ? 0 : 1;
 }
 
+bool native_index_has(const Options &o, const std::string &name) {
+  std::string idxp = index_path_for(o);
+  salt_repo_index idx;
+  if (salt_repo_index_load(idxp.c_str(), &idx) != SALT_OK) return false;
+  bool found = salt_repo_index_find(&idx, name.c_str()) != nullptr;
+  salt_repo_index_free(&idx);
+  return found;
+}
+
 int cmd_install(const Options &o, const std::vector<std::string> &args) {
   if (args.empty()) {
-    fprintf(stderr, "usage: salt install <pkg>...\n");
+    fprintf(stderr, "usage: salt install <pkg>... | <stratum>/<pkg>...\n");
     return 2;
   }
-  return do_install(o, args, false);
+  std::vector<std::string> native;
+  std::map<std::string, std::vector<std::string>> foreign;
+  std::vector<std::string> fallback;
+  for (const auto &a : args) {
+    PkgRef r = parse_pkgref(a);
+    if (r.foreign)
+      foreign[r.stratum].push_back(r.pkg);
+    else if (native_index_has(o, a))
+      native.push_back(a);
+    else
+      fallback.push_back(a);
+  }
+
+  int rc = 0;
+  if (!native.empty()) {
+    int n = do_install(o, native, false);
+    if (n) rc = n;
+  }
+  for (auto &kv : foreign) {
+    int n = stratum_install(o, kv.first, kv.second);
+    if (n) rc = n;
+  }
+  for (const auto &name : fallback) {
+    std::string st = choose_stratum_for(o, name);
+    if (st.empty()) {
+      rc = 1;
+      continue;
+    }
+    int n = stratum_install(o, st, {name});
+    if (n) rc = n;
+  }
+  return rc;
 }
 
 int cmd_update(const Options &o, const std::vector<std::string> &args) {
-  (void)args;
+  if (!args.empty()) {
+    int rc = 0;
+    for (const auto &a : args) {
+      PkgRef r = parse_pkgref(a);
+      int n = stratum_update(o, r.foreign ? r.stratum : a);
+      if (n) rc = n;
+    }
+    return rc;
+  }
   return do_install(o, {}, true);
 }
 
-int cmd_remove(const Options &o, const std::vector<std::string> &args) {
-  if (args.empty()) {
-    fprintf(stderr, "usage: salt remove <pkg>...\n");
-    return 2;
-  }
+static int native_remove(const Options &o, const std::vector<std::string> &args) {
   salt_ctx ctx;
   salt_ctx_init(&ctx, o.root.c_str());
   salt_db *db = nullptr;
@@ -321,6 +366,32 @@ int cmd_remove(const Options &o, const std::vector<std::string> &args) {
   salt_db_close(db);
   salt_ctx_free(&ctx);
   return rc == SALT_OK ? 0 : 1;
+}
+
+int cmd_remove(const Options &o, const std::vector<std::string> &args) {
+  if (args.empty()) {
+    fprintf(stderr, "usage: salt remove <pkg>... | <stratum>/<pkg>...\n");
+    return 2;
+  }
+  std::vector<std::string> native;
+  std::map<std::string, std::vector<std::string>> foreign;
+  for (const auto &a : args) {
+    PkgRef r = parse_pkgref(a);
+    if (r.foreign)
+      foreign[r.stratum].push_back(r.pkg);
+    else
+      native.push_back(a);
+  }
+  int rc = 0;
+  if (!native.empty()) {
+    int n = native_remove(o, native);
+    if (n) rc = n;
+  }
+  for (auto &kv : foreign) {
+    int n = stratum_remove(o, kv.first, kv.second);
+    if (n) rc = n;
+  }
+  return rc;
 }
 
 int cmd_rollback(const Options &o, const std::vector<std::string> &args) {
