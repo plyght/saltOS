@@ -51,7 +51,7 @@ sddm,calamares-settings-debian"
 
 SETUP_PKGS="rsync,squashfs-tools,$GRUB_PKGS,\
 grub-common,grub2-common,efibootmgr,mtools,gdisk,parted,dosfstools,\
-debootstrap,locales,console-setup,kbd,network-manager,dbus,libpam-systemd"
+debootstrap,locales,console-setup,kbd,network-manager,dbus"
 
 PKGS="$BASE_PKGS"
 if [ "$EDITION" = "base" ]; then
