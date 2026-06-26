@@ -1,237 +1,125 @@
 saltOS
 ======
 
-saltOS is an independent, Bedrock-like Linux distribution: a daily-drivable OS
-that owns its own boot, base system, init, package manager, and rollback model -
-while being able to run software from any major Linux ecosystem through managed,
-rollbackable environments called strata.
+saltOS is an experimental independent Linux distribution with its own boot,
+base system, init, package manager, and rollback model. It can also run software
+from major Linux ecosystems through managed, rollbackable environments called
+strata.
 
-It has two package planes:
+Status: under active construction. The model is proven in CI, but saltOS is not
+yet a polished daily-driver OS.
 
-  Native plane - saltOS-owned packages built by salt, in the .grain format, from
-  a curated and signed binary repository. This is the curated base: kernel, libc,
-  init, bootloader integration, system tools, and salt's own glue.
+Core model
+----------
 
-  Stratum plane - managed foreign-distro roots (Arch, Debian, Void, Fedora,
-  openSUSE, Alpine, ...) that provide package depth through their own package
-  managers (pacman, apt, xbps, dnf, zypper, apk), isolated by default and
-  selectively exposed on the host when you choose.
+saltOS has two package planes:
 
-    saltOS is the host OS and control plane.
-    Native salt packages provide the curated base and first-party system.
-    Foreign distro strata provide package depth and interchangeable components.
-    salt decides what is integrated, exposed, adopted, or isolated.
+- Native plane: saltOS-owned `.grain` packages built by `salt`, installed from a
+  curated signed repository, and used for the base system.
+- Stratum plane: managed Arch, Debian, Void, Fedora, openSUSE, Alpine, and other
+  foreign-distro roots that keep their own package managers isolated until you
+  explicitly expose software to the host.
 
-Status: experimental and under active construction. The model is real and proven
-in CI; it is not yet a polished daily driver.
+`salt` is the control plane: it installs native packages, bootstraps strata,
+runs foreign software, exposes commands or desktop apps, manages providers, and
+rolls back host or stratum changes.
 
-
-WHAT'S PROVEN IN CI
--------------------
-
-  Every major package manager, end-to-end. The strata workflow runs a matrix
-  over Alpine (apk), Void (xbps), Arch (pacman), Debian (apt), Fedora (dnf), and
-  openSUSE (zypper). Each job: bootstrap the stratum -> run a command inside it
-  (chroot + Linux namespaces) -> install a package with the foreign package
-  manager -> take a snapshot -> roll back -> expose a command -> tear down. All
-  six are green.
-
-  It boots, and runs the whole chain in the VM. The live-iso workflow builds a
-  console ISO that boots in QEMU, and an end-to-end job that, inside the booted
-  OS, brings up networking, bootstraps Alpine, apk-installs nano, and runs it
-  (SALTOS_STRATUM_E2E_OK on the serial console).
-
-  The native plane works. The ci workflow builds salt, passes the unit suite and
-  an end-to-end CLI smoke test (build -> sign -> publish -> signature-verified
-  sync -> install -> verify -> remove -> rollback), and proves the maintainer
-  pipeline on real upstream source (zlib -> signed .grain).
-
-  A fully self-hosted, from-source image (selfhost-iso) compiles the Linux
-  kernel, glibc, GNU bash/coreutils, BusyBox, runit, and a static salt entirely
-  from upstream source and boots under runit as PID 1 - no Debian, no apt, no
-  prebuilt distro packages.
-
-
-THE STRATUM PLANE
------------------
-
-A stratum is a managed foreign userspace rooted under /strata/<name>. saltOS owns
-the bootstrap, snapshots, command routing, and rollback; the foreign package
-manager only owns its own root.
-
-    salt install arch/ripgrep          bootstrap arch if needed, install, offer to expose
-    salt stratum list                  show managed strata
-    sudo pacman -S firefox             use the stratum's own package manager from the host
-    salt arch/firefox                  run foreign software (Wayland/X11/dbus/audio/GPU pass through)
-    salt run arch firefox              the same, long form
-    salt pkg arch install ripgrep      foreign package-manager passthrough (pre-op snapshot taken)
-    salt expose arch rg                expose a command as a host shim on PATH
-    salt expose-desktop arch firefox   expose a desktop app
-    salt provider set coreutils debian/coreutils   adopt a component from a stratum
-    salt stratum snapshot arch         per-stratum snapshot
-    salt stratum rollback arch         roll a stratum back
-
-Foreign software is explicit by default - you run it with salt run or opt in with
-salt expose; it does not pollute the host namespace. Exposed commands are
-saltOS-owned shims in /usr/local/salt/shims (on PATH). Trust boundaries stay
-visible: a native .grain, a package from a foreign distro's official repo, and a
-lower-trust third-party package are never treated as equivalent.
-
-Strata are defined by small TOML recipes in strata/ and bootstrap by one of three
-methods: a rootfs tarball (rootfs), debootstrap, or an OCI image export (oci, via
-docker/podman). See docs/strata.md.
-
-
-THE NATIVE PLANE
+What works today
 ----------------
 
-  salt package manager: native, transactional, rollback-aware,
-  signature-checking, source-hash-aware, daemonless.
+- Native package flow: build, lint, sign, publish, sync, install, verify, remove,
+  and rollback.
+- Strata flow across apk, xbps, pacman, apt, dnf, and zypper: bootstrap, run,
+  install, snapshot, rollback, expose, and remove.
+- QEMU-booted live ISO smoke tests with networking and a stratum package install.
+- Self-hosted from-source ISO path for Linux, glibc, bash/coreutils, BusyBox,
+  runit, and static `salt`.
 
-  .grain format (a grain of salt): a ustar container of metadata.toml,
-  manifest.toml, a zstd-compressed payload, and optional (discouraged) scripts.
+Architecture
+------------
 
-  Curated binary repository with an ed25519-signed index.toml.
+- Kernel: upstream Linux
+- C library: glibc
+- Init: runit
+- Filesystem: Btrfs subvolumes and snapshots
+- Bootloader: GRUB
+- Package manager: `salt` CLI + `halite` C core
+- Package format: `.grain`
+- Repository: signed per-architecture indexes
+- Database: SQLite
+- Architectures: x86_64 and aarch64
 
-  Explicit contributor trust model (unknown / vouched / maintainer / denounced)
-  and supply-chain risk scanning.
+Build
+-----
 
-  TOML package recipes with pinned source URLs and hashes. All 111 recipes pass
-  salt lint; the rest pin real upstream URLs pending verified hashes.
+Requires Linux, CMake 3.20+, Ninja, pkg-config, a C/C++ toolchain, libzstd,
+libsodium, and sqlite3.
 
+```sh
+cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
 
-ROLLBACK EVERYWHERE
--------------------
+The main binaries are produced at `build/src/salt/salt` and
+`build/src/setup/salt-setup`.
 
-    salt update                 snapshots @ and records a deployment, then upgrades
-    salt rollback               restore the previous known-good host deployment
-    salt stratum rollback arch  roll back a single stratum after a bad foreign update
+Quick commands
+--------------
 
-Every host transaction snapshots @ before mutating the system and rolls back
-automatically on failure; the bootloader can boot a previous deployment. Each
-stratum is snapshot-capable independently (Btrfs subvolume, or a tarball
-fallback). User data in @home is never rolled back. See docs/rollback.md.
+```sh
+salt sync                         # refresh repository index
+salt search <term>                # search native packages
+salt install <pkg>                # install a native package
+salt update                       # snapshot and upgrade host
+salt rollback                     # restore previous host deployment
 
+salt stratum add arch             # bootstrap a stratum
+salt run arch firefox             # run foreign software
+salt install arch/ripgrep         # install from a stratum
+salt expose arch rg               # expose a host shim
+salt pkg arch install firefox     # use a stratum package manager
+salt stratum rollback arch        # roll back one stratum
 
-ARCHITECTURE AT A GLANCE
-------------------------
+salt build recipes/<name>         # build a .grain package
+salt lint recipes/<name>          # lint a recipe
+salt sign <pkg>                   # sign a package or index
+salt repo publish <dir>           # publish a signed repository index
+salt trust scan recipes/<name>    # scan supply-chain risk
+```
 
-    Kernel                  upstream Linux, latest stable, minimal patching
-    C library               glibc (foreign strata may use their own, e.g. musl in Alpine)
-    Init                    runit (svc wrapper); strata never take PID 1
-    Filesystem              Btrfs (@ @home @var @log @snapshots @strata)
-    Bootloader              GRUB (snapshot/deployment entries)
-    Native package manager  salt (C core halite + C++23 CLI)
-    Native package format   .grain
-    Stratum manager         salt stratum / run / pkg / expose / provider
-    Isolation               private mount namespace + bind mounts + chroot + privilege drop
-    Databases               SQLite: db.sqlite (native) and strata.sqlite (strata/exposed/providers)
-    Repository              curated, signed index.toml per arch
-    Desktop                 LXQt (in progress); apps can be native or stratum-backed
-    Installer               Calamares
+Repository layout
+-----------------
 
-See docs/architecture.md for the full picture.
+- `src/halite/` - C core library for packages, repositories, transactions, trust,
+  rollback, and strata.
+- `src/salt/` - C++23 `salt` CLI.
+- `src/setup/` - installer/setup binary.
+- `recipes/` - native package recipes.
+- `repo/` - package repository tree.
+- `strata/` - foreign-distro stratum definitions.
+- `os/` - OS integration, ISO, installer, Btrfs, and runit files.
+- `tests/` - unit and CLI smoke tests.
+- `docs/` - detailed design and contributor documentation.
 
-
-SUPPORTED ARCHITECTURES
------------------------
-
-    x86_64    (primary)
-    aarch64
-
-salt detects the host arch at runtime (normalizing arm64->aarch64,
-amd64->x86_64). The repository keeps one tree per arch.
-
-
-BUILDING FROM SOURCE
---------------------
-
-saltOS uses CMake + Ninja. C is C11, C++ is C++23. The build host is Linux.
-
-Dependencies (Debian/Ubuntu names): cmake ninja-build pkg-config libzstd-dev
-libsodium-dev libsqlite3-dev build-essential.
-
-    cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
-    cmake --build build
-    ctest --test-dir build --output-on-failure
-
-The salt binary is produced under build/src/salt/salt.
-
-
-SALT COMMAND CHEAT-SHEET
-------------------------
-
-  native packages
-    salt sync                 refresh the repo index from the configured source
-    salt search <term>        search the repository
-    salt install <pkg>...     install one or more native packages
-    salt remove <pkg>...      remove packages
-    salt update               upgrade the system (snapshot + transaction)
-    salt rollback             restore the previous deployment
-    salt deployments          list deployments / rollback points
-    salt verify               verify installed files against recorded hashes
-    salt query|files|owner    inspect packages and file ownership
-
-  stratum shortcuts (<stratum>/<pkg>)
-    salt install <stratum>/<pkg>      install foreign software, then offer to expose it
-    salt remove <stratum>/<pkg>       remove foreign software and its host shims
-    salt search <stratum>/<term>      search a stratum's repositories
-    salt update <stratum>             upgrade packages inside a stratum (snapshot first)
-    salt <stratum>/<cmd> [args]       run a stratum command without the 'run' keyword
-    sudo pacman|apt|apk ... [args]    a stratum's own package manager, exposed on the host
-
-  strata + integration
-    salt stratum add <name>           bootstrap a foreign distro stratum
-    salt stratum list|status|remove   manage strata
-    salt stratum snapshot|rollback    per-stratum rollback
-    salt run <stratum> <cmd> [args]   run a command inside a stratum
-    salt pkg <stratum> <op> [pkg]     foreign package-manager passthrough
-    salt pm <stratum> <pm> [args]     run a stratum's package manager as root (snapshots on mutate)
-    salt expose <stratum> <cmd>       expose a command as a host shim
-    salt expose-desktop <stratum> <a> expose a desktop app
-    salt provider set|rollback        adopt/revert component providers
-    salt service import|enable|start  integrate stratum daemons under runit
-
-Installing foreign software auto-detects the commands, the desktop/menu entries,
-and the daemons (systemd units) a package adds and offers to wire them up -
-commands onto PATH, apps into the menu, daemons into runit - so install-and-run
-needs no separate expose/import step. This is controlled by /etc/salt/salt.conf
-([install] auto_expose = always|prompt|never; default prompt) and overridable per
-command with --expose and --no-expose. Exposing each stratum's package manager on
-the host is [strata] expose_pm (default true); auto-importing daemons is [strata]
-auto_service (default true).
-
-  maintainer
-    salt build <recipe-dir>   build a .grain from a recipe
-    salt lint <recipe-dir>    lint a recipe
-    salt stratum lint <file>  lint a stratum recipe
-    salt sign <pkg>           sign a .grain / index
-    salt repo publish <dir>   build and sign a repository index
-    salt trust <subcommand>   manage contributor trust and supply-chain scans
-
-Global flags: --root <dir>, --repo <url-or-path>, --key <pubkey-hex-or-file>, --yes.
-
-
-DOCUMENTATION
+Documentation
 -------------
 
-    docs/architecture.md      Architecture
-    docs/package-manager.md   Package manager
-    docs/strata.md            Strata (the stratum plane)
-    docs/recipes.md           Writing recipes
-    docs/repository.md        Repository model
-    docs/trust-model.md       Trust model
-    docs/rollback.md          Rollback
-    docs/installation.md      Installation
-    docs/contributing.md      Contributing
-    docs/CONVENTIONS.md       Build conventions (authoritative contract)
+- `docs/architecture.md` - system architecture
+- `docs/package-manager.md` - native package manager
+- `docs/strata.md` - stratum model
+- `docs/rollback.md` - rollback design
+- `docs/recipes.md` - package recipes
+- `docs/repository.md` - repository format
+- `docs/trust-model.md` - trust and supply-chain policy
+- `docs/installation.md` - installation notes
+- `docs/contributing.md` - contribution guide
+- `docs/CONVENTIONS.md` - build and repository conventions
 
+Policy
+------
 
-LICENSE AND POLICY
-------------------
-
-saltOS prefers permissive and copyleft open-source software. Every native package
-must declare its license. The project avoids telemetry by default, unclear
-licenses, repackaged binaries of unknown provenance, and packages that download
-code at install time. Foreign strata follow their upstream distributions'
-policies - saltOS surfaces that boundary rather than hiding it.
+Native packages must declare licenses and pin sources. saltOS avoids telemetry,
+unclear licenses, unknown-provenance binaries, and install-time code downloads.
+Foreign strata keep their upstream policy boundary visible instead of pretending
+to be native packages.
