@@ -1,5 +1,6 @@
-build/
-out/
+/build/
+/build-vm/
+/out/
 *.o
 *.a
 *.grain
@@ -7,9 +8,9 @@ keys/*.sec
 keys/*.secret
 .DS_Store
 compile_commands.json
-work/
-rootfs/
-sources/
+/work/
+/rootfs/
+/sources/
 *.iso
 
 # build outputs

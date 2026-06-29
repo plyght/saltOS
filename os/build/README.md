@@ -45,13 +45,18 @@ sudo env SALT_BIN=... SALTSETUP_BIN=... REPO_DIR="$PWD" EDITION=installer \
 Common env knobs: `EDITION` (`console`|`desktop`|`installer`), `VERSION`,
 `IMG_SIZE_MB`, `OUT`, `SALTOS_HOSTNAME`.
 
-## Exposed commands work from any user
+## Exposed commands work from any user, sudo-free
 
-Every image ships `/etc/sudoers.d/salt-strata` allowing passwordless invocation
-of `/usr/bin/salt`, and `salt.conf` enables `expose_all`. Together with salt's
-self-escalation this means: install a tool in any stratum and run it by name
-(e.g. `nvim`) as any user, with no `sudo` typed — it runs as *you*, not root.
-Package-manager actions (`apk`, `pacman`, …) escalate to root automatically.
+`salt.conf` enables `expose_all`, so installing a tool in any stratum makes it a
+host command automatically. Running an exposed command (e.g. `nvim`) uses an
+**unprivileged user namespace** — no sudo, no root — and runs as *you*, with your
+real uid and files owned by you, exactly like a normal command.
+
+Package-manager actions (`apk`, `pacman`, …) do need real root to write the
+stratum, so they escalate via the `/etc/sudoers.d/salt-strata` passwordless rule.
+That same rule is also the automatic fallback for `salt run` on kernels that
+forbid unprivileged user namespaces (e.g. Ubuntu's AppArmor default); Void's
+kernel allows them, so the images are genuinely sudo-free for running commands.
 
 ---
 
