@@ -100,14 +100,54 @@ static void salt_run_mount_proc(void) {
   free(proc);
 }
 
+/* Write a one-shot string to a /proc/self/{uid,gid}_map or setgroups file. */
+static int salt_run_write_str(const char *path, const char *val) {
+  int fd = open(path, O_WRONLY);
+  if (fd < 0) return -1;
+  ssize_t n = write(fd, val, strlen(val));
+  close(fd);
+  return n < 0 ? -1 : 0;
+}
+
+/* Enter an unprivileged user namespace, mapping the calling user to uid/gid 0
+ * inside it. This grants CAP_SYS_ADMIN over the new namespace -- enough to set
+ * up the stratum mount namespace + chroot -- with NO real root, NO setuid, NO
+ * sudo. The command then execs as namespace-root, which maps back to the
+ * calling user on the host, so it runs as you and files are owned by you.
+ * Returns 0 on success, -1 if the kernel denies unprivileged userns. */
+static int salt_run_enter_userns(void) {
+  uid_t ruid = getuid();
+  gid_t rgid = getgid();
+  if (unshare(CLONE_NEWUSER) != 0) return -1;
+  char buf[64];
+  /* Map the caller to *itself* (not to 0). Creating the namespace already grants
+   * a full capability set within it -- enough for the mount/chroot setup -- so
+   * the command can still run while keeping the caller's real uid/gid, exactly
+   * like a normal command. setgroups must be denied before writing gid_map. */
+  salt_run_write_str("/proc/self/setgroups", "deny");
+  snprintf(buf, sizeof(buf), "%u %u 1", (unsigned)ruid, (unsigned)ruid);
+  if (salt_run_write_str("/proc/self/uid_map", buf) != 0) return -1;
+  snprintf(buf, sizeof(buf), "%u %u 1", (unsigned)rgid, (unsigned)rgid);
+  if (salt_run_write_str("/proc/self/gid_map", buf) != 0) return -1;
+  return 0;
+}
+
 static void salt_run_child(const salt_stratum *s, const salt_run_opts *opts,
                            char *const argv[]) {
   g_root = s->root;
 
+  /* Unprivileged caller: get CAP_SYS_ADMIN via a user namespace instead of
+   * requiring sudo. If the kernel forbids it, exit 126 so the dispatcher can
+   * fall back to re-execing under sudo. */
+  bool in_userns = false;
+  if (geteuid() != 0) {
+    if (salt_run_enter_userns() != 0) _exit(126);
+    in_userns = true;
+  }
+
   if (unshare(CLONE_NEWNS) != 0) {
     fprintf(stderr,
-            "salt run: needs root / CAP_SYS_ADMIN to set up the stratum mount "
-            "namespace: %s\n",
+            "salt run: could not set up the stratum mount namespace: %s\n",
             strerror(errno));
     _exit(125);
   }
@@ -136,7 +176,10 @@ static void salt_run_child(const salt_stratum *s, const salt_run_opts *opts,
   long gid = 0;
   bool keep_root = false;
 
-  if (opts->user && strcmp(opts->user, "root") == 0) {
+  if (in_userns) {
+    /* We are already mapped to the calling user (as namespace-root). No sudo
+     * was involved, so there is nothing to drop -- exec as-is. */
+  } else if (opts->user && strcmp(opts->user, "root") == 0) {
     keep_root = true;
   } else if (opts->user && opts->user[0] != '\0') {
     if (sudo_uid && sudo_gid) {

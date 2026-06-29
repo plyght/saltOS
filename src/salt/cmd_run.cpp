@@ -10,14 +10,38 @@ extern "C" {
 #include <cstring>
 #include <string>
 #include <vector>
+#include <unistd.h>
+
+// Kernel denied unprivileged user namespaces (salt_run_child exit 126). Fall
+// back to the transparent-sudo path so `run` still works -- sudo sets up the
+// stratum as root and salt drops back to the caller. Re-execs; only returns on
+// failure to exec sudo.
+static void run_fallback_sudo(const Options &o, const std::vector<std::string> &args) {
+  if (geteuid() == 0) return;  // already root, nothing to escalate
+  std::vector<char *> a;
+  a.push_back(const_cast<char *>("sudo"));
+  a.push_back(const_cast<char *>("-n"));
+  a.push_back(const_cast<char *>("salt"));
+  if (o.root != "/") {
+    a.push_back(const_cast<char *>("--root"));
+    a.push_back(const_cast<char *>(o.root.c_str()));
+  }
+  a.push_back(const_cast<char *>("run"));
+  for (auto &t : args) a.push_back(const_cast<char *>(t.c_str()));
+  a.push_back(nullptr);
+  execvp("sudo", a.data());
+}
 
 int cmd_run(const Options &o, const std::vector<std::string> &args) {
   if (args.size() < 2) {
     fprintf(stderr, "usage: salt run <stratum> <cmd> [args...]\n");
     return 2;
   }
+  // Read-only open: `run` only needs to look up the stratum's root, and an
+  // unprivileged user must be able to read the root-owned DB without writing it.
   salt_strata_db *db = nullptr;
-  if (salt_strata_db_open(o.root.c_str(), &db) != SALT_OK) {
+  if (salt_strata_db_open_ro(o.root.c_str(), &db) != SALT_OK &&
+      salt_strata_db_open(o.root.c_str(), &db) != SALT_OK) {
     fprintf(stderr, "salt: %s\n", salt_last_error());
     return 1;
   }
@@ -28,6 +52,8 @@ int cmd_run(const Options &o, const std::vector<std::string> &args) {
     salt_strata_db_close(db);
     return 1;
   }
+  salt_strata_db_close(db);  // done reading; the run child needs no DB handle
+
   std::vector<std::string> hold(args.begin() + 1, args.end());
   std::vector<char *> argv;
   for (auto &t : hold) argv.push_back(const_cast<char *>(t.c_str()));
@@ -37,11 +63,19 @@ int cmd_run(const Options &o, const std::vector<std::string> &args) {
   salt_run_opts_default(&opts);
   int st = 0;
   int rc = salt_stratum_run(&s, &opts, argv.data(), &st);
-  if (rc != SALT_OK) fprintf(stderr, "salt: %s\n", salt_last_error());
-
   salt_stratum_free_fields(&s);
-  salt_strata_db_close(db);
-  return rc != SALT_OK ? 1 : st;
+  if (rc != SALT_OK) {
+    fprintf(stderr, "salt: %s\n", salt_last_error());
+    return 1;
+  }
+  // 126 == unprivileged user namespaces unavailable; retry transparently w/ sudo.
+  if (st == 126) {
+    run_fallback_sudo(o, args);
+    fprintf(stderr, "salt run: needs unprivileged user namespaces or sudo "
+                    "(could not escalate)\n");
+    return 126;
+  }
+  return st;
 }
 
 int cmd_pkg(const Options &o, const std::vector<std::string> &args) {

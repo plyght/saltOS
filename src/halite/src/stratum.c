@@ -358,6 +358,39 @@ void salt_strata_ctx_free(salt_strata_ctx *c) {
   memset(c, 0, sizeof(*c));
 }
 
+/* Open the strata DB read-only without writing anything (no WAL switch, no
+ * schema apply). This lets an unprivileged user read the root-owned DB (mode
+ * 0644) for read-only operations like `run`/`exposed`, so those need neither
+ * sudo nor write access. `immutable=1` skips the -wal/-shm machinery entirely. */
+int salt_strata_db_open_ro(const char *root, salt_strata_db **out) {
+  char *dbpath = salt_join_path(root, "var/lib/salt/strata.sqlite");
+  if (!salt_path_exists(dbpath)) {
+    salt_set_error("no strata configured yet");
+    free(dbpath);
+    return SALT_ERR_IO;
+  }
+  salt_strata_db *db = calloc(1, sizeof(*db));
+  if (!db) {
+    free(dbpath);
+    return SALT_ERR;
+  }
+  size_t ulen = strlen(dbpath) + 32;
+  char *uri = malloc(ulen);
+  if (uri) snprintf(uri, ulen, "file:%s?immutable=1", dbpath);
+  int rc = sqlite3_open_v2(uri ? uri : dbpath, &db->h,
+                           SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, NULL);
+  free(uri);
+  free(dbpath);
+  if (rc != SQLITE_OK) {
+    salt_set_error("strata db open (ro): %s", sqlite3_errmsg(db->h));
+    sqlite3_close(db->h);
+    free(db);
+    return SALT_ERR_IO;
+  }
+  *out = db;
+  return SALT_OK;
+}
+
 int salt_strata_db_open(const char *root, salt_strata_db **out) {
   char *dbpath = salt_join_path(root, "var/lib/salt/strata.sqlite");
   char *dup = salt_strdup(dbpath);

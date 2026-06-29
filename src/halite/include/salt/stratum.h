@@ -126,6 +126,7 @@ int salt_strata_ctx_init(salt_strata_ctx *c, const char *root);
 void salt_strata_ctx_free(salt_strata_ctx *c);
 
 int salt_strata_db_open(const char *root, salt_strata_db **out);
+int salt_strata_db_open_ro(const char *root, salt_strata_db **out);
 void salt_strata_db_close(salt_strata_db *db);
 
 int salt_stratum_register(salt_strata_db *db, const salt_stratum_recipe *r);

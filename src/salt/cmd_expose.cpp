@@ -67,8 +67,10 @@ int cmd_unexpose(const Options &o, const std::vector<std::string> &args) {
 
 int cmd_exposed(const Options &o, const std::vector<std::string> &args) {
   (void)args;
+  // Read-only: listing exposed commands must work for any user without sudo.
   salt_strata_db *db = nullptr;
-  if (salt_strata_db_open(o.root.c_str(), &db) != SALT_OK) {
+  if (salt_strata_db_open_ro(o.root.c_str(), &db) != SALT_OK &&
+      salt_strata_db_open(o.root.c_str(), &db) != SALT_OK) {
     fprintf(stderr, "salt: %s\n", salt_last_error());
     return 1;
   }

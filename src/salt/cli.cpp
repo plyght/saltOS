@@ -242,9 +242,14 @@ static int dispatch(const Options &o, const std::string &cmd,
 // after the namespace is built -- see salt_run_child() -- so an exposed `nvim`
 // still runs AS YOU, not as root, even though it transited sudo.
 static bool cmd_needs_root(const std::string &cmd) {
+  // NB: "run" is intentionally absent -- it escalates via an unprivileged user
+  // namespace inside salt_run_child (no sudo), falling back to sudo itself only
+  // if the kernel forbids userns. "exposed" reads the DB read-only. Everything
+  // here genuinely needs real root (writes the stratum rootfs / system db /
+  // services).
   static const char *root_cmds[] = {
-      "run",     "pkg",    "pm",       "stratum", "expose",  "unexpose",
-      "expose-desktop", "expose-all", "exposed", "service", "install",
+      "pkg",     "pm",       "stratum",  "expose",  "unexpose",
+      "expose-desktop", "expose-all", "service", "install",
       "remove", "update", "sync", "rollback", "lock", nullptr};
   for (int i = 0; root_cmds[i]; i++)
     if (cmd == root_cmds[i]) return true;
