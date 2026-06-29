@@ -68,7 +68,7 @@ mmdebstrap \
   --components="main contrib non-free-firmware non-free" \
   --include="$PKGS" \
   --customize-hook='mkdir -p "$1/etc/apt/sources.list.d" "$1/usr/share/keyrings"' \
-  --customize-hook="copy-in $KEYRING /usr/share/keyrings/raspberrypi-archive-keyring.gpg" \
+  --customize-hook="copy-in $KEYRING /usr/share/keyrings" \
   --customize-hook='echo "deb [signed-by=/usr/share/keyrings/raspberrypi-archive-keyring.gpg] '"$RPI_MIRROR"' '"$RPI_SUITE"' main" > "$1/etc/apt/sources.list.d/raspi.list"' \
   --customize-hook='chroot "$1" apt-get update' \
   --customize-hook='chroot "$1" apt-get install -y --no-install-recommends linux-image-rpi-2712 raspi-firmware raspberrypi-sys-mods' \
