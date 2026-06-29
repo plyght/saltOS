@@ -1,0 +1,87 @@
+name: pi5-image
+
+on:
+  workflow_dispatch:
+    inputs:
+      edition:
+        description: "image edition"
+        default: console
+        type: choice
+        options: [console, desktop]
+  push:
+    paths:
+      - "os/pi/**"
+      - "os/ota/**"
+      - "os/runit/sv/salt-update/**"
+      - ".github/workflows/pi5-image.yml"
+
+concurrency:
+  group: pi5-image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: pi5 image (aarch64, ${{ matrix.edition }})
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        edition: ["${{ github.event.inputs.edition || 'console' }}"]
+    env:
+      EDITION: ${{ matrix.edition }}
+      VERSION: "0.1.0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet \
+            /opt/hostedtoolcache/CodeQL /usr/local/.ghcup 2>/dev/null || true
+          df -h /
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config \
+            libzstd-dev libsodium-dev libsqlite3-dev build-essential \
+            mmdebstrap debian-archive-keyring gdisk dosfstools btrfs-progs \
+            zstd curl gpg ca-certificates fdisk mount
+
+      - name: Build salt against the Debian base (arm64)
+        run: |
+          docker run --rm -v "$PWD":/src -w /src debian:bookworm bash -c '
+            set -e
+            apt-get update
+            apt-get install -y --no-install-recommends \
+              cmake ninja-build pkg-config g++ ca-certificates \
+              libzstd-dev libsodium-dev libsqlite3-dev
+            cmake -G Ninja -B build-iso -DCMAKE_BUILD_TYPE=Release
+            cmake --build build-iso --target salt'
+
+      - name: Build Raspberry Pi 5 image
+        run: |
+          sudo env \
+            SALT_BIN="$PWD/build-iso/src/salt/salt" \
+            REPO_DIR="$PWD" \
+            EDITION="$EDITION" \
+            VERSION="$VERSION" \
+            OTA_SOURCE="${OTA_SOURCE:-}" \
+            OUT="$PWD/out-pi" \
+            bash os/pi/build-pi5-image.sh
+          sudo chown -R "$USER" out-pi
+
+      - name: Image summary
+        run: |
+          ls -lh out-pi/
+          file out-pi/*.img || true
+
+      - name: Upload image
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: saltos-pi5-${{ matrix.edition }}
+          path: |
+            out-pi/*.img.zst
+            out-pi/*.img
+          if-no-files-found: warn

@@ -73,6 +73,8 @@ Quick commands
   salt install <pkg>                install a native package
   salt update                       snapshot and upgrade host
   salt rollback                     restore previous host deployment
+  salt-ota run                      snapshot, sync, update, rollback on failure
+  salt-ota status                   show OTA and rollback state
 
   salt stratum add arch             bootstrap a stratum
   salt run arch firefox             run foreign software
@@ -112,6 +114,8 @@ Documentation
   docs/repository.md        repository format
   docs/trust-model.md       trust and supply-chain policy
   docs/installation.md      installation notes
+  docs/raspberry-pi.md      Raspberry Pi 5 image
+  docs/ota.md               over-the-air update server and client
   docs/contributing.md      contribution guide
   docs/CONVENTIONS.md       build and repository conventions
 
