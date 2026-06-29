@@ -7,9 +7,12 @@ extern "C" {
 }
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 #include <sys/utsname.h>
+#include <unistd.h>
 
 std::string arch_detect() {
   struct utsname u;
@@ -112,6 +115,19 @@ bool expose_pm_enabled(const Options &o) {
   return en;
 }
 
+bool expose_all_enabled(const Options &o) {
+  if (o.expose_mode == "never") return false;
+  if (o.expose_mode == "always") return true;
+  std::string conf = path_join(o.root, "etc/salt/salt.conf");
+  bool en = false;  // off by default; saltOS images opt in via salt.conf
+  salt_toml *t = salt_toml_parse_file(conf.c_str());
+  if (t) {
+    en = salt_toml_bool(t, "strata.expose_all", false);
+    salt_toml_free(t);
+  }
+  return en;
+}
+
 bool auto_service_enabled(const Options &o) {
   if (o.expose_mode == "never") return false;
   std::string conf = path_join(o.root, "etc/salt/salt.conf");
@@ -204,6 +220,7 @@ static int dispatch(const Options &o, const std::string &cmd,
   if (cmd == "unexpose") return cmd_unexpose(o, args);
   if (cmd == "exposed") return cmd_exposed(o, args);
   if (cmd == "expose-desktop") return cmd_expose_desktop(o, args);
+  if (cmd == "expose-all") return cmd_expose_all(o, args);
   if (cmd == "provider") return cmd_provider(o, args);
   if (cmd == "service") return cmd_service(o, args);
   if (cmd == "config") return cmd_config(o, args);
@@ -217,6 +234,46 @@ static int dispatch(const Options &o, const std::string &cmd,
   fprintf(stderr, "salt: unknown command '%s'\n", cmd.c_str());
   usage();
   return 2;
+}
+
+// Commands that need root because they set up a mount namespace / chroot, write
+// the system or strata databases, or manage host services. For `run` (and the
+// pm/pkg wrappers that call it) salt drops back to the calling user via SUDO_UID
+// after the namespace is built -- see salt_run_child() -- so an exposed `nvim`
+// still runs AS YOU, not as root, even though it transited sudo.
+static bool cmd_needs_root(const std::string &cmd) {
+  static const char *root_cmds[] = {
+      "run",     "pkg",    "pm",       "stratum", "expose",  "unexpose",
+      "expose-desktop", "service", "install", "remove", "update", "sync",
+      "rollback", "lock",  nullptr};
+  for (int i = 0; root_cmds[i]; i++)
+    if (cmd == root_cmds[i]) return true;
+  return false;
+}
+
+// Transparently re-exec the whole salt invocation under `sudo -n` when a
+// root-needing command is run by an unprivileged user. This is what lets the
+// exposed shims (which just call `salt run <stratum> <cmd>`) work from any user
+// without the user ever typing sudo. The euid==0 check after sudo is the loop
+// guard. Requires a passwordless sudoers rule for /usr/bin/salt (the images
+// install one); if sudo is missing or denies, we fall through and the command's
+// own "needs root" error explains the situation.
+static void reexec_root_if_needed(const std::string &cmd, char **argv) {
+#if defined(__linux__)
+  if (geteuid() == 0) return;
+  if (!cmd_needs_root(cmd)) return;
+  std::vector<char *> a;
+  a.push_back(const_cast<char *>("sudo"));
+  a.push_back(const_cast<char *>("-n"));
+  a.push_back(const_cast<char *>("salt"));
+  for (int i = 1; argv[i] != nullptr; i++) a.push_back(argv[i]);
+  a.push_back(nullptr);
+  execvp("sudo", a.data());
+  // execvp only returns on failure (e.g. sudo not installed); fall through.
+#else
+  (void)cmd;
+  (void)argv;
+#endif
 }
 
 int cli_main(int argc, char **argv) {
@@ -259,5 +316,6 @@ int cli_main(int argc, char **argv) {
     usage();
     return 2;
   }
+  reexec_root_if_needed(cmd, argv);
   return dispatch(o, cmd, rest);
 }

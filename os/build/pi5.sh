@@ -74,12 +74,9 @@ mmdebstrap \
   --customize-hook='chroot "$1" apt-get install -y --no-install-recommends linux-image-rpi-2712 raspi-firmware raspberrypi-sys-mods' \
   "$SUITE" "$ROOTFS" "$MIRROR"
 
-install -Dm755 "$SALT_BIN" "$ROOTFS/usr/bin/salt"
-[ -f "$SALTSETUP_BIN" ] && install -Dm755 "$SALTSETUP_BIN" "$ROOTFS/usr/bin/salt-setup"
-
-mkdir -p "$ROOTFS/etc/salt/strata" "$ROOTFS/usr/local/salt/shims" "$ROOTFS/strata"
-cp "$REPO"/strata/*.toml "$ROOTFS/etc/salt/strata/" 2>/dev/null || true
-install -Dm644 "$REPO/os/profile.d/salt-shims.sh" "$ROOTFS/etc/profile.d/salt-shims.sh"
+# shellcheck source=os/build/common.sh
+. "$REPO/os/build/common.sh"
+saltos_install_controlplane
 
 cat > "$ROOTFS/etc/os-release" <<EOF
 NAME="saltOS"
@@ -145,10 +142,11 @@ else
 fi
 cat > "$ROOTFS/etc/salt/salt.conf" <<'EOF'
 [install]
-auto_expose = "prompt"
+auto_expose = "always"
 
 [strata]
 expose_pm = true
+expose_all = true
 auto_service = true
 
 [ota]
@@ -161,9 +159,7 @@ chroot "$ROOTFS" useradd -m -s /bin/bash salt 2>/dev/null || true
 echo "salt:salt" | chroot "$ROOTFS" chpasswd || true
 echo "root:root" | chroot "$ROOTFS" chpasswd || true
 chroot "$ROOTFS" usermod -aG sudo salt 2>/dev/null || true
-mkdir -p "$ROOTFS/etc/sudoers.d"
-echo "salt ALL=(ALL) NOPASSWD: ALL" > "$ROOTFS/etc/sudoers.d/salt"
-chmod 0440 "$ROOTFS/etc/sudoers.d/salt"
+saltos_write_sudoers salt
 
 cat > "$ROOTFS/etc/runit/sv/agetty-tty1/run" <<'EOF'
 #!/bin/sh

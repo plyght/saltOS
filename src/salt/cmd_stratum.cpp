@@ -29,11 +29,17 @@ std::string resolve_stratum_recipe(const Options &o, const std::string &arg) {
   if (arg.find('/') != std::string::npos ||
       (arg.size() >= 5 && arg.compare(arg.size() - 5, 5, ".toml") == 0))
     return arg;
-  std::vector<std::string> cands = {
-      path_join(o.root, "etc/salt/strata/" + arg + ".toml"),
-      path_join(o.root, "usr/share/salt/strata/" + arg + ".toml"),
-      "strata/" + arg + ".toml",
-  };
+  // Prefer an arch-specific recipe (e.g. arch-aarch64.toml) over the generic
+  // one. This is how `salt stratum add arch` transparently uses Arch Linux ARM
+  // on aarch64 hosts (mainline Arch is x86_64-only) while still resolving the
+  // plain arch.toml on x86_64. Any stratum may ship a <name>-<arch>.toml.
+  std::string ha = arch_detect();
+  std::vector<std::string> cands;
+  for (const std::string &name : {arg + "-" + ha, arg}) {
+    cands.push_back(path_join(o.root, "etc/salt/strata/" + name + ".toml"));
+    cands.push_back(path_join(o.root, "usr/share/salt/strata/" + name + ".toml"));
+    cands.push_back("strata/" + name + ".toml");
+  }
   for (auto &c : cands)
     if (salt_path_exists(c.c_str())) return c;
   return "";
@@ -110,6 +116,7 @@ int cmd_stratum(const Options &o, const std::vector<std::string> &args) {
           } else {
             printf("bootstrapped %s\n", r.name ? r.name : args[1].c_str());
             if (r.name && expose_pm_enabled(o)) expose_pm_for(o, r.name);
+            if (r.name && expose_all_enabled(o)) expose_all_for(o, r.name);
           }
         }
         salt_stratum_recipe_free(&r);

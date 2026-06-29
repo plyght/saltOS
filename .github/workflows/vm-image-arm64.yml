@@ -10,7 +10,7 @@ on:
         options: [desktop, console]
   push:
     paths:
-      - "os/vm/**"
+      - "os/build/vm-apple.sh"
       - "os/runit/**"
       - ".github/workflows/vm-image-arm64.yml"
 
@@ -68,7 +68,7 @@ jobs:
             EDITION="$EDITION" \
             VERSION="$VERSION" \
             OUT="$PWD/out-vm" \
-            bash os/vm/build-arm64-vm.sh
+            bash os/build/vm-apple.sh
           sudo chown -R "$USER" out-vm
 
       - name: Image summary

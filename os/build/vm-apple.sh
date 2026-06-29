@@ -46,6 +46,9 @@ VOID_ROOTFS_SHA256="01a30f17ae06d4d5b322cd579ca971bc479e02cc284ec1e5a4255bea6bac
 ROOT_LABEL=saltos-root
 EFI_BOOT_NAME=BOOTAA64.EFI
 
+# shellcheck source=os/build/common.sh
+. "$REPO/os/build/common.sh"
+
 need() { command -v "$1" >/dev/null 2>&1 || { echo "missing tool: $1" >&2; exit 1; }; }
 need curl; need sha256sum; need tar; need sgdisk; need mkfs.vfat
 need mkfs.btrfs; need losetup; need chroot; need grub-mkstandalone
@@ -102,15 +105,7 @@ if [ -f "$ROOTFS/etc/default/libc-locales" ]; then
   inchroot "xbps-reconfigure -f glibc-locales" || true
 fi
 
-cat > "$ROOTFS/etc/os-release" <<EOF
-NAME="saltOS"
-PRETTY_NAME="saltOS $VERSION (Apple Virtualization / UTM, aarch64)"
-ID=saltos
-ID_LIKE=void
-VERSION="$VERSION"
-VERSION_ID="$VERSION"
-HOME_URL="https://github.com/plyght/saltOS"
-EOF
+saltos_write_os_release "Apple Virtualization / UTM, aarch64"
 echo "$HOSTNAME" > "$ROOTFS/etc/hostname"
 cat > "$ROOTFS/etc/hosts" <<EOF
 127.0.0.1   localhost
@@ -118,35 +113,16 @@ cat > "$ROOTFS/etc/hosts" <<EOF
 ::1         localhost ip6-localhost ip6-loopback
 EOF
 
-echo "==> installing saltOS control plane"
-install -Dm755 "$SALT_BIN" "$ROOTFS/usr/bin/salt"
-[ -f "$SALTSETUP_BIN" ] && install -Dm755 "$SALTSETUP_BIN" "$ROOTFS/usr/bin/salt-setup"
-mkdir -p "$ROOTFS/etc/salt/strata" "$ROOTFS/usr/local/salt/shims" "$ROOTFS/strata" \
-  "$ROOTFS/var/lib/salt"
-cp "$REPO"/strata/*.toml "$ROOTFS/etc/salt/strata/" 2>/dev/null || true
-install -Dm644 "$REPO/os/profile.d/salt-shims.sh" "$ROOTFS/etc/profile.d/salt-shims.sh"
-cat > "$ROOTFS/etc/salt/repo.conf" <<'EOF'
-repo = "current"
-source = ""
-key = ""
-EOF
-cat > "$ROOTFS/etc/salt/salt.conf" <<'EOF'
-[install]
-auto_expose = "prompt"
-
-[strata]
-expose_pm = true
-auto_service = true
-EOF
+echo "==> installing saltOS control plane (expose-by-default + escalation)"
+saltos_install_controlplane
+saltos_write_config
 
 echo "==> creating user 'salt' (passwordless sudo)"
 inchroot "useradd -m -G wheel,audio,video,input,network,storage,_seatd -s /bin/bash salt" 2>/dev/null || \
   inchroot "useradd -m -G wheel,audio,video,input,network,storage -s /bin/bash salt" || true
 echo "salt:salt" | chroot "$ROOTFS" chpasswd || true
 echo "root:root" | chroot "$ROOTFS" chpasswd || true
-mkdir -p "$ROOTFS/etc/sudoers.d"
-echo "salt ALL=(ALL) NOPASSWD: ALL" > "$ROOTFS/etc/sudoers.d/salt"
-chmod 0440 "$ROOTFS/etc/sudoers.d/salt"
+saltos_write_sudoers salt
 
 cat > "$ROOTFS/etc/motd" <<'EOF'
 
@@ -232,7 +208,7 @@ rm -f "$ROOTFS/etc/resolv.conf"
 # ---------------------------------------------------------------------------
 # Assemble the raw EFI disk image: GPT = ESP (fat32) + btrfs root (subvol @).
 # ---------------------------------------------------------------------------
-IMG="$OUT/saltos-$VERSION-vm-$ARCH.img"
+IMG="$OUT/$(saltos_artifact_name apple "$ARCH" img)"
 rm -f "$IMG"
 truncate -s "${IMG_SIZE_MB}M" "$IMG"
 

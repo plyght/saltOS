@@ -90,6 +90,34 @@ int cmd_exposed(const Options &o, const std::vector<std::string> &args) {
   return rc == SALT_OK ? 0 : 1;
 }
 
+int cmd_expose_all(const Options &o, const std::vector<std::string> &args) {
+  if (args.size() < 1) {
+    fprintf(stderr, "usage: salt expose-all <stratum>\n");
+    return 2;
+  }
+  salt_strata_db *db = nullptr;
+  if (salt_strata_db_open(o.root.c_str(), &db) != SALT_OK) {
+    fprintf(stderr, "salt: %s\n", salt_last_error());
+    return 1;
+  }
+  salt_stratum s;
+  memset(&s, 0, sizeof(s));
+  if (salt_stratum_get(db, args[0].c_str(), &s) != SALT_OK) {
+    fprintf(stderr, "salt: %s\n", salt_last_error());
+    salt_strata_db_close(db);
+    return 1;
+  }
+  int count = 0;
+  int rc = salt_expose_all(db, o.root.c_str(), &s, &count);
+  if (rc != SALT_OK)
+    fprintf(stderr, "salt: %s\n", salt_last_error());
+  else
+    printf("exposed %d command(s) from %s as host commands\n", count, args[0].c_str());
+  salt_stratum_free_fields(&s);
+  salt_strata_db_close(db);
+  return rc == SALT_OK ? 0 : 1;
+}
+
 int cmd_expose_desktop(const Options &o, const std::vector<std::string> &args) {
   if (args.size() < 2) {
     fprintf(stderr, "usage: salt expose-desktop <stratum> <app>\n");

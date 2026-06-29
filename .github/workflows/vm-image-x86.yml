@@ -1,32 +1,31 @@
-name: pi5-image
+name: vm-image-x86
 
 on:
   workflow_dispatch:
     inputs:
       edition:
         description: "image edition"
-        default: console
+        default: desktop
         type: choice
-        options: [console, desktop]
+        options: [desktop, console]
   push:
     paths:
-      - "os/build/pi5.sh"
-      - "os/ota/**"
-      - "os/runit/sv/salt-update/**"
-      - ".github/workflows/pi5-image.yml"
+      - "os/build/vm-x86.sh"
+      - "os/build/common.sh"
+      - ".github/workflows/vm-image-x86.yml"
 
 concurrency:
-  group: pi5-image-${{ github.ref }}
+  group: vm-image-x86-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
-    name: pi5 image (aarch64, ${{ matrix.edition }})
-    runs-on: ubuntu-24.04-arm
+    name: vm image (generic UEFI, x86_64, ${{ matrix.edition }})
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        edition: ["${{ github.event.inputs.edition || 'console' }}"]
+        edition: ["${{ github.event.inputs.edition || 'desktop' }}"]
     env:
       EDITION: ${{ matrix.edition }}
       VERSION: "0.1.0"
@@ -45,10 +44,10 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build pkg-config \
             libzstd-dev libsodium-dev libsqlite3-dev build-essential \
-            mmdebstrap debian-archive-keyring gdisk dosfstools btrfs-progs \
+            gdisk dosfstools btrfs-progs grub-efi-amd64-bin grub-common \
             zstd curl gpg ca-certificates fdisk mount
 
-      - name: Build salt against the Debian base (arm64)
+      - name: Build salt (static-linked)
         run: |
           docker run --rm -v "$PWD":/src -w /src debian:bookworm bash -c '
             set -e
@@ -56,32 +55,32 @@ jobs:
             apt-get install -y --no-install-recommends \
               cmake ninja-build pkg-config g++ ca-certificates \
               libzstd-dev libsodium-dev libsqlite3-dev
-            cmake -G Ninja -B build-iso -DCMAKE_BUILD_TYPE=Release
-            cmake --build build-iso --target salt'
+            cmake -G Ninja -B build-vm -DCMAKE_BUILD_TYPE=Release
+            cmake --build build-vm --target salt salt-setup'
 
-      - name: Build Raspberry Pi 5 image
+      - name: Build generic x86_64 VM image
         run: |
           sudo env \
-            SALT_BIN="$PWD/build-iso/src/salt/salt" \
+            SALT_BIN="$PWD/build-vm/src/salt/salt" \
+            SALTSETUP_BIN="$PWD/build-vm/src/setup/salt-setup" \
             REPO_DIR="$PWD" \
             EDITION="$EDITION" \
             VERSION="$VERSION" \
-            OTA_SOURCE="${OTA_SOURCE:-}" \
-            OUT="$PWD/out-pi" \
-            bash os/build/pi5.sh
-          sudo chown -R "$USER" out-pi
+            OUT="$PWD/out-vm" \
+            bash os/build/vm-x86.sh
+          sudo chown -R "$USER" out-vm
 
       - name: Image summary
         run: |
-          ls -lh out-pi/
-          file out-pi/*.img || true
+          ls -lh out-vm/
+          file out-vm/*.img || true
 
       - name: Upload image
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: saltos-pi5-${{ matrix.edition }}
+          name: saltos-vm-${{ matrix.edition }}-x86_64
           path: |
-            out-pi/*.img.zst
-            out-pi/*.img
+            out-vm/*.img.zst
+            out-vm/*.img
           if-no-files-found: warn

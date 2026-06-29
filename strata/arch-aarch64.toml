@@ -1,0 +1,40 @@
+# Arch Linux ARM (aarch64). Mainline Arch is x86_64-only, so on aarch64 hosts
+# `salt stratum add arch` resolves to this recipe instead of arch.toml (see
+# resolve_stratum_recipe). Arch Linux ARM is a separate project with its own
+# rootfs tarball and package mirrors.
+name = "arch"
+family = "arch"
+arch = "aarch64"
+package_manager = "pacman"
+root = "/strata/arch"
+trust = "community"
+
+[bootstrap]
+method = "rootfs"
+# Generic aarch64 root filesystem (no leading directory prefix -> strip = 0).
+url = "http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz"
+sha256 = ""
+strip = 0
+
+[integration]
+graphics = true
+audio = true
+dbus = true
+
+# Arch Linux ARM mirror layout: http://mirror.archlinuxarm.org/$arch/$repo
+# ($arch and $repo are pacman variables, expanded by pacman, not by salt).
+[[repository]]
+name = "core"
+url = "http://mirror.archlinuxarm.org/$arch/$repo"
+
+[[repository]]
+name = "extra"
+url = "http://mirror.archlinuxarm.org/$arch/$repo"
+
+[[repository]]
+name = "alarm"
+url = "http://mirror.archlinuxarm.org/$arch/$repo"
+
+[[repository]]
+name = "aur"
+url = "http://mirror.archlinuxarm.org/$arch/$repo"

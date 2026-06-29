@@ -99,34 +99,18 @@ HOME_URL="https://github.com/plyght/saltOS"
 EOF
 echo "saltos-live" > "$ROOTFS/etc/hostname"
 
-echo "==> installing saltOS control plane"
-install -Dm755 "$SALT_BIN" "$ROOTFS/usr/bin/salt"
-install -Dm755 "$SALTSETUP_BIN" "$ROOTFS/usr/bin/salt-setup"
-mkdir -p "$ROOTFS/etc/salt/strata" "$ROOTFS/usr/local/salt/shims" "$ROOTFS/strata"
-cp "$REPO"/strata/*.toml "$ROOTFS/etc/salt/strata/" 2>/dev/null || true
-install -Dm644 "$REPO/os/profile.d/salt-shims.sh" "$ROOTFS/etc/profile.d/salt-shims.sh"
-cat > "$ROOTFS/etc/salt/repo.conf" <<'EOF'
-repo = "current"
-source = ""
-key = ""
-EOF
-cat > "$ROOTFS/etc/salt/salt.conf" <<'EOF'
-[install]
-auto_expose = "prompt"
-
-[strata]
-expose_pm = true
-auto_service = true
-EOF
+echo "==> installing saltOS control plane (expose-by-default + escalation)"
+# shellcheck source=os/build/common.sh
+. "$REPO/os/build/common.sh"
+saltos_install_controlplane
+saltos_write_config
 
 echo "==> creating live user"
 inchroot "useradd -m -G wheel,audio,video,input,network,storage,_seatd -s /bin/bash salt" 2>/dev/null || \
   inchroot "useradd -m -G wheel,audio,video,input,network,storage -s /bin/bash salt" || true
 echo "salt:salt" | chroot "$ROOTFS" chpasswd || true
 echo "root:root" | chroot "$ROOTFS" chpasswd || true
-mkdir -p "$ROOTFS/etc/sudoers.d"
-echo "salt ALL=(ALL) NOPASSWD: ALL" > "$ROOTFS/etc/sudoers.d/salt"
-chmod 0440 "$ROOTFS/etc/sudoers.d/salt"
+saltos_write_sudoers salt
 
 echo "==> enabling runit services (void convention)"
 RUNDIR="$ROOTFS/etc/runit/runsvdir/default"
@@ -287,7 +271,7 @@ mmd -i "$EFI_IMG" ::/EFI ::/EFI/BOOT
 mcopy -i "$EFI_IMG" "$EFI_IMG_DIR/EFI/BOOT/$EFI_BOOT_NAME" "::/EFI/BOOT/$EFI_BOOT_NAME"
 
 XORRISO_ARGS="-as mkisofs -iso-level 3 -full-iso9660-filenames -volid $ISO_LABEL -rational-rock"
-ISO_PATH="$OUT/saltos-$VERSION-void-$EDITION-$ARCH.iso"
+ISO_PATH="$OUT/$(saltos_artifact_name "$EDITION" "$ARCH" iso)"
 
 if [ "$ARCH" = "x86_64" ]; then
   echo "==> building BIOS GRUB core"

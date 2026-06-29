@@ -49,8 +49,10 @@ std::string choose_stratum_for(const Options &o, const std::string &name);
 std::string resolve_stratum_recipe(const Options &o, const std::string &arg);
 int ensure_stratum(const Options &o, const std::string &name);
 bool expose_pm_enabled(const Options &o);
+bool expose_all_enabled(const Options &o);
 bool auto_service_enabled(const Options &o);
 void expose_pm_for(const Options &o, const std::string &stratum);
+void expose_all_for(const Options &o, const std::string &stratum);
 
 int cmd_sync(const Options &o, const std::vector<std::string> &args);
 int cmd_install(const Options &o, const std::vector<std::string> &args);
@@ -82,6 +84,7 @@ int cmd_expose(const Options &o, const std::vector<std::string> &args);
 int cmd_unexpose(const Options &o, const std::vector<std::string> &args);
 int cmd_exposed(const Options &o, const std::vector<std::string> &args);
 int cmd_expose_desktop(const Options &o, const std::vector<std::string> &args);
+int cmd_expose_all(const Options &o, const std::vector<std::string> &args);
 int cmd_provider(const Options &o, const std::vector<std::string> &args);
 int cmd_service(const Options &o, const std::vector<std::string> &args);
 

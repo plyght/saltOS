@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - "os/iso/void-build.sh"
+      - "os/build/iso.sh"
       - "os/iso/build-iso.sh"
       - "src/**"
       - "strata/**"
@@ -59,7 +59,7 @@ jobs:
             VERSION="0.1.0" \
             OUT="$PWD/out-iso" \
             SALTOS_E2E="1" \
-            bash os/iso/void-build.sh x86_64
+            bash os/build/iso.sh x86_64
           sudo chown -R "$USER" out-iso
 
       - name: Boot test (QEMU)

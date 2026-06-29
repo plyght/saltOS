@@ -1082,6 +1082,65 @@ int salt_expose_pm(salt_strata_db *db, const char *root, const char *stratum, co
   return SALT_OK;
 }
 
+/* True if `name` already resolves to a command on the host (any standard bin
+ * dir under `root`), so we never shadow host tools like ls/bash/cp. */
+static bool host_has_command(const char *root, const char *name) {
+  static const char *bindirs[] = {"usr/bin", "bin", "usr/local/bin",
+                                   "usr/sbin", "sbin", NULL};
+  for (int i = 0; bindirs[i]; i++) {
+    char *d = salt_join_path(root, bindirs[i]);
+    char *p = salt_join_path(d, name);
+    bool ok = salt_path_exists(p);
+    free(d);
+    free(p);
+    if (ok) return true;
+  }
+  return false;
+}
+
+int salt_expose_all(salt_strata_db *db, const char *root, const salt_stratum *s, int *count) {
+  if (count) *count = 0;
+  if (!stratum_exists(db, s->name)) {
+    salt_set_error("expose: unknown stratum %s", s->name);
+    return SALT_ERR_NOTFOUND;
+  }
+  char *base;
+  if (root && strcmp(root, "/") != 0)
+    base = salt_join_path(root, s->root);
+  else
+    base = salt_strdup(s->root);
+
+  static const char *bindirs[] = {"usr/bin", "bin", "usr/local/bin", NULL};
+  int n = 0;
+  for (int i = 0; bindirs[i]; i++) {
+    char *dir = salt_join_path(base, bindirs[i]);
+    DIR *dp = opendir(dir);
+    if (!dp) {
+      free(dir);
+      continue;
+    }
+    struct dirent *de;
+    while ((de = readdir(dp)) != NULL) {
+      if (de->d_name[0] == '.') continue;
+      char *full = salt_join_path(dir, de->d_name);
+      struct stat stt;
+      bool runnable = (stat(full, &stt) == 0) && S_ISREG(stt.st_mode) &&
+                      (stt.st_mode & 0111);
+      free(full);
+      if (!runnable) continue;
+      /* Don't shadow host commands, and don't redo existing shims. */
+      if (host_has_command(root, de->d_name)) continue;
+      if (salt_expose_add(db, root, s->name, de->d_name, de->d_name, "cli") == SALT_OK)
+        n++;
+    }
+    closedir(dp);
+    free(dir);
+  }
+  free(base);
+  if (count) *count = n;
+  return SALT_OK;
+}
+
 int salt_expose_remove(salt_strata_db *db, const char *root, const char *alias) {
   (void)root;
   sqlite3_stmt *st;

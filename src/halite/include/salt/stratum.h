@@ -148,6 +148,10 @@ int salt_stratum_rollback(const salt_strata_ctx *c, salt_strata_db *db, const ch
 int salt_expose_add(salt_strata_db *db, const char *root, const char *stratum, const char *command,
                     const char *alias, const char *kind);
 int salt_expose_pm(salt_strata_db *db, const char *root, const char *stratum, const char *binary);
+/* Expose every command in a stratum's bin dirs that does not already exist on
+ * the host, so installed tools become host commands automatically. Writes the
+ * count of newly exposed commands to *count when non-NULL. */
+int salt_expose_all(salt_strata_db *db, const char *root, const salt_stratum *s, int *count);
 int salt_expose_remove(salt_strata_db *db, const char *root, const char *alias);
 int salt_expose_list(salt_strata_db *db, salt_exposed_list *out);
 int salt_expose_desktop(salt_strata_db *db, const salt_stratum *s, const char *root,

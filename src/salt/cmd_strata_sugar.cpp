@@ -233,6 +233,20 @@ void expose_pm_for(const Options &o, const std::string &stratum) {
   salt_strata_db_close(db);
 }
 
+void expose_all_for(const Options &o, const std::string &stratum) {
+  salt_strata_db *db = nullptr;
+  if (salt_strata_db_open(o.root.c_str(), &db) != SALT_OK) return;
+  salt_stratum s;
+  memset(&s, 0, sizeof(s));
+  if (salt_stratum_get(db, stratum.c_str(), &s) == SALT_OK) {
+    int count = 0;
+    if (salt_expose_all(db, o.root.c_str(), &s, &count) == SALT_OK && count > 0)
+      printf("exposed %d command(s) from %s as host commands\n", count, stratum.c_str());
+    salt_stratum_free_fields(&s);
+  }
+  salt_strata_db_close(db);
+}
+
 int cmd_pm(const Options &o, const std::vector<std::string> &args) {
   if (args.size() < 2) {
     fprintf(stderr, "usage: salt pm <stratum> <pm-binary> [args...]\n");
@@ -264,12 +278,17 @@ int cmd_pm(const Options &o, const std::vector<std::string> &args) {
   opts.user = "root";
   opts.workdir = "/";
   int st = 0;
+  bool mutating = pm_is_mutating(pm_kind(s), binary, rest);
   int rc = salt_stratum_run(&s, &opts, argv.data(), &st);
   if (rc != SALT_OK) fprintf(stderr, "salt: %s\n", salt_last_error());
 
   salt_stratum_free_fields(&s);
   salt_strata_ctx_free(&c);
   salt_strata_db_close(db);
+  // After a successful install/upgrade, pick up any newly added binaries so
+  // freshly installed tools are immediately runnable as host commands.
+  if (rc == SALT_OK && st == 0 && mutating && expose_all_enabled(o))
+    expose_all_for(o, stratum);
   return rc != SALT_OK ? 1 : st;
 }
 

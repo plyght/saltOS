@@ -11,3 +11,14 @@ work/
 rootfs/
 sources/
 *.iso
+
+# build outputs
+out-vm/
+out-pi/
+out-iso/
+*.img
+*.img.zst
+*.iso
+vm-work/
+pi-work/
+void-work/
