@@ -89,7 +89,7 @@ echo "==> installing base, boot, and virtio-aware tooling"
 inchroot "xbps-install -Sy base-system linux dracut btrfs-progs dosfstools gptfdisk parted \
   rsync curl ca-certificates grub grub-arm64-efi efibootmgr \
   NetworkManager dbus elogind polkit seatd sudo chrony openssh \
-  zstd xz bzip2 tar"
+  zstd xz bzip2 tar debootstrap"
 
 if [ "$EDITION" = "desktop" ]; then
   echo "==> installing desktop (virtio-gpu via modesetting)"

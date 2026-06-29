@@ -18,4 +18,4 @@ dbus = true
 
 [[repository]]
 name = "fedora"
-url = "https://download.fedoraproject.org/pub/fedora/linux/releases/40/Everything/x86_64/os/"
+url = "https://download.fedoraproject.org/pub/fedora/linux/releases/40/Everything/{arch}/os/"

@@ -7,7 +7,7 @@ trust = "official"
 
 [bootstrap]
 method = "rootfs"
-url = "https://repo-default.voidlinux.org/live/current/void-{arch}-ROOTFS-20240314.tar.xz"
+url = "https://repo-default.voidlinux.org/live/current/void-{arch}-ROOTFS-20250202.tar.xz"
 sha256 = ""
 strip = 0
 

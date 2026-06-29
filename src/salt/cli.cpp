@@ -244,8 +244,8 @@ static int dispatch(const Options &o, const std::string &cmd,
 static bool cmd_needs_root(const std::string &cmd) {
   static const char *root_cmds[] = {
       "run",     "pkg",    "pm",       "stratum", "expose",  "unexpose",
-      "expose-desktop", "service", "install", "remove", "update", "sync",
-      "rollback", "lock",  nullptr};
+      "expose-desktop", "expose-all", "exposed", "service", "install",
+      "remove", "update", "sync", "rollback", "lock", nullptr};
   for (int i = 0; root_cmds[i]; i++)
     if (cmd == root_cmds[i]) return true;
   return false;
