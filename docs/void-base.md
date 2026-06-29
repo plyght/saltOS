@@ -1,6 +1,6 @@
 # Void-based daily-driver edition
 
-`os/iso/void-build.sh` builds a daily-drivable saltOS ISO on a minimal,
+`os/build/iso.sh` builds a daily-drivable saltOS ISO on a minimal,
 independent, runit-native Void Linux base. It exists side by side with the
 recipe-driven native base (`os/bootstrap` + `os/iso/build-iso.sh`) and the
 Debian-seeded `os/iso/live-build.sh`. It is the pragmatic path to a usable
@@ -46,7 +46,7 @@ cmake --build build --target salt salt-setup
 sudo env SALT_BIN=$PWD/build/src/salt/salt \
          SALTSETUP_BIN=$PWD/build/src/setup/salt-setup \
          REPO_DIR=$PWD EDITION=installer OUT=$PWD/out-iso \
-         bash os/iso/void-build.sh x86_64
+         bash os/build/iso.sh x86_64
 ```
 
 CI builds and QEMU boot-tests it via `.github/workflows/void-iso.yml`

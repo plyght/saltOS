@@ -29,7 +29,7 @@ sudo env \
   OTA_SOURCE="https://updates.example.com" \
   OTA_PUBKEY="$PWD/keys/ota.pub" \
   OUT="$PWD/out-pi" \
-  bash os/pi/build-pi5-image.sh
+  bash os/build/pi5.sh
 ```
 
 `EDITION` is `console` or `desktop`. The kernel (`linux-image-rpi-2712`) and firmware
