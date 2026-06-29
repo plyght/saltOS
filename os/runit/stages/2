@@ -2,4 +2,11 @@
 PATH=/usr/bin:/usr/sbin:/bin:/sbin
 export PATH
 
-exec env - PATH="$PATH" runsvdir -P /etc/runit/runsvdir/current
+# Detach service supervision from the boot console. runsvdir inherits PID 1's
+# stdin/stdout/stderr, which is the kernel console -- the same tty that agetty
+# auto-logs into. Without this redirect every service that does `exec 2>&1`
+# (sshd announcing its port, dhcp clients, chronyd, salt-update) floods the
+# interactive console and races the login shell for keystrokes. Per-service
+# logs are still captured by socklog/svlogd via /dev/log.
+exec env - PATH="$PATH" runsvdir -P /etc/runit/runsvdir/current \
+	</dev/null >/dev/null 2>&1

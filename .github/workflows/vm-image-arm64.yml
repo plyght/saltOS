@@ -1,0 +1,87 @@
+name: vm-image-arm64
+
+on:
+  workflow_dispatch:
+    inputs:
+      edition:
+        description: "image edition"
+        default: desktop
+        type: choice
+        options: [desktop, console]
+  push:
+    paths:
+      - "os/vm/**"
+      - "os/runit/**"
+      - ".github/workflows/vm-image-arm64.yml"
+
+concurrency:
+  group: vm-image-arm64-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: vm image (Apple Virtualization / UTM, aarch64, ${{ matrix.edition }})
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        edition: ["${{ github.event.inputs.edition || 'desktop' }}"]
+    env:
+      EDITION: ${{ matrix.edition }}
+      VERSION: "0.1.0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet \
+            /opt/hostedtoolcache/CodeQL /usr/local/.ghcup 2>/dev/null || true
+          df -h /
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config \
+            libzstd-dev libsodium-dev libsqlite3-dev build-essential \
+            gdisk dosfstools btrfs-progs dosfstools \
+            grub-efi-arm64-bin grub-common \
+            zstd curl gpg ca-certificates fdisk mount
+
+      - name: Build salt against the Debian base (arm64, static-linked)
+        run: |
+          docker run --rm -v "$PWD":/src -w /src debian:bookworm bash -c '
+            set -e
+            apt-get update
+            apt-get install -y --no-install-recommends \
+              cmake ninja-build pkg-config g++ ca-certificates \
+              libzstd-dev libsodium-dev libsqlite3-dev
+            cmake -G Ninja -B build-vm -DCMAKE_BUILD_TYPE=Release
+            cmake --build build-vm --target salt salt-setup'
+
+      - name: Build Apple Virtualization / UTM image
+        run: |
+          sudo env \
+            SALT_BIN="$PWD/build-vm/src/salt/salt" \
+            SALTSETUP_BIN="$PWD/build-vm/src/setup/salt-setup" \
+            REPO_DIR="$PWD" \
+            EDITION="$EDITION" \
+            VERSION="$VERSION" \
+            OUT="$PWD/out-vm" \
+            bash os/vm/build-arm64-vm.sh
+          sudo chown -R "$USER" out-vm
+
+      - name: Image summary
+        run: |
+          ls -lh out-vm/
+          file out-vm/*.img || true
+
+      - name: Upload image
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: saltos-vm-${{ matrix.edition }}-aarch64
+          path: |
+            out-vm/*.img.zst
+            out-vm/*.img
+          if-no-files-found: warn
