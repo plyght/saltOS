@@ -81,6 +81,10 @@ With no image argument it picks the newest `*apple*.img` in `./`, `out-vm/`, or
 `~`. Knobs: `CPUS`, `MEM_MIB`, `TIMEOUT`. The image boots on a copy-on-write
 clone so the source stays pristine (`--in-place` to boot it directly).
 
+For a *persistent* headless VM you can keep running, type into, and **SSH into**
+over the network (no UTM, no display), use [`saltvm.py`](saltvm.py) — see
+[../../docs/headless-vm-ssh.md](../../docs/headless-vm-ssh.md).
+
 ---
 
 # Apple Virtualization / UTM (aarch64) — import notes
