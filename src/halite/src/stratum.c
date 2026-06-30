@@ -3,6 +3,8 @@
 #include "salt/toml.h"
 #include "salt/repo.h"
 #include "salt/hash.h"
+#include "salt/run.h"
+#include <unistd.h>
 
 #include <stdlib.h>
 #include <string.h>
@@ -580,8 +582,37 @@ static void write_resolv_conf(const char *target) {
   salt_mkdirs(etc, 0755);
   free(etc);
   char *dst = salt_join_path(target, "etc/resolv.conf");
+  /* Many distros ship /etc/resolv.conf as a symlink to a systemd-resolved stub
+   * that dangles inside a fresh stratum; copying onto it fails. Drop anything
+   * that isn't a regular file first so we leave a real resolv.conf. */
+  struct stat dstat;
+  if (lstat(dst, &dstat) == 0 && !S_ISREG(dstat.st_mode)) unlink(dst);
   salt_copy_file("/etc/resolv.conf", dst);
   free(dst);
+}
+
+/* Arch/Arch-Linux-ARM verify packages against a pacman keyring that isn't
+ * initialized in a fresh rootfs, so the first `pacman -Syu` dies with
+ * "required key missing from keyring". Initialize + populate it at bootstrap so
+ * pacman strata work out of the box. Runs inside the stratum as root. */
+static void init_pacman_keyring(salt_strata_db *db, const salt_stratum_recipe *r) {
+  if (!r->package_manager || strcmp(r->package_manager, "pacman") != 0) return;
+  salt_stratum s;
+  if (salt_stratum_get(db, r->name, &s) != SALT_OK) return;
+  salt_run_opts opts;
+  salt_run_opts_default(&opts);
+  opts.graphics = false;
+  opts.interactive = false;
+  opts.user = "root";
+  opts.workdir = "/";
+  int st = 0;
+  char *initv[] = {(char *)"pacman-key", (char *)"--init", NULL};
+  salt_stratum_run(&s, &opts, initv, &st);
+  /* --populate with no args imports every keyring the rootfs ships
+   * (archlinuxarm.gpg and/or archlinux.gpg). */
+  char *popv[] = {(char *)"pacman-key", (char *)"--populate", NULL};
+  salt_stratum_run(&s, &opts, popv, &st);
+  salt_stratum_free_fields(&s);
 }
 
 static void write_repo_config(const salt_stratum_recipe *r, const char *target) {
@@ -757,6 +788,7 @@ int salt_stratum_bootstrap(const salt_strata_ctx *c, salt_strata_db *db,
     return rc;
   }
   salt_stratum_snapshot_create(c, db, r->name, "bootstrap", NULL);
+  init_pacman_keyring(db, r);
   free(target);
   return SALT_OK;
 }
