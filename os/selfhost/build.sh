@@ -364,15 +364,24 @@ EOF
 chmod +x "$ROOTFS/etc/runit/sv/netdhcp/run"
 ln -sf /etc/runit/sv/netdhcp "$ROOTFS/etc/runit/runsvdir/current/netdhcp"
 
-mkdir -p "$ROOTFS/etc/runit/sv/getty-tty1"
-cat > "$ROOTFS/etc/runit/sv/getty-tty1/run" <<'EOF'
+# Login on the graphical console (tty1, what UTM/QEMU's display shows) plus a
+# device-guarded serial fallback (ttyS0 for headless). Never run a getty on
+# tty0 -- it aliases the active VT (tty1) and would race the tty1 getty on the
+# same screen. An absent serial device just sleeps, so this is safe everywhere.
+make_shell_sv() { # <name> <dev>
+  mkdir -p "$ROOTFS/etc/runit/sv/$1"
+  cat > "$ROOTFS/etc/runit/sv/$1/run" <<EOF
 #!/bin/sh
-exec /sbin/getty -L -n -i -l /usr/bin/saltos-console-login 115200 ttyS0 vt100
+[ -c /dev/$2 ] || exec sleep 5
+exec /sbin/getty -L -n -i -l /usr/bin/saltos-console-login 115200 $2 linux
 EOF
-chmod +x "$ROOTFS/etc/runit/sv/getty-tty1/run"
+  chmod +x "$ROOTFS/etc/runit/sv/$1/run"
+  ln -sf "/etc/runit/sv/$1" "$ROOTFS/etc/runit/runsvdir/current/$1"
+}
+make_shell_sv shell-tty1 tty1
+make_shell_sv shell-serial ttyS0
 
 ln -sf /etc/runit/sv/boot-check "$ROOTFS/etc/runit/runsvdir/current/boot-check"
-ln -sf /etc/runit/sv/getty-tty1 "$ROOTFS/etc/runit/runsvdir/current/getty-tty1"
 
 ln -sf /sbin/runit-init "$ROOTFS/init"
 
@@ -439,8 +448,12 @@ cp "$WORK/initrd.gz" "$ISODIR/boot/initrd.gz"
 cat > "$ISODIR/boot/grub/grub.cfg" <<EOF
 set default=0
 set timeout=3
-menuentry "saltOS $VERSION (self-hosted)" {
-  linux /boot/bzImage console=tty0 console=ttyS0,115200 rdinit=/sbin/runit-init
+menuentry "saltOS $VERSION (self-hosted, graphical display)" {
+  linux /boot/bzImage console=tty1 rdinit=/sbin/runit-init
+  initrd /boot/initrd.gz
+}
+menuentry "saltOS $VERSION (self-hosted, serial console)" {
+  linux /boot/bzImage console=ttyS0,115200 rdinit=/sbin/runit-init
   initrd /boot/initrd.gz
 }
 EOF

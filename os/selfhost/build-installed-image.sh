@@ -25,7 +25,8 @@ case "$ARCH" in
     EFI_DIR=BOOT
     EFI_NAME=BOOTAA64.EFI
     ROOT_DEVICE=/dev/vda2
-    CONSOLE_ARGS="console=tty0 console=ttyAMA0,115200 console=hvc0"
+    CONSOLE_ARGS="console=tty1"
+    SERIAL_ARGS="console=ttyAMA0,115200 console=hvc0"
     ;;
   x86_64)
     KERNEL_NAME=bzImage
@@ -33,7 +34,8 @@ case "$ARCH" in
     EFI_DIR=BOOT
     EFI_NAME=BOOTX64.EFI
     ROOT_DEVICE=/dev/vda2
-    CONSOLE_ARGS="console=tty0 console=ttyS0,115200"
+    CONSOLE_ARGS="console=tty1"
+    SERIAL_ARGS="console=ttyS0,115200"
     ;;
   *)
     echo "unsupported ARCH=$ARCH" >&2
@@ -112,8 +114,11 @@ mkdir -p "$MNT/boot/grub"
 cat > "$MNT/boot/grub/grub.cfg" <<EOF
 set default=0
 set timeout=3
-menuentry "saltOS $VERSION (installed, $ARCH)" {
+menuentry "saltOS $VERSION (installed, $ARCH, graphical display)" {
   linux /boot/$KERNEL_NAME root=$ROOT_DEVICE rw rootwait init=/sbin/runit-init $CONSOLE_ARGS
+}
+menuentry "saltOS $VERSION (installed, $ARCH, serial console)" {
+  linux /boot/$KERNEL_NAME root=$ROOT_DEVICE rw rootwait init=/sbin/runit-init $SERIAL_ARGS
 }
 EOF
 

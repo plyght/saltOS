@@ -295,20 +295,22 @@ EOF
 chmod +x "$ROOTFS/etc/runit/sv/netdhcp/run"
 ln -sf /etc/runit/sv/netdhcp "$ROOTFS/etc/runit/runsvdir/current/netdhcp"
 
-# Root shell on UTM's graphical console (tty0/tty1) plus serial fallbacks
-# (ttyAMA0 for QEMU virt, hvc0 for Apple's framework). No login -- this is the
-# minimal live console until the installer/live rootfs grows user management.
+# Root shell on the graphical console (tty1, what UTM's display shows) plus
+# device-guarded serial fallbacks (ttyAMA0 for QEMU virt, hvc0 for Apple's
+# framework). Each runs on a DISTINCT device: never run a getty on tty0 too --
+# /dev/tty0 aliases the active VT (tty1), so a tty0 getty races the tty1 getty
+# on the same screen and input/output get scrambled ("can't type"). A serial
+# getty whose device is absent just sleeps, so this is safe on any backend.
 make_shell_sv() { # <name> <dev>
   mkdir -p "$ROOTFS/etc/runit/sv/$1"
   cat > "$ROOTFS/etc/runit/sv/$1/run" <<EOF
 #!/bin/sh
 [ -c /dev/$2 ] || exec sleep 5
-exec /sbin/getty -L -n -i -l /usr/bin/saltos-console-login 115200 $2 vt100
+exec /sbin/getty -L -n -i -l /usr/bin/saltos-console-login 115200 $2 linux
 EOF
   chmod +x "$ROOTFS/etc/runit/sv/$1/run"
   ln -sf "/etc/runit/sv/$1" "$ROOTFS/etc/runit/runsvdir/current/$1"
 }
-make_shell_sv shell-tty0 tty0
 make_shell_sv shell-tty1 tty1
 make_shell_sv shell-serial ttyAMA0
 make_shell_sv shell-hvc0 hvc0
@@ -372,11 +374,11 @@ set default=0
 set timeout=3
 terminal_input console
 terminal_output console
-menuentry "saltOS $VERSION (self-hosted, aarch64, UTM display)" {
-  linux /boot/Image console=tty0 rdinit=/sbin/runit-init
+menuentry "saltOS $VERSION (self-hosted, aarch64, graphical display)" {
+  linux /boot/Image console=tty1 rdinit=/sbin/runit-init
   initrd /boot/initrd.gz
 }
-menuentry "saltOS $VERSION (self-hosted, aarch64, serial fallback)" {
+menuentry "saltOS $VERSION (self-hosted, aarch64, serial console)" {
   linux /boot/Image console=ttyAMA0,115200 console=hvc0 rdinit=/sbin/runit-init
   initrd /boot/initrd.gz
 }
