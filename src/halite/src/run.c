@@ -79,7 +79,16 @@ static void salt_run_bind_file(const char *src, const char *dst_in_root) {
     salt_mkdirs(parent, 0755);
     free(parent);
   }
-  if (!salt_path_exists(dst)) {
+  /* The target may be a symlink (e.g. Arch's /etc/resolv.conf ->
+   * /run/systemd/resolve/stub-resolv.conf, which dangles inside the stratum).
+   * Binding onto a dangling symlink fails silently, leaving the command with no
+   * resolv.conf at all -> DNS failures. Replace anything that isn't a regular
+   * file with a fresh empty file before binding the host's copy over it. */
+  struct stat dstat;
+  if (lstat(dst, &dstat) == 0 && !S_ISREG(dstat.st_mode)) {
+    unlink(dst);
+  }
+  if (lstat(dst, &dstat) != 0) {
     int fd = open(dst, O_CREAT | O_WRONLY, 0644);
     if (fd >= 0) close(fd);
   }
