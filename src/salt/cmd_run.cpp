@@ -55,6 +55,9 @@ int cmd_run(const Options &o, const std::vector<std::string> &args) {
   salt_strata_db_close(db);  // done reading; the run child needs no DB handle
 
   std::vector<std::string> hold(args.begin() + 1, args.end());
+  // Allow the conventional `salt run <stratum> -- <cmd>` separator: drop a single
+  // leading "--" so the command isn't exec'd as the literal program "--".
+  if (!hold.empty() && hold.front() == "--") hold.erase(hold.begin());
   std::vector<char *> argv;
   for (auto &t : hold) argv.push_back(const_cast<char *>(t.c_str()));
   argv.push_back(nullptr);

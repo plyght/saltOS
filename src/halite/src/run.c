@@ -184,6 +184,17 @@ static void salt_run_child(const salt_stratum *s, const salt_run_opts *opts,
 
   salt_run_mount_proc();
 
+  /* The whole point of the expose UX: see and run everything from any stratum.
+   * RUN: salt + the host shims on PATH -- salt is static so it runs under any
+   * libc, and when invoked in here it re-enters the host mount namespace to do
+   * its work (salt_escape_to_host in cli), so cross-stratum commands route to the
+   * host cleanly with no nesting. SEE: bind /strata so other strata's files are
+   * visible (a mount is the only way to share a filesystem view). Bound first so
+   * the recursive bind doesn't also re-bind the /home,/root,/tmp mounts below. */
+  salt_run_bind_dir("/strata", "/strata");
+  salt_run_bind_dir("/usr/local/salt", "/usr/local/salt");
+  salt_run_bind_file("/usr/bin/salt", "/usr/local/bin/salt");
+
   salt_run_bind_dir("/sys", "/sys");
   salt_run_bind_dir("/dev", "/dev");
   salt_run_bind_dir("/run", "/run");
@@ -320,7 +331,13 @@ static void salt_run_child(const salt_stratum *s, const salt_run_opts *opts,
     }
   }
 
-  setenv("PATH", "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin", 1);
+  /* Shim dir LAST so a stratum's own binaries win (no pointless self-nesting),
+   * and only names absent from this stratum fall through to a shim that routes
+   * to whichever stratum provides them. /usr/local/bin is first so the bound
+   * host `salt` is found. */
+  setenv("PATH",
+         "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:/usr/local/salt/shims",
+         1);
   setenv("XDG_RUNTIME_DIR", xdg_runtime, 1);
 
   if (home && home[0] != '\0')

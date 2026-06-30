@@ -281,7 +281,36 @@ static void reexec_root_if_needed(const std::string &cmd, char **argv) {
 #endif
 }
 
+// If salt is invoked from *inside* a stratum (our mount namespace differs from
+// PID 1's), re-enter the host's mount namespace and run there. salt then always
+// operates from the host -- it sees /strata, the package DB, and every shim --
+// so `salt ...` and cross-stratum exposed commands "just work" from any stratum
+// shell. Root only (entering the init namespace needs CAP_SYS_ADMIN); other
+// callers fall through unchanged. Best-effort: any failure just continues. No
+// loop: after re-entry our namespace equals PID 1's, so the check passes.
+static void salt_escape_to_host(int argc, char **argv) {
+  if (geteuid() != 0) return;
+  char self[128], init[128];
+  ssize_t a = readlink("/proc/self/ns/mnt", self, sizeof(self) - 1);
+  ssize_t b = readlink("/proc/1/ns/mnt", init, sizeof(init) - 1);
+  if (a <= 0 || b <= 0) return;
+  self[a] = '\0';
+  init[b] = '\0';
+  if (strcmp(self, init) == 0) return;  // already on the host
+  std::vector<char *> a2;
+  a2.push_back(const_cast<char *>("nsenter"));
+  a2.push_back(const_cast<char *>("-t"));
+  a2.push_back(const_cast<char *>("1"));
+  a2.push_back(const_cast<char *>("-m"));
+  a2.push_back(const_cast<char *>("--"));
+  a2.push_back(const_cast<char *>("/usr/bin/salt"));
+  for (int i = 1; i < argc; i++) a2.push_back(argv[i]);
+  a2.push_back(nullptr);
+  execvp("nsenter", a2.data());  // returns only on failure; then continue
+}
+
 int cli_main(int argc, char **argv) {
+  salt_escape_to_host(argc, argv);
   salt_sign_init();
   Options o;
   std::vector<std::string> rest;
