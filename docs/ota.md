@@ -6,6 +6,21 @@ public key, then `salt update` snapshots the host and upgrades native packages.
 On Raspberry Pi this is wrapped by `salt-ota`, a periodic runit service, with an
 optional A/B tryboot path for atomic root switches.
 
+## Quick publish (one command)
+
+To build, sign, and serve a base-grain repo in one step from a salt binary
+(and optional kernel):
+
+```sh
+SALT=build/src/salt/salt VERSION=0.1.2 sh os/ota/ship.sh ./ota-repo
+# add KERNEL=out/Image to also ship a kernel grain; PORT= to change the port
+```
+
+It creates a signing key on first run (reused after), builds the grains, signs
+the index, prints the one-time client `repo.conf` to paste, and serves. The
+client side is then just `salt update`. The manual steps below explain what it
+does under the hood.
+
 ## Server side
 
 The "server" is any static HTTPS host serving a published repository tree. The
