@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <grp.h>
+#include <pwd.h>
 #include <errno.h>
 #endif
 
@@ -28,6 +29,9 @@ void salt_run_opts_default(salt_run_opts *o) {
 #if defined(__linux__)
 
 static const char *g_root = NULL;
+/* Write end of a pipe to the parent, used to report "userns denied" out-of-band
+ * so it isn't conflated with a real exit code of 126. -1 when unavailable. */
+static int g_signal_fd = -1;
 
 static char *salt_run_full_path(const char *dst_in_root) {
   size_t rlen = strlen(g_root);
@@ -43,14 +47,22 @@ static char *salt_run_full_path(const char *dst_in_root) {
   return full;
 }
 
-static void salt_run_bind_dir(const char *src, const char *dst_in_root) {
+/* Returns 0 on success, -1 if the source is missing or the bind failed. The
+ * caller decides whether a given mount is critical enough to warn/abort -- a
+ * silently-skipped bind of /home or the workdir used to surface as "my files
+ * aren't there" with a clean exit and no diagnostic. */
+static int salt_run_bind_dir(const char *src, const char *dst_in_root) {
   struct stat st;
-  if (stat(src, &st) != 0) return;
+  if (stat(src, &st) != 0) return -1;
   char *dst = salt_run_full_path(dst_in_root);
-  if (!dst) return;
+  if (!dst) return -1;
   salt_mkdirs(dst, 0755);
-  mount(src, dst, NULL, MS_BIND | MS_REC, NULL);
+  int rc = mount(src, dst, NULL, MS_BIND | MS_REC, NULL);
+  if (rc != 0)
+    fprintf(stderr, "salt run: warning: could not bind %s into stratum: %s\n", src,
+            strerror(errno));
   free(dst);
+  return rc == 0 ? 0 : -1;
 }
 
 static char *salt_run_parent_dir(const char *path) {
@@ -150,7 +162,14 @@ static void salt_run_child(const salt_stratum *s, const salt_run_opts *opts,
    * fall back to re-execing under sudo. */
   bool in_userns = false;
   if (geteuid() != 0) {
-    if (salt_run_enter_userns() != 0) _exit(126);
+    if (salt_run_enter_userns() != 0) {
+      if (g_signal_fd >= 0) {
+        char u = 'U';
+        ssize_t w = write(g_signal_fd, &u, 1);
+        (void)w;
+      }
+      _exit(126);
+    }
     in_userns = true;
   }
 
@@ -212,8 +231,28 @@ static void salt_run_child(const salt_stratum *s, const salt_run_opts *opts,
     }
   }
 
+  /* Resolve the caller's name and home on the HOST (before chroot), via the
+   * host's passwd db, so they're correct even when the stratum's /etc/passwd
+   * has no entry for this uid -- many CLIs (git author, getpwuid lookups, cache
+   * paths) misbehave with an empty/wrong $USER or $HOME. */
   char home_buf[4096];
+  char user_buf[256];
   const char *home = NULL;
+  const char *run_user = NULL;
+  uid_t ident_uid = drop ? (uid_t)uid : getuid();
+  struct passwd *pw = getpwuid(ident_uid);
+
+  if (keep_root) {
+    run_user = "root";
+  } else if (drop && sudo_user && sudo_user[0] != '\0') {
+    run_user = sudo_user;
+  } else if (pw && pw->pw_name && pw->pw_name[0] != '\0') {
+    snprintf(user_buf, sizeof(user_buf), "%s", pw->pw_name);
+    run_user = user_buf;
+  } else {
+    const char *e = getenv("USER");
+    if (e && e[0] != '\0') run_user = e;
+  }
 
   if (keep_root) {
     home = "/root";
@@ -229,12 +268,32 @@ static void salt_run_child(const salt_stratum *s, const salt_run_opts *opts,
     }
   } else {
     home = getenv("HOME");
+    if ((!home || home[0] == '\0') && pw && pw->pw_dir && pw->pw_dir[0] != '\0') {
+      snprintf(home_buf, sizeof(home_buf), "%s", pw->pw_dir);
+      home = home_buf;
+    }
+    if ((!home || home[0] == '\0') && run_user) {
+      snprintf(home_buf, sizeof(home_buf), "/home/%s", run_user);
+      home = home_buf;
+    }
   }
 
   if (chroot(s->root) != 0) {
     fprintf(stderr, "salt run: chroot %s failed: %s\n", s->root, strerror(errno));
     _exit(125);
   }
+
+  /* Per-user runtime dir. /run is bound from the host, but /run/user/<uid> is
+   * absent on a logind-less base -- create it so $XDG_RUNTIME_DIR resolves
+   * (Wayland compositors hard-require it; many CLIs use it for sockets/caches).
+   * We're still privileged here (userns-root, or pre-setuid on the sudo path). */
+  uid_t run_uid = drop ? (uid_t)uid : getuid();
+  gid_t run_gid = drop ? (gid_t)gid : getgid();
+  char xdg_runtime[64];
+  snprintf(xdg_runtime, sizeof(xdg_runtime), "/run/user/%u", (unsigned)run_uid);
+  if (mkdir("/run/user", 0755) != 0 && errno != EEXIST) { /* non-fatal */ }
+  if (mkdir(xdg_runtime, 0700) != 0 && errno != EEXIST) { /* non-fatal */ }
+  if (chown(xdg_runtime, run_uid, run_gid) != 0) { /* non-fatal */ }
 
   const char *workdir = NULL;
   if (opts->workdir && opts->workdir[0] != '\0') {
@@ -262,17 +321,32 @@ static void salt_run_child(const salt_stratum *s, const salt_run_opts *opts,
   }
 
   setenv("PATH", "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin", 1);
+  setenv("XDG_RUNTIME_DIR", xdg_runtime, 1);
 
-  if (keep_root) {
-    setenv("HOME", "/root", 1);
-  } else if (home && home[0] != '\0') {
+  if (home && home[0] != '\0')
     setenv("HOME", home, 1);
+  else if (keep_root)
+    setenv("HOME", "/root", 1);
+
+  if (run_user && run_user[0] != '\0') {
+    setenv("USER", run_user, 1);
+    setenv("LOGNAME", run_user, 1);
   }
 
-  if (drop && sudo_user && sudo_user[0] != '\0') {
-    setenv("USER", sudo_user, 1);
-    setenv("LOGNAME", sudo_user, 1);
-  }
+  /* If the inherited $SHELL doesn't exist in the stratum (e.g. host /bin/bash
+   * but an Alpine/busybox stratum), tools that shell out would fail -- fall
+   * back to the always-present /bin/sh. */
+  const char *sh = getenv("SHELL");
+  if (!sh || sh[0] != '/' || access(sh, X_OK) != 0) setenv("SHELL", "/bin/sh", 1);
+
+  /* Graphics enabler: the single-uid user namespace drops supplementary groups
+   * (setgroups is denied), so a compositor can't open /dev/dri or /dev/input by
+   * video/input group membership. seatd sidesteps that by opening the devices
+   * itself and passing fds over its socket. /run is bound from the host, so if
+   * the host runs seatd its socket is already visible here -- point libseat at
+   * it so e.g. `sway` on KMS/DRM can acquire GPU + input without root or groups. */
+  if (access("/run/seatd.sock", F_OK) == 0 && !getenv("LIBSEAT_BACKEND"))
+    setenv("LIBSEAT_BACKEND", "seatd", 1);
 
   execvp(argv[0], argv);
   fprintf(stderr, "salt run: exec %s failed: %s\n", argv[0], strerror(errno));
@@ -305,21 +379,49 @@ int salt_stratum_run(const salt_stratum *s, const salt_run_opts *opts, char *con
   }
 
 #if defined(__linux__)
+  int sigpipe[2] = {-1, -1};
+  if (pipe(sigpipe) != 0) {
+    sigpipe[0] = sigpipe[1] = -1;
+  }
+  g_signal_fd = sigpipe[1];
+
   pid_t pid = fork();
   if (pid < 0) {
     salt_set_error("fork failed: %s", strerror(errno));
+    if (sigpipe[0] >= 0) close(sigpipe[0]);
+    if (sigpipe[1] >= 0) close(sigpipe[1]);
     return SALT_ERR;
   }
   if (pid == 0) {
+    if (sigpipe[0] >= 0) close(sigpipe[0]);
     salt_run_child(s, opts, argv);
     _exit(127);
+  }
+  if (sigpipe[1] >= 0) {
+    close(sigpipe[1]);
+    g_signal_fd = -1;
   }
 
   int st = 0;
   while (waitpid(pid, &st, 0) < 0) {
     if (errno == EINTR) continue;
     salt_set_error("waitpid failed: %s", strerror(errno));
+    if (sigpipe[0] >= 0) close(sigpipe[0]);
     return SALT_ERR;
+  }
+
+  /* Did the child signal "userns denied" before exiting? If so, report the
+   * dedicated sentinel rather than its exit code (126), so a command that
+   * really exits 126 is not mistaken for a setup failure. */
+  char sig = 0;
+  if (sigpipe[0] >= 0) {
+    ssize_t r = read(sigpipe[0], &sig, 1);
+    (void)r;
+    close(sigpipe[0]);
+  }
+  if (sig == 'U') {
+    if (status) *status = SALT_RUN_USERNS_DENIED;
+    return SALT_OK;
   }
 
   if (status) {

@@ -615,6 +615,50 @@ static void init_pacman_keyring(salt_strata_db *db, const salt_stratum_recipe *r
   salt_stratum_free_fields(&s);
 }
 
+/* Make HTTPS work out of the box in a fresh stratum. A minimal rootfs often
+ * ships no CA bundle until `ca-certificates` is installed, so OAuth/cloud CLIs
+ * and `curl https://` fail with "unable to get local issuer certificate". Best
+ * effort, keyed on the native package manager (these genuinely differ per
+ * distro); non-fatal so bootstrap still succeeds offline. */
+static void ensure_ca_certificates(salt_strata_db *db, const salt_stratum_recipe *r) {
+  if (!r->package_manager || !r->package_manager[0]) return;
+  salt_stratum s;
+  if (salt_stratum_get(db, r->name, &s) != SALT_OK) return;
+  salt_run_opts opts;
+  salt_run_opts_default(&opts);
+  opts.graphics = false;
+  opts.interactive = false;
+  opts.user = "root";
+  opts.workdir = "/";
+  int st = 0;
+  const char *pm = r->package_manager;
+  if (strcmp(pm, "apk") == 0) {
+    char *v[] = {(char *)"apk", (char *)"add", (char *)"--no-cache", (char *)"ca-certificates", NULL};
+    salt_stratum_run(&s, &opts, v, &st);
+  } else if (strcmp(pm, "apt") == 0) {
+    char *u[] = {(char *)"apt-get", (char *)"update", NULL};
+    salt_stratum_run(&s, &opts, u, &st);
+    char *v[] = {(char *)"apt-get", (char *)"install", (char *)"-y", (char *)"ca-certificates", NULL};
+    salt_stratum_run(&s, &opts, v, &st);
+  } else if (strcmp(pm, "pacman") == 0) {
+    char *v[] = {(char *)"pacman", (char *)"-Sy", (char *)"--noconfirm", (char *)"ca-certificates", NULL};
+    salt_stratum_run(&s, &opts, v, &st);
+  } else if (strcmp(pm, "xbps") == 0) {
+    char *v[] = {(char *)"xbps-install", (char *)"-Sy", (char *)"ca-certificates", NULL};
+    salt_stratum_run(&s, &opts, v, &st);
+  } else if (strcmp(pm, "dnf") == 0) {
+    char *v[] = {(char *)"dnf", (char *)"-y", (char *)"install", (char *)"ca-certificates", NULL};
+    salt_stratum_run(&s, &opts, v, &st);
+  } else if (strcmp(pm, "zypper") == 0) {
+    char *v[] = {(char *)"zypper", (char *)"--non-interactive", (char *)"install", (char *)"ca-certificates", NULL};
+    salt_stratum_run(&s, &opts, v, &st);
+  }
+  /* Rebuild the trust store (apk/debian provide this; harmless elsewhere). */
+  char *upd[] = {(char *)"update-ca-certificates", NULL};
+  salt_stratum_run(&s, &opts, upd, &st);
+  salt_stratum_free_fields(&s);
+}
+
 static void write_repo_config(const salt_stratum_recipe *r, const char *target) {
   if (!r->family) return;
   if (strcmp(r->family, "arch") == 0) {
@@ -664,8 +708,28 @@ static void write_repo_config(const salt_stratum_recipe *r, const char *target) 
   }
 }
 
+/* Stratum names and roots flow into shell commands for snapshot/rollback/destroy
+ * (e.g. `find '%s' -mindepth 1 -delete`). Restrict them to a safe charset so a
+ * name can't break out of the quoting or smuggle path traversal -- a wrong-path
+ * mass delete is the worst case. Allow only [A-Za-z0-9._-], no leading dash/dot. */
+static bool salt_stratum_name_ok(const char *name) {
+  if (!name || !name[0]) return false;
+  if (name[0] == '-' || name[0] == '.') return false;
+  for (const char *p = name; *p; p++) {
+    char ch = *p;
+    bool ok = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+              (ch >= '0' && ch <= '9') || ch == '.' || ch == '_' || ch == '-';
+    if (!ok) return false;
+  }
+  return true;
+}
+
 int salt_stratum_bootstrap(const salt_strata_ctx *c, salt_strata_db *db,
                            const salt_stratum_recipe *r) {
+  if (!salt_stratum_name_ok(r->name)) {
+    salt_set_error("invalid stratum name '%s' (allowed: letters, digits, . _ -)", r->name ? r->name : "");
+    return SALT_ERR;
+  }
   char *target = stratum_target(c, r->root);
   if (salt_is_dir(target) && dir_nonempty(target)) {
     salt_set_error("stratum target already exists: %s", target);
@@ -789,6 +853,7 @@ int salt_stratum_bootstrap(const salt_strata_ctx *c, salt_strata_db *db,
   }
   salt_stratum_snapshot_create(c, db, r->name, "bootstrap", NULL);
   init_pacman_keyring(db, r);
+  ensure_ca_certificates(db, r);
   free(target);
   return SALT_OK;
 }

@@ -15,6 +15,12 @@ typedef struct {
   const char *workdir;
 } salt_run_opts;
 
+/* Sentinel *status from salt_stratum_run meaning "the kernel denied unprivileged
+ * user namespaces" -- signaled out-of-band (not via the child's exit code) so it
+ * can't be confused with a command that legitimately exits 126. Chosen high and
+ * distinctive; the dispatcher retries such runs under sudo. */
+#define SALT_RUN_USERNS_DENIED 252
+
 void salt_run_opts_default(salt_run_opts *o);
 
 int salt_stratum_run(const salt_stratum *s, const salt_run_opts *opts, char *const argv[],

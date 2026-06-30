@@ -73,8 +73,10 @@ int cmd_run(const Options &o, const std::vector<std::string> &args) {
     fprintf(stderr, "salt: %s\n", salt_last_error());
     return 1;
   }
-  // 126 == unprivileged user namespaces unavailable; retry transparently w/ sudo.
-  if (st == 126) {
+  // Unprivileged user namespaces unavailable; retry transparently w/ sudo. This
+  // is signaled out-of-band (not a real exit code), so a command that genuinely
+  // exits 126 is passed through untouched instead of being re-run under sudo.
+  if (st == SALT_RUN_USERNS_DENIED) {
     run_fallback_sudo(o, args);
     fprintf(stderr, "salt run: needs unprivileged user namespaces or sudo "
                     "(could not escalate)\n");
