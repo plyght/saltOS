@@ -15,6 +15,79 @@ static std::string basename_of(const std::string &p) {
   return pos == std::string::npos ? p : p.substr(pos + 1);
 }
 
+// `salt which <cmd>`: show which stratum the bare name currently routes to, and
+// every stratum that provides the command -- so cross-stratum name collisions
+// (first-installed wins) are discoverable and you know what `salt <stratum>/<cmd>`
+// alternatives exist.
+int cmd_which(const Options &o, const std::vector<std::string> &args) {
+  if (args.empty()) {
+    fprintf(stderr, "usage: salt which <command>\n");
+    return 2;
+  }
+  const std::string &name = args[0];
+  salt_strata_db *db = nullptr;
+  if (salt_strata_db_open_ro(o.root.c_str(), &db) != SALT_OK &&
+      salt_strata_db_open(o.root.c_str(), &db) != SALT_OK) {
+    fprintf(stderr, "salt: %s\n", salt_last_error());
+    return 1;
+  }
+
+  std::string owner, kind;
+  salt_exposed_list el;
+  salt_exposed_list_init(&el);
+  if (salt_expose_list(db, &el) == SALT_OK) {
+    for (size_t i = 0; i < el.len; i++) {
+      if (el.items[i].alias && name == el.items[i].alias) {
+        owner = el.items[i].stratum ? el.items[i].stratum : "";
+        kind = el.items[i].kind ? el.items[i].kind : "";
+        break;
+      }
+    }
+  }
+  salt_exposed_list_free(&el);
+
+  std::vector<std::string> providers;
+  salt_stratum_list sl;
+  salt_stratum_list_init(&sl);
+  if (salt_stratum_list_all(db, &sl) == SALT_OK) {
+    static const char *bindirs[] = {"usr/bin", "bin", "usr/local/bin", nullptr};
+    for (size_t i = 0; i < sl.len; i++) {
+      const salt_stratum &s = sl.items[i];
+      if (!s.root) continue;
+      char *base = (o.root != "/") ? salt_join_path(o.root.c_str(), s.root) : salt_strdup(s.root);
+      for (int j = 0; bindirs[j]; j++) {
+        char *d = salt_join_path(base, bindirs[j]);
+        char *p = salt_join_path(d, name.c_str());
+        bool ok = salt_path_exists(p);
+        free(d);
+        free(p);
+        if (ok) {
+          providers.push_back(s.name ? s.name : "");
+          break;
+        }
+      }
+      free(base);
+    }
+  }
+  salt_stratum_list_free(&sl);
+  salt_strata_db_close(db);
+
+  if (!owner.empty() && !kind.empty())
+    printf("%s -> %s (%s)\n", name.c_str(), owner.c_str(), kind.c_str());
+  else if (!owner.empty())
+    printf("%s -> %s\n", name.c_str(), owner.c_str());
+  else
+    printf("%s -> not exposed (a host command, or not installed in any stratum)\n", name.c_str());
+
+  if (!providers.empty()) {
+    printf("provided by:");
+    for (auto &p : providers) printf(" %s", p.c_str());
+    printf("\n");
+    printf("run a specific one with: salt <stratum>/%s\n", name.c_str());
+  }
+  return 0;
+}
+
 int cmd_expose(const Options &o, const std::vector<std::string> &args) {
   if (args.size() < 2) {
     fprintf(stderr, "usage: salt expose <stratum> <command> [as <alias>]\n");

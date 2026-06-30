@@ -81,6 +81,7 @@ int cmd_run(const Options &o, const std::vector<std::string> &args);
 int cmd_pkg(const Options &o, const std::vector<std::string> &args);
 int cmd_pm(const Options &o, const std::vector<std::string> &args);
 int cmd_expose(const Options &o, const std::vector<std::string> &args);
+int cmd_which(const Options &o, const std::vector<std::string> &args);
 int cmd_unexpose(const Options &o, const std::vector<std::string> &args);
 int cmd_exposed(const Options &o, const std::vector<std::string> &args);
 int cmd_expose_desktop(const Options &o, const std::vector<std::string> &args);

@@ -187,6 +187,7 @@ static void usage() {
           "  expose <stratum> <cmd> [as A] expose a stratum command on the host\n"
           "  unexpose <alias>              remove an exposed command\n"
           "  exposed                       list exposed commands\n"
+          "  which <cmd>                   show which stratum a command routes to\n"
           "  expose-desktop <stratum> <a>  expose a stratum desktop app\n"
           "  provider <subcommand>         manage component providers\n"
           "  service <subcommand>          integrate stratum daemons under runit\n");
@@ -205,6 +206,7 @@ static int dispatch(const Options &o, const std::string &cmd,
   if (cmd == "query") return cmd_query(o, args);
   if (cmd == "files") return cmd_files(o, args);
   if (cmd == "owner") return cmd_owner(o, args);
+  if (cmd == "which") return cmd_which(o, args);
   if (cmd == "list") return cmd_list(o, args);
   if (cmd == "build") return cmd_build(o, args);
   if (cmd == "lint") return cmd_lint(o, args);
