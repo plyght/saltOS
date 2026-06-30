@@ -52,6 +52,25 @@ EOF
 "$SALT" build "$WORK/salt.recipe.toml"
 
 # --- saltos-base grain (config layer) -------------------------------------
+# If a ROOTFS is given, assemble the base config payload from it (the runit
+# services, console login, salt config, strata recipes, profile shims) so the
+# base really is a grain. An explicit BASE_SRC overrides this.
+if [ -z "${BASE_SRC:-}" ] && [ -n "${ROOTFS:-}" ] && [ -d "$ROOTFS" ]; then
+  BASE_SRC="$WORK/stage-base"
+  mkdir -p "$BASE_SRC"
+  for p in etc/salt etc/runit etc/sv etc/profile.d usr/bin/saltos-install \
+           usr/bin/saltos-console-login usr/share/udhcpc; do
+    if [ -e "$ROOTFS/$p" ]; then
+      mkdir -p "$BASE_SRC/$(dirname "$p")"
+      cp -a "$ROOTFS/$p" "$BASE_SRC/$p"
+    fi
+  done
+  # Never ship host/OTA-specific state in the base grain -- repo.conf (the OTA
+  # source + trusted key) and any local DB are per-install and must survive a
+  # `salt update` of saltos-base, not be overwritten by it.
+  rm -f "$BASE_SRC/etc/salt/repo.conf"
+  rm -rf "$BASE_SRC/etc/salt/db" "$BASE_SRC/var"
+fi
 if [ -n "${BASE_SRC:-}" ] && [ -d "$BASE_SRC" ]; then
   cat > "$WORK/saltos-base.recipe.toml" <<EOF
 name = "saltos-base"
