@@ -75,6 +75,15 @@ int cmd_run(const Options &o, const std::vector<std::string> &args) {
                     "(could not escalate)\n");
     return 126;
   }
+  // A command may have *installed* new binaries into the stratum (npm i -g,
+  // pip install, cargo install, make install, anything). Re-expose so they
+  // become host commands immediately -- no package-manager list, no manual
+  // `salt expose`. This is best-effort: expose_all_for opens the strata DB for
+  // write and silently returns if it can't (the common unprivileged path), so
+  // it only does real work when we had the privilege to change the stratum --
+  // exactly the case where something could have been installed. expose_all is
+  // idempotent and prints only when it actually adds commands.
+  if (st == 0 && expose_all_enabled(o)) expose_all_for(o, args[0]);
   return st;
 }
 

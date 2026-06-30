@@ -285,9 +285,15 @@ int cmd_pm(const Options &o, const std::vector<std::string> &args) {
   salt_stratum_free_fields(&s);
   salt_strata_ctx_free(&c);
   salt_strata_db_close(db);
-  // After a successful install/upgrade, pick up any newly added binaries so
-  // freshly installed tools are immediately runnable as host commands.
-  if (rc == SALT_OK && st == 0 && mutating && expose_all_enabled(o))
+  // After ANY successful pm command, pick up newly added binaries so freshly
+  // installed tools are immediately runnable as host commands. We refresh
+  // unconditionally (not only on recognized package-manager verbs) because the
+  // pm channel is also how nested installers run -- e.g.
+  // `npm i -g opencode-ai` drops an `opencode` binary that must be exposed,
+  // and `npm`'s verbs are not the package manager's own verbs. expose_all is
+  // idempotent and cheap, so an occasional no-op refresh is fine.
+  (void)mutating;
+  if (rc == SALT_OK && st == 0 && expose_all_enabled(o))
     expose_all_for(o, stratum);
   return rc != SALT_OK ? 1 : st;
 }
