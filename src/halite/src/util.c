@@ -167,9 +167,20 @@ int salt_write_file(const char *path, const void *data, size_t len, unsigned mod
   char *dir = dirname(dup);
   if (dir && strcmp(dir, ".") != 0 && strcmp(dir, "/") != 0) salt_mkdirs(dir, 0755);
   free(dup);
-  int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, mode);
+  /* Write to a temp file in the same directory, then rename() over the target.
+     This is atomic (no half-written file if we crash) and, crucially, can
+     replace a file that is currently in use -- e.g. self-updating /usr/bin/salt
+     over OTA. An in-place O_TRUNC open of a running executable fails with
+     ETXTBSY; rename() over it just gives the new inode the name while running
+     processes keep the old one. */
+  size_t tmplen = strlen(path) + 16;
+  char *tmp = malloc(tmplen);
+  if (!tmp) return SALT_ERR;
+  snprintf(tmp, tmplen, "%s.salt-XXXXXX", path);
+  int fd = mkstemp(tmp);
   if (fd < 0) {
-    salt_set_error("open %s: %s", path, strerror(errno));
+    salt_set_error("mkstemp %s: %s", tmp, strerror(errno));
+    free(tmp);
     return SALT_ERR_IO;
   }
   const char *p = data;
@@ -177,14 +188,30 @@ int salt_write_file(const char *path, const void *data, size_t len, unsigned mod
   while (left > 0) {
     ssize_t w = write(fd, p, left);
     if (w < 0) {
-      salt_set_error("write %s: %s", path, strerror(errno));
+      salt_set_error("write %s: %s", tmp, strerror(errno));
       close(fd);
+      unlink(tmp);
+      free(tmp);
       return SALT_ERR_IO;
     }
     p += w;
     left -= (size_t)w;
   }
+  if (fchmod(fd, mode) != 0) {
+    salt_set_error("fchmod %s: %s", tmp, strerror(errno));
+    close(fd);
+    unlink(tmp);
+    free(tmp);
+    return SALT_ERR_IO;
+  }
   close(fd);
+  if (rename(tmp, path) != 0) {
+    salt_set_error("rename %s -> %s: %s", tmp, path, strerror(errno));
+    unlink(tmp);
+    free(tmp);
+    return SALT_ERR_IO;
+  }
+  free(tmp);
   return SALT_OK;
 }
 
