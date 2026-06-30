@@ -176,6 +176,14 @@ static void salt_run_child(const salt_stratum *s, const salt_run_opts *opts,
   salt_run_bind_file("/etc/hosts", "/etc/hosts");
   salt_run_bind_file("/etc/localtime", "/etc/localtime");
 
+  /* Make the caller's working directory available at the same path inside the
+   * stratum so commands run "in the repo" exactly like a normal shell -- file
+   * watchers, relative paths and node_modules all resolve. /home, /root and
+   * /tmp are already bound above; binding the workdir explicitly also covers
+   * project dirs kept elsewhere (e.g. /srv, /opt, /mnt). */
+  if (opts->workdir && opts->workdir[0] == '/' && strcmp(opts->workdir, "/") != 0)
+    salt_run_bind_dir(opts->workdir, opts->workdir);
+
   const char *sudo_uid = getenv("SUDO_UID");
   const char *sudo_gid = getenv("SUDO_GID");
   const char *sudo_user = getenv("SUDO_USER");
@@ -236,11 +244,9 @@ static void salt_run_child(const salt_stratum *s, const salt_run_opts *opts,
   } else {
     workdir = "/";
   }
-  if (chdir(workdir) != 0) {
-    if (chdir("/") != 0) {
-      fprintf(stderr, "salt run: chdir failed: %s\n", strerror(errno));
-      _exit(125);
-    }
+  if (chdir(workdir) != 0 && (!home || chdir(home) != 0) && chdir("/") != 0) {
+    fprintf(stderr, "salt run: chdir failed: %s\n", strerror(errno));
+    _exit(125);
   }
 
   if (drop) {

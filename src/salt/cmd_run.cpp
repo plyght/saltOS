@@ -61,6 +61,11 @@ int cmd_run(const Options &o, const std::vector<std::string> &args) {
 
   salt_run_opts opts;
   salt_run_opts_default(&opts);
+  // Run in the caller's current directory (bound into the stratum by run.c) so
+  // `cd ~/code/app && bun dev` behaves like a normal shell instead of starting
+  // in $HOME. Falls back to the default (home) if cwd is somehow unavailable.
+  char cwd[4096];
+  if (getcwd(cwd, sizeof(cwd))) opts.workdir = cwd;
   int st = 0;
   int rc = salt_stratum_run(&s, &opts, argv.data(), &st);
   salt_stratum_free_fields(&s);
