@@ -25,7 +25,7 @@ case "$ARCH" in
     EFI_DIR=BOOT
     EFI_NAME=BOOTAA64.EFI
     ROOT_DEVICE=/dev/vda2
-    CONSOLE_ARGS="console=tty1"
+    CONSOLE_ARGS="console=tty0 fbcon=map:0"
     SERIAL_ARGS="console=ttyAMA0,115200 console=hvc0"
     ;;
   x86_64)
@@ -34,7 +34,7 @@ case "$ARCH" in
     EFI_DIR=BOOT
     EFI_NAME=BOOTX64.EFI
     ROOT_DEVICE=/dev/vda2
-    CONSOLE_ARGS="console=tty1"
+    CONSOLE_ARGS="console=tty0 fbcon=map:0"
     SERIAL_ARGS="console=ttyS0,115200"
     ;;
   *)

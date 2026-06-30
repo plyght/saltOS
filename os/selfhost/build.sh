@@ -350,16 +350,22 @@ mkdir -p "$ROOTFS/etc/runit/sv/netdhcp"
 cat > "$ROOTFS/etc/runit/sv/netdhcp/run" <<'EOF'
 #!/bin/sh
 PATH=/usr/bin:/usr/sbin:/bin:/sbin; export PATH
-iface=""
-for p in /sys/class/net/*; do
-  n="${p##*/}"
-  [ "$n" = "lo" ] && continue
-  iface="$n"
-  break
+# Wait for a real (non-lo) interface that can be brought up before running dhcp,
+# so udhcpc doesn't spam "SIOCGIFINDEX: No such device" before virtio-net probes
+# (or when the VM has no NIC).
+while :; do
+  iface=""
+  for p in /sys/class/net/*; do
+    n="${p##*/}"
+    [ "$n" = "lo" ] && continue
+    [ -e "$p" ] || continue
+    iface="$n"; break
+  done
+  if [ -n "$iface" ] && ip link set "$iface" up 2>/dev/null; then
+    exec udhcpc -f -i "$iface" -s /usr/share/udhcpc/default.script
+  fi
+  sleep 5
 done
-[ -n "$iface" ] || exec sleep 30
-ip link set "$iface" up 2>/dev/null || true
-exec udhcpc -f -i "$iface" -s /usr/share/udhcpc/default.script
 EOF
 chmod +x "$ROOTFS/etc/runit/sv/netdhcp/run"
 ln -sf /etc/runit/sv/netdhcp "$ROOTFS/etc/runit/runsvdir/current/netdhcp"

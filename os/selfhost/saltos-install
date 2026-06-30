@@ -106,8 +106,8 @@ tmpfs /tmp tmpfs defaults,nosuid,nodev 0 0
 EOF
 
 case "$(uname -m)" in
-  aarch64|arm64) kernel=/boot/Image; efi=BOOTAA64.EFI; graphical="console=tty1"; serial="console=ttyAMA0,115200 console=hvc0" ;;
-  *)             kernel=/boot/bzImage; efi=BOOTX64.EFI; graphical="console=tty1"; serial="console=ttyS0,115200" ;;
+  aarch64|arm64) kernel=/boot/Image; efi=BOOTAA64.EFI; graphical="console=tty0 fbcon=map:0"; serial="console=ttyAMA0,115200 console=hvc0" ;;
+  *)             kernel=/boot/bzImage; efi=BOOTX64.EFI; graphical="console=tty0 fbcon=map:0"; serial="console=ttyS0,115200" ;;
 esac
 [ -f "$mnt$kernel" ] || die "installed kernel missing at $kernel"
 mkdir -p "$mnt/boot/grub" "$mnt/boot/efi/EFI/BOOT"
