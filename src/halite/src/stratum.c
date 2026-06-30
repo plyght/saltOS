@@ -1131,6 +1131,21 @@ static bool host_has_command(const char *root, const char *name) {
   return false;
 }
 
+/* True if an alias is already exposed (any stratum/kind). expose_all must not
+ * clobber it -- in particular it must never overwrite a `pm` shim (which
+ * escalates to root) with a plain `run` shim, and it should leave the
+ * first-exposed binary winning across strata rather than last-one-wins. */
+static bool exposed_alias_exists(salt_strata_db *db, const char *alias) {
+  sqlite3_stmt *st;
+  if (sqlite3_prepare_v2(db->h, "SELECT 1 FROM exposed WHERE alias=? LIMIT 1;", -1, &st,
+                         NULL) != SQLITE_OK)
+    return false;
+  sqlite3_bind_text(st, 1, alias, -1, SQLITE_TRANSIENT);
+  bool found = sqlite3_step(st) == SQLITE_ROW;
+  sqlite3_finalize(st);
+  return found;
+}
+
 int salt_expose_all(salt_strata_db *db, const char *root, const salt_stratum *s, int *count) {
   if (count) *count = 0;
   if (!stratum_exists(db, s->name)) {
@@ -1161,8 +1176,10 @@ int salt_expose_all(salt_strata_db *db, const char *root, const salt_stratum *s,
                       (stt.st_mode & 0111);
       free(full);
       if (!runnable) continue;
-      /* Don't shadow host commands, and don't redo existing shims. */
+      /* Don't shadow host commands, and don't clobber an existing exposure
+       * (notably the root-escalating `pm` shims for apk/pacman/etc.). */
       if (host_has_command(root, de->d_name)) continue;
+      if (exposed_alias_exists(db, de->d_name)) continue;
       if (salt_expose_add(db, root, s->name, de->d_name, de->d_name, "cli") == SALT_OK)
         n++;
     }
