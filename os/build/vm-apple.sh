@@ -35,7 +35,7 @@ VERSION="${VERSION:-0.1.0}"
 REPO="${REPO_DIR:-$PWD}"
 SALT_BIN="${SALT_BIN:-$PWD/build/src/salt/salt}"
 SALTSETUP_BIN="${SALTSETUP_BIN:-$PWD/build/src/setup/salt-setup}"
-IMG_SIZE_MB="${IMG_SIZE_MB:-12288}"
+IMG_SIZE_MB="${IMG_SIZE_MB:-24576}"
 ESP_SIZE_MB="${ESP_SIZE_MB:-256}"
 HOSTNAME="${SALTOS_HOSTNAME:-saltos-vm}"
 

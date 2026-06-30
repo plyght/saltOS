@@ -7,6 +7,7 @@
 keys/*.sec
 keys/*.secret
 .DS_Store
+.claude/
 compile_commands.json
 /work/
 /rootfs/

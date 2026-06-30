@@ -20,8 +20,20 @@ saltos_install_controlplane() {
   mkdir -p "$ROOTFS/etc/salt/strata" "$ROOTFS/usr/local/salt/shims" \
     "$ROOTFS/strata" "$ROOTFS/var/lib/salt"
   cp "$REPO"/strata/*.toml "$ROOTFS/etc/salt/strata/" 2>/dev/null || true
+  # Put the shim dir on PATH for EVERY shell, not just login shells. profile.d
+  # only covers login shells (qterminal), so non-login interactive shells (kitty,
+  # tmux, IDE terminals) wouldn't see exposed commands. Cover all of them:
+  #  - /etc/profile.d         -> login shells
+  #  - /etc/bash/bashrc.d     -> non-login interactive bash (Void sources this)
+  #  - /etc/environment       -> session-wide via pam_env, inherited by all GUIs
   install -Dm644 "$REPO/os/profile.d/salt-shims.sh" \
     "$ROOTFS/etc/profile.d/salt-shims.sh"
+  install -Dm644 "$REPO/os/profile.d/salt-shims.sh" \
+    "$ROOTFS/etc/bash/bashrc.d/salt-shims.sh"
+  mkdir -p "$ROOTFS/etc"
+  cat > "$ROOTFS/etc/environment" <<'EOF'
+PATH=/usr/local/salt/shims:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin
+EOF
 }
 
 # Write salt.conf. saltOS images opt into exposing stratum commands globally by
