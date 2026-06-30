@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <dirent.h>
+#include <ctype.h>
 
 void salt_repo_index_init(salt_repo_index *idx) {
   memset(idx, 0, sizeof(*idx));
@@ -96,10 +97,53 @@ int salt_repo_index_to_toml(const salt_repo_index *idx, salt_buf *out) {
   return SALT_OK;
 }
 
+/* Natural version compare: split into numeric and non-numeric runs and compare
+ * run by run (numeric runs as integers, so "1.10" > "1.9"). Returns <0/0/>0. */
+int salt_vercmp(const char *a, const char *b) {
+  if (!a) a = "";
+  if (!b) b = "";
+  while (*a && *b) {
+    if (isdigit((unsigned char)*a) && isdigit((unsigned char)*b)) {
+      while (*a == '0') a++;
+      while (*b == '0') b++;
+      const char *as = a, *bs = b;
+      while (isdigit((unsigned char)*a)) a++;
+      while (isdigit((unsigned char)*b)) b++;
+      size_t la = (size_t)(a - as), lb = (size_t)(b - bs);
+      if (la != lb) return la < lb ? -1 : 1;
+      int c = strncmp(as, bs, la);
+      if (c) return c < 0 ? -1 : 1;
+    } else if (isdigit((unsigned char)*a)) {
+      return 1;
+    } else if (isdigit((unsigned char)*b)) {
+      return -1;
+    } else {
+      if (*a != *b) return (unsigned char)*a < (unsigned char)*b ? -1 : 1;
+      a++;
+      b++;
+    }
+  }
+  if (*a) return 1;
+  if (*b) return -1;
+  return 0;
+}
+
+/* Return the NEWEST entry for a name (highest version, then release). A repo
+ * legitimately carries multiple versions of a package; install and update both
+ * want the newest, not whichever happens to appear first in the index. */
 const salt_repo_entry *salt_repo_index_find(const salt_repo_index *idx, const char *name) {
-  for (size_t i = 0; i < idx->len; i++)
-    if (strcmp(idx->items[i].name, name) == 0) return &idx->items[i];
-  return NULL;
+  const salt_repo_entry *best = NULL;
+  for (size_t i = 0; i < idx->len; i++) {
+    if (strcmp(idx->items[i].name, name) != 0) continue;
+    if (!best) {
+      best = &idx->items[i];
+      continue;
+    }
+    int vc = salt_vercmp(idx->items[i].version, best->version);
+    if (vc > 0 || (vc == 0 && idx->items[i].release > best->release))
+      best = &idx->items[i];
+  }
+  return best;
 }
 
 int salt_repo_build_index(const char *packages_dir, const char *repo_name, const char *arch,

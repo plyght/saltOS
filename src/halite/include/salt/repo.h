@@ -33,6 +33,8 @@ void salt_repo_index_free(salt_repo_index *idx);
 int salt_repo_index_load(const char *path, salt_repo_index *out);
 int salt_repo_index_to_toml(const salt_repo_index *idx, salt_buf *out);
 const salt_repo_entry *salt_repo_index_find(const salt_repo_index *idx, const char *name);
+/* Natural version comparison ("1.10" > "1.9"); returns <0, 0, or >0. */
+int salt_vercmp(const char *a, const char *b);
 
 int salt_repo_build_index(const char *packages_dir, const char *repo_name, const char *arch,
                           salt_repo_index *out);

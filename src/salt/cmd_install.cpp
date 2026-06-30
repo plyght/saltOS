@@ -170,8 +170,10 @@ static int do_install(const Options &o, const std::vector<std::string> &names, b
     for (size_t i = 0; i < inst.len; i++) {
       const salt_repo_entry *e = salt_repo_index_find(&idx, inst.items[i].name);
       if (!e) continue;
-      bool newer = e->release > inst.items[i].release ||
-                   strcmp(e->version, inst.items[i].version) != 0;
+      /* Only update to a STRICTLY newer version/release -- never silently
+       * downgrade just because the repo's newest differs from what's installed. */
+      int vc = salt_vercmp(e->version, inst.items[i].version);
+      bool newer = vc > 0 || (vc == 0 && e->release > inst.items[i].release);
       if (newer) order.push_back(inst.items[i].name);
     }
     salt_db_pkglist_free(&inst);
