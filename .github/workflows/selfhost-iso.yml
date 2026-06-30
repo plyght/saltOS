@@ -5,7 +5,10 @@ on:
   push:
     paths:
       - "os/selfhost/build.sh"
+      - "os/selfhost/build-installed-image.sh"
+      - "os/selfhost/saltos-install"
       - "os/selfhost/kernel-x86_64.config"
+      - "src/**"
       - ".github/workflows/selfhost-iso.yml"
 
 jobs:
@@ -35,12 +38,12 @@ jobs:
               grub-pc-bin grub-efi-amd64-bin grub-common xorriso mtools
             REPO_DIR=/src OUT=/src/out-iso VERSION=0.1.0 KCACHE=/src/.kcache \
               bash os/selfhost/build.sh x86_64'
-          sudo chown -R "$USER" out-iso .kcache 2>/dev/null || true
+          sudo chown -R "$USER" out-iso selfhost-work .kcache 2>/dev/null || true
 
       - name: Install QEMU (host)
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends qemu-system-x86
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf
 
       - name: Boot test (QEMU)
         run: |
@@ -56,18 +59,70 @@ jobs:
           echo "----- qemu serial (tail) -----"
           tail -n 120 qemu.log || true
           if grep -q "SALTOS_SELFHOST_OK" qemu.log; then
-            echo "SELF-HOST BOOT OK: kernel+glibc+bash+coreutils+runit+salt from source, no Debian"
+            echo "SELF-HOST BOOT OK: kernel+glibc+bash+coreutils+runit+salt from source, no distro base"
           else
             echo "BOOT FAILED: marker not found"
             exit 1
           fi
+
+      - name: Installer test (blank disk -> installed UEFI boot)
+        run: |
+          set -euo pipefail
+          cat > selfhost-work/rootfs/autoinstall-test <<'EOF'
+          #!/bin/sh
+          PATH=/usr/local/salt/shims:/usr/bin:/usr/sbin:/bin:/sbin; export PATH
+          mount -t proc proc /proc 2>/dev/null
+          mount -t sysfs sys /sys 2>/dev/null
+          mount -t devtmpfs dev /dev 2>/dev/null
+          mount -t tmpfs run /run 2>/dev/null
+          mount -t tmpfs tmp /tmp 2>/dev/null
+          printf "YES\n" | saltos-install /dev/vda
+          st=$?
+          echo "SALTOS_INSTALL_EXIT=$st" >/dev/console
+          sync
+          poweroff -f
+          EOF
+          chmod +x selfhost-work/rootfs/autoinstall-test
+          ( cd selfhost-work/rootfs && find . | cpio -o -H newc 2>/dev/null | gzip -9 > ../initrd-autoinstall.gz )
+
+          dd if=/dev/zero of=saltos-installed-x86_64.img bs=1M count=2048 status=none
+          timeout 240 qemu-system-x86_64 \
+            -machine q35 -m 1536 -smp 2 -display none -serial file:qemu-install.log -no-reboot \
+            -kernel selfhost-work/bzImage \
+            -initrd selfhost-work/initrd-autoinstall.gz \
+            -append "console=ttyS0,115200 rdinit=/autoinstall-test" \
+            -drive file=saltos-installed-x86_64.img,format=raw,if=none,id=hd0 \
+            -device virtio-blk-pci,drive=hd0 \
+            -netdev user,id=n0 -device virtio-net-pci,netdev=n0 || true
+
+          tail -n 180 qemu-install.log || true
+          grep -q "SALTOS_INSTALL_EXIT=0" qemu-install.log
+
+          OVMF_CODE=""
+          for f in /usr/share/OVMF/OVMF_CODE.fd /usr/share/ovmf/OVMF.fd; do
+            [ -f "$f" ] && OVMF_CODE="$f" && break
+          done
+          [ -n "$OVMF_CODE" ] || { echo "missing OVMF firmware"; exit 1; }
+
+          timeout 120 qemu-system-x86_64 \
+            -machine q35 -m 1024 -smp 2 -display none -serial file:qemu-installed-uefi.log -no-reboot \
+            -bios "$OVMF_CODE" \
+            -drive file=saltos-installed-x86_64.img,format=raw,if=none,id=hd0 \
+            -device virtio-blk-pci,drive=hd0 \
+            -netdev user,id=n0 -device virtio-net-pci,netdev=n0 || true
+
+          tail -n 200 qemu-installed-uefi.log || true
+          grep -q "Run /sbin/runit-init as init process" qemu-installed-uefi.log
 
       - name: Upload serial log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: qemu-serial-log
-          path: qemu.log
+          path: |
+            qemu.log
+            qemu-install.log
+            qemu-installed-uefi.log
           if-no-files-found: ignore
 
       - name: Upload ISO

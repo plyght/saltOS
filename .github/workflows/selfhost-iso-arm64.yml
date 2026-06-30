@@ -1,0 +1,145 @@
+name: selfhost-iso-arm64
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "os/selfhost/build-arm64.sh"
+      - "os/selfhost/build-installed-image.sh"
+      - "os/selfhost/saltos-install"
+      - "os/selfhost/kernel-aarch64.config"
+      - "src/**"
+      - ".github/workflows/selfhost-iso-arm64.yml"
+
+concurrency:
+  group: selfhost-iso-arm64-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: self-hosted ISO (aarch64)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet \
+            /opt/hostedtoolcache/CodeQL /usr/local/.ghcup 2>/dev/null || true
+          df -h /
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake pkg-config gcc-12 g++-12 \
+            bison flex bc libssl-dev libelf-dev \
+            gawk texinfo python3 \
+            xz-utils bzip2 curl file cpio ca-certificates \
+            grub-efi-arm64-bin grub-common xorriso mtools \
+            qemu-system-arm qemu-efi-aarch64
+
+      - name: Cache compiled kernel
+        uses: actions/cache@v4
+        with:
+          path: .kcache-aarch64
+          key: selfhost-kernel-aarch64-6.6.52-${{ hashFiles('os/selfhost/kernel-aarch64.config') }}
+
+      - name: Build from-source ISO
+        run: |
+          REPO_DIR="$PWD" \
+            WORK="$PWD/selfhost-work" \
+            OUT="$PWD/out-iso" \
+            VERSION=0.1.0 \
+            KCACHE="$PWD/.kcache-aarch64" \
+            bash os/selfhost/build-arm64.sh
+
+      - name: Boot test (QEMU direct kernel/initrd)
+        run: |
+          timeout 300 qemu-system-aarch64 \
+            -nodefaults -machine virt,accel=kvm:tcg -cpu max -m 1024 \
+            -display none -serial file:qemu-aarch64.log -no-reboot \
+            -kernel selfhost-work/Image \
+            -initrd selfhost-work/initrd.gz \
+            -append "console=ttyAMA0,115200 rdinit=/sbin/runit-init" &
+          QPID=$!
+          for i in $(seq 1 30); do
+            sleep 10
+            grep -q "SALTOS_SELFHOST_OK" qemu-aarch64.log 2>/dev/null && break
+          done
+          kill "$QPID" 2>/dev/null || true
+          wait "$QPID" 2>/dev/null || true
+          echo "----- qemu serial head -----"
+          head -n 120 qemu-aarch64.log || true
+          echo "----- qemu serial tail -----"
+          tail -n 160 qemu-aarch64.log || true
+          if grep -q "SALTOS_SELFHOST_OK" qemu-aarch64.log; then
+            echo "SELF-HOST AARCH64 BOOT OK: kernel+glibc+bash+coreutils+runit+salt from source, no distro base"
+          else
+            echo "BOOT FAILED: marker not found"
+            exit 1
+          fi
+
+      - name: Installer test (blank disk -> installed UEFI boot)
+        run: |
+          set -euo pipefail
+          cat > selfhost-work/rootfs/autoinstall-test <<'EOF'
+          #!/bin/sh
+          PATH=/usr/local/salt/shims:/usr/bin:/usr/sbin:/bin:/sbin; export PATH
+          mount -t proc proc /proc 2>/dev/null
+          mount -t sysfs sys /sys 2>/dev/null
+          mount -t devtmpfs dev /dev 2>/dev/null
+          mount -t tmpfs run /run 2>/dev/null
+          mount -t tmpfs tmp /tmp 2>/dev/null
+          printf "YES\n" | saltos-install /dev/vda
+          st=$?
+          echo "SALTOS_INSTALL_EXIT=$st" >/dev/console
+          sync
+          poweroff -f
+          EOF
+          chmod +x selfhost-work/rootfs/autoinstall-test
+          ( cd selfhost-work/rootfs && find . | cpio -o -H newc 2>/dev/null | gzip -9 > ../initrd-autoinstall.gz )
+
+          dd if=/dev/zero of=saltos-installed-aarch64.img bs=1M count=2048 status=none
+          timeout 240 qemu-system-aarch64 \
+            -nodefaults -machine virt,accel=kvm:tcg -cpu max -m 1536 -smp 2 \
+            -display none -serial file:qemu-aarch64-install.log -no-reboot \
+            -kernel selfhost-work/Image \
+            -initrd selfhost-work/initrd-autoinstall.gz \
+            -append "console=ttyAMA0,115200 rdinit=/autoinstall-test" \
+            -drive file=saltos-installed-aarch64.img,format=raw,if=none,id=hd0 \
+            -device virtio-blk-device,drive=hd0 \
+            -netdev user,id=n0 -device virtio-net-device,netdev=n0 || true
+
+          tail -n 180 qemu-aarch64-install.log || true
+          grep -q "SALTOS_INSTALL_EXIT=0" qemu-aarch64-install.log
+
+          timeout 120 qemu-system-aarch64 \
+            -machine virt,accel=kvm:tcg -cpu max -m 1024 -smp 2 \
+            -display none -serial file:qemu-aarch64-installed-uefi.log -no-reboot \
+            -bios /usr/share/qemu-efi-aarch64/QEMU_EFI.fd \
+            -drive file=saltos-installed-aarch64.img,format=raw,if=none,id=hd0 \
+            -device virtio-blk-device,drive=hd0 \
+            -netdev user,id=n0 -device virtio-net-device,netdev=n0 || true
+
+          tail -n 200 qemu-aarch64-installed-uefi.log || true
+          grep -q "Run /sbin/runit-init as init process" qemu-aarch64-installed-uefi.log
+
+      - name: Upload serial log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-aarch64-serial-log
+          path: |
+            qemu-aarch64.log
+            qemu-aarch64-install.log
+            qemu-aarch64-installed-uefi.log
+          if-no-files-found: ignore
+
+      - name: Upload ISO
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: saltos-selfhost-aarch64
+          path: out-iso/*.iso
+          if-no-files-found: warn

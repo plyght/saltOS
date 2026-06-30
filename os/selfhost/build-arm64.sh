@@ -1,13 +1,29 @@
 #!/bin/bash
+# Self-hosted saltOS for aarch64 — glibc, bash, coreutils, busybox, runit and
+# salt all compiled FROM SOURCE into an all-in-initramfs ISO. No Void, no Debian
+# in the result (the build host's gcc is used only to compile; nothing from it
+# ships). aarch64 port of os/selfhost/build.sh, tuned to boot in UTM (QEMU
+# `virt` backend: console ttyAMA0 + graphical tty0; Apple's framework: hvc0).
+#
+# Build it natively on an aarch64 Linux host (e.g. the Lima builder VM):
+#   bash os/selfhost/build-arm64.sh
+# Output: out-iso/saltos-<ver>-selfhost-aarch64.iso  (boot in UTM/QEMU aarch64).
 set -euxo pipefail
 
-ARCH="${1:-x86_64}"
+ARCH=aarch64
 REPO="${REPO_DIR:-$PWD}"
 WORK="${WORK:-$PWD/selfhost-work}"
 OUT="${OUT:-$PWD/out-iso}"
 VERSION="${VERSION:-0.1.0}"
 JOBS="${JOBS:-$(nproc)}"
-EDITION="${EDITION:-console}"
+
+# Build the from-source userland with gcc-12. gcc 14+ turned a pile of legacy-C
+# constructs (implicit function declarations, K&R pointer mismatches) into HARD
+# errors, which breaks djb-style code like runit and trips older glibc/kernel
+# releases. gcc-12 is what the proven CI path uses; fall back to the default cc.
+CC="${CC:-gcc-12}"; CXX="${CXX:-g++-12}"
+command -v "$CC" >/dev/null 2>&1 || { CC=gcc; CXX=g++; }
+export CC CXX
 
 BUSYBOX_VER="1.36.1"
 RUNIT_VER="2.1.2"
@@ -26,11 +42,10 @@ ROOTFS="$WORK/rootfs"
 rm -rf "$WORK"
 mkdir -p "$SRC" "$DEPS" "$ROOTFS" "$OUT"
 
-fetch() {
-  local url="$1" out="$2"
-  echo "fetch $url"
-  curl -fsSL "$url" -o "$out"
-}
+[ "$(uname -m)" = "aarch64" ] || \
+  echo "warning: building aarch64 from-source on $(uname -m) needs a cross toolchain; native aarch64 host recommended" >&2
+
+fetch() { echo "fetch $1"; curl -fsSL "$1" -o "$2"; }
 
 cd "$SRC"
 fetch "https://busybox.net/downloads/busybox-${BUSYBOX_VER}.tar.bz2" busybox.tar.bz2
@@ -44,9 +59,7 @@ fetch "https://ftp.gnu.org/gnu/bash/bash-${BASH_VER}.tar.gz" bash.tar.gz
 fetch "https://ftp.gnu.org/gnu/coreutils/coreutils-${COREUTILS_VER}.tar.xz" coreutils.tar.xz
 
 for f in busybox.tar.bz2 runit.tar.gz zstd.tar.gz sodium.tar.gz sqlite.tar.gz linux.tar.xz \
-         glibc.tar.xz bash.tar.gz coreutils.tar.xz; do
-  tar -xf "$f"
-done
+         glibc.tar.xz bash.tar.gz coreutils.tar.xz; do tar -xf "$f"; done
 
 echo "===== static deps for salt ====="
 ( cd "zstd-${ZSTD_VER}" && make -j"$JOBS" && make PREFIX="$DEPS" install )
@@ -60,6 +73,7 @@ echo "===== static salt ====="
 export PKG_CONFIG_PATH="$DEPS/lib/pkgconfig"
 cmake -S "$REPO" -B "$WORK/salt-build" \
   -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" \
   -DCMAKE_PREFIX_PATH="$DEPS" \
   -DCMAKE_FIND_LIBRARY_SUFFIXES=".a" \
   -DCMAKE_EXE_LINKER_FLAGS="-static -static-libgcc -static-libstdc++"
@@ -75,31 +89,30 @@ echo "===== static busybox ====="
   sed -i 's/^CONFIG_TC=y/# CONFIG_TC is not set/' .config 2>/dev/null || true
   sed -i 's/^CONFIG_FEATURE_TC_INGRESS=y/# CONFIG_FEATURE_TC_INGRESS is not set/' .config 2>/dev/null || true
   make oldconfig </dev/null
-  grep -q '^CONFIG_STATIC=y' .config || { echo "FATAL: busybox CONFIG_STATIC was dropped"; exit 1; }
+  grep -q '^CONFIG_STATIC=y' .config || { echo "FATAL: busybox CONFIG_STATIC dropped"; exit 1; }
   make -j"$JOBS"
-  file busybox | grep -q 'statically linked' || { echo "FATAL: busybox is not static"; exit 1; }
+  file busybox | grep -q 'statically linked' || { echo "FATAL: busybox not static"; exit 1; }
   make CONFIG_PREFIX="$WORK/bb-install" install )
 
 echo "===== static runit ====="
 RUNIT_SRC="$SRC/admin/runit-${RUNIT_VER}/src"
 [ -d "$RUNIT_SRC" ] || RUNIT_SRC="$SRC/runit-${RUNIT_VER}/src"
 ( cd "$RUNIT_SRC"
-  echo 'gcc -static' > conf-cc
-  echo 'gcc -static' > conf-ld
+  echo "$CC -static" > conf-cc
+  echo "$CC -static" > conf-ld
   make )
 
 echo "===== glibc (from source) ====="
-GLIBC_CC="${GLIBC_CC:-gcc-12}"
-command -v "$GLIBC_CC" >/dev/null 2>&1 || GLIBC_CC=gcc
+# glibc 2.40 misc/syslog.c calls the public varargs syslog() internally; on
+# long-double-128 targets (aarch64) the ldbl redirect turns that into an
+# always_inline call that can't be inlined -> "inlining failed ... not inlinable".
+# Call the internal __syslog instead (the upstream fix). Harmless on x86.
+sed -i 's/^\([[:space:]]*\)syslog (INTERNALLOG,/\1__syslog (INTERNALLOG,/' \
+  "$SRC/glibc-${GLIBC_VER}/misc/syslog.c"
 mkdir -p "$SRC/glibc-build"
 ( cd "$SRC/glibc-build"
   "$SRC/glibc-${GLIBC_VER}/configure" \
-    CC="$GLIBC_CC" CXX="${GLIBC_CC/gcc/g++}" \
-    --prefix=/usr \
-    --disable-werror \
-    --disable-nscd \
-    --without-selinux \
-    --enable-kernel=4.19
+    --prefix=/usr --disable-werror --disable-nscd --without-selinux --enable-kernel=4.19
   make -j"$JOBS"
   make DESTDIR="$GNU" install )
 
@@ -117,29 +130,20 @@ echo "===== coreutils (from source) ====="
 
 echo "===== assemble rootfs ====="
 mkdir -p "$ROOTFS"/{proc,sys,dev,run,tmp,root,var/lib/salt,var/cache/salt,etc,strata}
-
-echo "===== lay down GNU userland first (glibc/bash/coreutils -> /usr,/lib) ====="
 cp -a "$GNU/." "$ROOTFS/"
-
 for d in bin sbin usr/bin usr/sbin; do
-  [ -L "$ROOTFS/$d" ] && rm -f "$ROOTFS/$d"
-  mkdir -p "$ROOTFS/$d"
+  [ -L "$ROOTFS/$d" ] && rm -f "$ROOTFS/$d"; mkdir -p "$ROOTFS/$d"
 done
 
 echo "===== static busybox on top (owns /bin and /sbin) ====="
 cp -a "$WORK/bb-install/bin/"* "$ROOTFS/bin/"
 cp -a "$WORK/bb-install/sbin/"* "$ROOTFS/sbin/" 2>/dev/null || true
-for f in "$WORK/bb-install/usr/bin/"*; do
-  n="$(basename "$f")"; [ -e "$ROOTFS/usr/bin/$n" ] || cp -a "$f" "$ROOTFS/usr/bin/$n"
-done
-for f in "$WORK/bb-install/usr/sbin/"*; do
-  n="$(basename "$f")"; [ -e "$ROOTFS/usr/sbin/$n" ] || cp -a "$f" "$ROOTFS/usr/sbin/$n"
-done
+for f in "$WORK/bb-install/usr/bin/"*; do n="$(basename "$f")"; [ -e "$ROOTFS/usr/bin/$n" ] || cp -a "$f" "$ROOTFS/usr/bin/$n"; done
+for f in "$WORK/bb-install/usr/sbin/"*; do n="$(basename "$f")"; [ -e "$ROOTFS/usr/sbin/$n" ] || cp -a "$f" "$ROOTFS/usr/sbin/$n"; done
 
 for b in runit runit-init runsv runsvdir runsvchdir sv chpst utmpset; do
   [ -f "$RUNIT_SRC/$b" ] && install -Dm755 "$RUNIT_SRC/$b" "$ROOTFS/sbin/$b"
 done
-
 install -Dm755 "$SALT_STATIC" "$ROOTFS/usr/bin/salt"
 install -Dm755 "$REPO/os/selfhost/saltos-install" "$ROOTFS/usr/bin/saltos-install"
 mkdir -p "$ROOTFS/etc/salt/strata" "$ROOTFS/usr/local/salt/shims" "$ROOTFS/etc/profile.d"
@@ -177,91 +181,23 @@ exec wget -q -O - "$url"
 EOF
 chmod +x "$ROOTFS/usr/bin/curl"
 
-mkdir -p "$ROOTFS/lib64"
-if [ ! -e "$ROOTFS/lib64/ld-linux-x86-64.so.2" ]; then
-  REAL="$(find "$ROOTFS/usr/lib" "$ROOTFS/lib" -name 'ld-linux-x86-64.so.2' -type f 2>/dev/null | head -1 || true)"
-  [ -n "$REAL" ] && ln -sf "${REAL#"$ROOTFS"}" "$ROOTFS/lib64/ld-linux-x86-64.so.2"
+# aarch64 dynamic loader lives at /lib/ld-linux-aarch64.so.1
+mkdir -p "$ROOTFS/lib"
+if [ ! -e "$ROOTFS/lib/ld-linux-aarch64.so.1" ]; then
+  REAL="$(find "$ROOTFS/usr/lib" "$ROOTFS/lib" -name 'ld-linux-aarch64.so.1' -type f 2>/dev/null | head -1 || true)"
+  [ -n "$REAL" ] && ln -sf "${REAL#"$ROOTFS"}" "$ROOTFS/lib/ld-linux-aarch64.so.1"
 fi
 [ -e "$ROOTFS/usr/bin/bash" ] && ln -sf /usr/bin/bash "$ROOTFS/bin/bash"
 ldconfig -r "$ROOTFS" 2>/dev/null || true
-
-if [ "$EDITION" = "desktop" ]; then
-  echo "===== X11 desktop (from source) ====="
-  if [ -n "${XCACHE:-}" ]; then X="$XCACHE/x"; else X="$WORK/x"; fi
-  mkdir -p "$X"
-  . "$REPO/os/selfhost/desktop.sh"
-  cp -a "$X/." "$ROOTFS/"
-  ldconfig -r "$ROOTFS" 2>/dev/null || true
-
-  mkdir -p "$ROOTFS/etc/X11"
-  cat > "$ROOTFS/etc/X11/xorg.conf" <<'EOF'
-Section "ServerFlags"
-    Option "AutoAddDevices" "false"
-    Option "DontZap" "false"
-EndSection
-Section "Device"
-    Identifier "fb"
-    Driver "fbdev"
-    Option "fbdev" "/dev/fb0"
-EndSection
-Section "Monitor"
-    Identifier "mon"
-EndSection
-Section "Screen"
-    Identifier "scr"
-    Device "fb"
-    Monitor "mon"
-EndSection
-Section "InputDevice"
-    Identifier "kbd"
-    Driver "kbd"
-EndSection
-Section "InputDevice"
-    Identifier "mouse"
-    Driver "mouse"
-    Option "Device" "/dev/input/mice"
-    Option "Protocol" "ImPS/2"
-EndSection
-Section "ServerLayout"
-    Identifier "layout"
-    Screen "scr"
-    InputDevice "kbd" "CoreKeyboard"
-    InputDevice "mouse" "CorePointer"
-EndSection
-EOF
-
-  cat > "$ROOTFS/root/.xinitrc" <<'EOF'
-xsetroot -solid "#1a3a5a"
-xclock -geometry 160x160-10+10 &
-xterm -geometry 90x30+20+20 -fn fixed -e /bin/bash &
-echo "SALTOS_X_OK xorg + twm + xterm running, all from source, no Debian" > /dev/console
-exec twm
-EOF
-
-  mkdir -p "$ROOTFS/etc/runit/sv/xorg"
-  cat > "$ROOTFS/etc/runit/sv/xorg/run" <<'EOF'
-#!/bin/sh
-exec >/dev/console 2>&1
-export HOME=/root
-export PATH=/usr/local/salt/shims:/usr/bin:/usr/sbin:/bin:/sbin
-export XKB_CONFIG_ROOT=/usr/share/X11/xkb
-sleep 3
-exec startx -- :0 vt1
-EOF
-  chmod +x "$ROOTFS/etc/runit/sv/xorg/run"
-  mkdir -p "$ROOTFS/etc/runit/runsvdir/current"
-  ln -sf /etc/runit/sv/xorg "$ROOTFS/etc/runit/runsvdir/current/xorg"
-fi
 
 cat > "$ROOTFS/etc/profile" <<'EOF'
 export PATH=/usr/local/salt/shims:/usr/bin:/usr/sbin:/bin:/sbin
 export PS1='saltOS:\w\$ '
 [ -d /etc/profile.d ] && for f in /etc/profile.d/*.sh; do [ -r "$f" ] && . "$f"; done
 EOF
-
 cat > "$ROOTFS/etc/os-release" <<EOF
 NAME="saltOS"
-PRETTY_NAME="saltOS $VERSION (self-hosted)"
+PRETTY_NAME="saltOS $VERSION (self-hosted, aarch64)"
 ID=saltos
 VERSION="$VERSION"
 EOF
@@ -270,28 +206,24 @@ echo "saltos" > "$ROOTFS/etc/hostname"
 mkdir -p "$ROOTFS/etc/runit/runsvdir/current"
 cat > "$ROOTFS/etc/runit/1" <<'EOF'
 #!/bin/sh
-PATH=/usr/local/salt/shims:/usr/bin:/usr/sbin:/bin:/sbin
-export PATH
+PATH=/usr/local/salt/shims:/usr/bin:/usr/sbin:/bin:/sbin; export PATH
 mount -t proc proc /proc 2>/dev/null
 mount -t sysfs sys /sys 2>/dev/null
 mount -t devtmpfs dev /dev 2>/dev/null
 mount -t tmpfs run /run 2>/dev/null
 mount -t tmpfs tmp /tmp 2>/dev/null
 [ -r /etc/hostname ] && hostname "$(cat /etc/hostname)" 2>/dev/null
-echo "saltOS self-hosted: stage 1 complete" > /dev/console
+echo "saltOS self-hosted (aarch64): stage 1 complete" > /dev/console
 EOF
 cat > "$ROOTFS/etc/runit/2" <<'EOF'
 #!/bin/sh
-PATH=/usr/local/salt/shims:/usr/bin:/usr/sbin:/bin:/sbin
-export PATH
+PATH=/usr/local/salt/shims:/usr/bin:/usr/sbin:/bin:/sbin; export PATH
 exec runsvdir -P /etc/runit/runsvdir/current
 EOF
 cat > "$ROOTFS/etc/runit/3" <<'EOF'
 #!/bin/sh
 PATH=/usr/local/salt/shims:/usr/bin:/usr/sbin:/bin:/sbin
-echo "saltOS: shutting down" > /dev/console
-sync
-poweroff -f
+echo "saltOS: shutting down" > /dev/console; sync; poweroff -f
 EOF
 chmod +x "$ROOTFS"/etc/runit/1 "$ROOTFS"/etc/runit/2 "$ROOTFS"/etc/runit/3
 
@@ -305,7 +237,6 @@ ok=1
 salt --version || ok=0
 bash --version | head -1 || ok=0
 ls --version | head -1 || ok=0
-echo "ldd salt:"; file /usr/bin/bash 2>/dev/null || true
 if [ "$ok" = 1 ]; then
   echo "SALTOS_SELFHOST_OK kernel+glibc+bash+coreutils+runit+salt, all from source, no distro base"
 else
@@ -364,16 +295,24 @@ EOF
 chmod +x "$ROOTFS/etc/runit/sv/netdhcp/run"
 ln -sf /etc/runit/sv/netdhcp "$ROOTFS/etc/runit/runsvdir/current/netdhcp"
 
-mkdir -p "$ROOTFS/etc/runit/sv/getty-tty1"
-cat > "$ROOTFS/etc/runit/sv/getty-tty1/run" <<'EOF'
+# Root shell on UTM's graphical console (tty0/tty1) plus serial fallbacks
+# (ttyAMA0 for QEMU virt, hvc0 for Apple's framework). No login -- this is the
+# minimal live console until the installer/live rootfs grows user management.
+make_shell_sv() { # <name> <dev>
+  mkdir -p "$ROOTFS/etc/runit/sv/$1"
+  cat > "$ROOTFS/etc/runit/sv/$1/run" <<EOF
 #!/bin/sh
-exec /sbin/getty -L -n -i -l /usr/bin/saltos-console-login 115200 ttyS0 vt100
+[ -c /dev/$2 ] || exec sleep 5
+exec /sbin/getty -L -n -i -l /usr/bin/saltos-console-login 115200 $2 vt100
 EOF
-chmod +x "$ROOTFS/etc/runit/sv/getty-tty1/run"
-
+  chmod +x "$ROOTFS/etc/runit/sv/$1/run"
+  ln -sf "/etc/runit/sv/$1" "$ROOTFS/etc/runit/runsvdir/current/$1"
+}
+make_shell_sv shell-tty0 tty0
+make_shell_sv shell-tty1 tty1
+make_shell_sv shell-serial ttyAMA0
+make_shell_sv shell-hvc0 hvc0
 ln -sf /etc/runit/sv/boot-check "$ROOTFS/etc/runit/runsvdir/current/boot-check"
-ln -sf /etc/runit/sv/getty-tty1 "$ROOTFS/etc/runit/runsvdir/current/getty-tty1"
-
 ln -sf /sbin/runit-init "$ROOTFS/init"
 
 mkdir -p "$ROOTFS/etc/salt"
@@ -383,64 +322,62 @@ source = ""
 key = ""
 EOF
 
-echo "===== sanity: rootfs init shell must be static ====="
+echo "===== sanity: init shell must be static ====="
 file "$ROOTFS/bin/busybox"
-if ! file "$ROOTFS/bin/busybox" | grep -q 'statically linked'; then
-  echo "FATAL: rootfs /bin/busybox is not static (init shell would depend on the loader)"
-  ls -la "$ROOTFS/bin/busybox"
-  exit 1
-fi
+file "$ROOTFS/bin/busybox" | grep -q 'statically linked' || { echo "FATAL: /bin/busybox not static"; exit 1; }
 
 echo "===== pack initramfs ====="
 ( cd "$ROOTFS" && find . | cpio -o -H newc 2>/dev/null | gzip -9 > "$WORK/initrd.gz" )
 ls -lh "$WORK/initrd.gz"
 
-echo "===== build kernel ====="
+echo "===== build aarch64 kernel ====="
 KCACHE="${KCACHE:-}"
-if [ -n "$KCACHE" ] && [ -f "$KCACHE/bzImage" ]; then
-  echo "using cached kernel from $KCACHE"
-  cp "$KCACHE/bzImage" "$WORK/bzImage"
+if [ -n "$KCACHE" ] && [ -f "$KCACHE/Image" ]; then
+  cp "$KCACHE/Image" "$WORK/Image"
 else
   cd "$SRC/linux-${KERNEL_VER}"
   make defconfig
-  cat "$REPO/os/selfhost/kernel-${ARCH}.config" >> .config
+  cat "$REPO/os/selfhost/kernel-aarch64.config" >> .config
   make olddefconfig
-  make -j"$JOBS" bzImage
-  cp arch/x86/boot/bzImage "$WORK/bzImage"
-  if [ -n "$KCACHE" ]; then
-    mkdir -p "$KCACHE"
-    cp "$WORK/bzImage" "$KCACHE/bzImage"
-  fi
+  make -j"$JOBS" Image
+  cp arch/arm64/boot/Image "$WORK/Image"
+  if [ -n "$KCACHE" ]; then mkdir -p "$KCACHE"; cp "$WORK/Image" "$KCACHE/Image"; fi
 fi
 mkdir -p "$ROOTFS/boot"
-cp "$WORK/bzImage" "$ROOTFS/boot/bzImage"
+cp "$WORK/Image" "$ROOTFS/boot/Image"
 mkdir -p "$ROOTFS/boot/efi/EFI/BOOT"
 cat > "$WORK/grub-installed-standalone.cfg" <<'EOF'
 search --no-floppy --label SALTOS_ROOT --set=root
 configfile /boot/grub/grub.cfg
 EOF
-grub-mkstandalone -O x86_64-efi \
+grub-mkstandalone -O arm64-efi \
   --modules="part_msdos part_gpt fat ext2 search search_label normal linux" \
-  -o "$ROOTFS/boot/efi/EFI/BOOT/BOOTX64.EFI" \
+  -o "$ROOTFS/boot/efi/EFI/BOOT/BOOTAA64.EFI" \
   "boot/grub/grub.cfg=$WORK/grub-installed-standalone.cfg"
 ( cd "$ROOTFS" && find . | cpio -o -H newc 2>/dev/null | gzip -9 > "$WORK/initrd.gz" )
 
 if [ "${BUILD_INSTALLED_IMAGE:-0}" = 1 ]; then
-  echo "===== build installed $ARCH disk image ====="
-  ARCH="$ARCH" ROOTFS="$ROOTFS" KERNEL="$WORK/bzImage" OUT="$OUT" VERSION="$VERSION" \
+  echo "===== build installed aarch64 disk image ====="
+  ARCH="$ARCH" ROOTFS="$ROOTFS" KERNEL="$WORK/Image" OUT="$OUT" VERSION="$VERSION" \
     "$REPO/os/selfhost/build-installed-image.sh"
 fi
 
-echo "===== build ISO ====="
+echo "===== build aarch64 EFI ISO ====="
 ISODIR="$WORK/iso"
 mkdir -p "$ISODIR/boot/grub"
-cp "$WORK/bzImage" "$ISODIR/boot/bzImage"
+cp "$WORK/Image" "$ISODIR/boot/Image"
 cp "$WORK/initrd.gz" "$ISODIR/boot/initrd.gz"
 cat > "$ISODIR/boot/grub/grub.cfg" <<EOF
 set default=0
 set timeout=3
-menuentry "saltOS $VERSION (self-hosted)" {
-  linux /boot/bzImage console=tty0 console=ttyS0,115200 rdinit=/sbin/runit-init
+terminal_input console
+terminal_output console
+menuentry "saltOS $VERSION (self-hosted, aarch64, UTM display)" {
+  linux /boot/Image console=tty0 rdinit=/sbin/runit-init
+  initrd /boot/initrd.gz
+}
+menuentry "saltOS $VERSION (self-hosted, aarch64, serial fallback)" {
+  linux /boot/Image console=ttyAMA0,115200 console=hvc0 rdinit=/sbin/runit-init
   initrd /boot/initrd.gz
 }
 EOF

@@ -1,0 +1,180 @@
+#!/bin/sh
+# Independent saltOS text installer for the selfhost live ISO.
+set -eu
+
+PATH=/usr/local/salt/shims:/usr/bin:/usr/sbin:/bin:/sbin
+export PATH
+
+die() {
+  echo "saltos-install: $*" >&2
+  exit 1
+}
+
+say() {
+  echo "==> $*" >/dev/console
+}
+
+need() {
+  command -v "$1" >/dev/null 2>&1 || die "missing required tool: $1"
+}
+
+disk_size() {
+  sectors="$(cat "/sys/block/${1##*/}/size" 2>/dev/null || echo 0)"
+  awk "BEGIN { printf \"%.1fG\", ($sectors * 512) / 1073741824 }"
+}
+
+partnode() {
+  case "$1" in
+    *[0-9]) echo "$1p$2" ;;
+    *) echo "$1$2" ;;
+  esac
+}
+
+choose_disk() {
+  echo >/dev/console
+  echo "Available install disks:" >/dev/console
+  i=1
+  for sys in /sys/block/*; do
+    name="${sys##*/}"
+    case "$name" in loop*|ram*|sr*) continue ;; esac
+    [ -b "/dev/$name" ] || continue
+    eval "disk_$i=/dev/$name"
+    printf "  [%s] /dev/%s  %s\n" "$i" "$name" "$(disk_size "$name")" >/dev/console
+    i=$((i + 1))
+  done
+  [ "$i" -gt 1 ] || die "no writable disks found"
+  printf "Disk number to erase/install to: " >/dev/console
+  read -r pick
+  eval "disk=\${disk_$pick:-}"
+  [ -n "$disk" ] || die "invalid disk selection"
+  echo "$disk"
+}
+
+confirm() {
+  echo >/dev/console
+  echo "This will ERASE $1 and install saltOS onto it." >/dev/console
+  printf "Type YES to continue: " >/dev/console
+  read -r yes
+  [ "$yes" = YES ] || die "aborted"
+}
+
+unmount_target() {
+  mnt="$1"
+  umount "$mnt/boot/efi" 2>/dev/null || true
+  umount "$mnt" 2>/dev/null || true
+}
+
+copy_root() {
+  src=/
+  dst="$1"
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -aHAX --numeric-ids \
+      --exclude=/dev --exclude=/proc --exclude=/sys --exclude=/run --exclude=/tmp \
+      --exclude=/mnt --exclude=/media \
+      "$src" "$dst/"
+  else
+    (cd / && tar \
+      --exclude=./dev --exclude=./proc --exclude=./sys --exclude=./run --exclude=./tmp \
+      --exclude=./mnt --exclude=./media \
+      -cf - .) | (cd "$dst" && tar -xf -)
+  fi
+}
+
+install_grub_cfg() {
+  root="$1"
+  rootdev="$2"
+  arch="$(uname -m)"
+  mkdir -p "$root/boot/grub" "$root/boot/efi/EFI/BOOT"
+  case "$arch" in
+    aarch64|arm64)
+      kernel=/boot/Image
+      efi=BOOTAA64.EFI
+      consoles="console=tty0 console=ttyAMA0,115200 console=hvc0"
+      ;;
+    *)
+      kernel=/boot/bzImage
+      efi=BOOTX64.EFI
+      consoles="console=tty0 console=ttyS0,115200"
+      ;;
+  esac
+  [ -f "$root$kernel" ] || die "installed kernel missing at $kernel"
+  cat > "$root/boot/grub/grub.cfg" <<EOF
+set default=0
+set timeout=3
+menuentry "saltOS installed" {
+  linux $kernel root=$rootdev rw rootwait init=/sbin/runit-init $consoles
+}
+EOF
+  if [ -f "/boot/efi/EFI/BOOT/$efi" ]; then
+    cp "/boot/efi/EFI/BOOT/$efi" "$root/boot/efi/EFI/BOOT/$efi"
+  elif [ -f "/EFI/BOOT/$efi" ]; then
+    cp "/EFI/BOOT/$efi" "$root/boot/efi/EFI/BOOT/$efi"
+  else
+    echo "warning: EFI loader $efi not found in live root; install may need grub-install later" >&2
+  fi
+}
+
+main() {
+  case "${1:-}" in
+    -h|--help)
+      echo "usage: saltos-install [disk]"
+      echo
+      echo "Installs the independent saltOS live system to a persistent disk."
+      echo "WARNING: the selected disk is erased."
+      exit 0
+      ;;
+  esac
+
+  need fdisk
+  need mke2fs
+  need mkfs.vfat
+  need mount
+  need umount
+
+  disk="${1:-}"
+  [ -n "$disk" ] || disk="$(choose_disk)"
+  [ -b "$disk" ] || die "not a block device: $disk"
+  confirm "$disk"
+
+  esp="$(partnode "$disk" 1)"
+  rootp="$(partnode "$disk" 2)"
+  mnt=/mnt/saltos-target
+
+  unmount_target "$mnt"
+  mkdir -p "$mnt"
+
+  say "partitioning $disk"
+  dd if=/dev/zero of="$disk" bs=1M count=16 conv=fsync 2>/dev/null || true
+  printf 'o\nn\np\n1\n\n+256M\nt\nc\na\n1\nn\np\n2\n\n\nw\n' | fdisk "$disk"
+  sleep 2
+
+  say "formatting filesystems"
+  mkfs.vfat -n SALTOS_EFI "$esp"
+  mke2fs -F -L SALTOS_ROOT "$rootp"
+
+  say "mounting target"
+  mount "$rootp" "$mnt"
+  mkdir -p "$mnt/boot/efi"
+  mount "$esp" "$mnt/boot/efi"
+
+  say "copying independent saltOS root"
+  copy_root "$mnt"
+  say "writing installed system config"
+  mkdir -p "$mnt"/dev "$mnt"/proc "$mnt"/sys "$mnt"/run "$mnt"/tmp "$mnt"/strata
+  chmod 1777 "$mnt/tmp"
+
+  cat > "$mnt/etc/fstab" <<'EOF'
+LABEL=SALTOS_ROOT / ext4 rw,noatime 0 1
+LABEL=SALTOS_EFI /boot/efi vfat umask=0077 0 2
+tmpfs /tmp tmpfs defaults,nosuid,nodev 0 0
+EOF
+  install_grub_cfg "$mnt" "$rootp"
+  say "syncing target disk"
+  sync
+  say "unmounting target"
+  unmount_target "$mnt"
+  echo >/dev/console
+  echo "saltOS installed to $disk. Reboot and boot from the disk." >/dev/console
+}
+
+main "$@"
