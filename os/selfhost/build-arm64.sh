@@ -361,7 +361,7 @@ grub-mkstandalone -O arm64-efi \
 if [ "${BUILD_INSTALLED_IMAGE:-0}" = 1 ]; then
   echo "===== build installed aarch64 disk image ====="
   ARCH="$ARCH" ROOTFS="$ROOTFS" KERNEL="$WORK/Image" OUT="$OUT" VERSION="$VERSION" \
-    "$REPO/os/selfhost/build-installed-image.sh"
+    sh "$REPO/os/selfhost/build-installed-image.sh"
 fi
 
 echo "===== build aarch64 EFI ISO ====="

@@ -437,7 +437,7 @@ grub-mkstandalone -O x86_64-efi \
 if [ "${BUILD_INSTALLED_IMAGE:-0}" = 1 ]; then
   echo "===== build installed $ARCH disk image ====="
   ARCH="$ARCH" ROOTFS="$ROOTFS" KERNEL="$WORK/bzImage" OUT="$OUT" VERSION="$VERSION" \
-    "$REPO/os/selfhost/build-installed-image.sh"
+    sh "$REPO/os/selfhost/build-installed-image.sh"
 fi
 
 echo "===== build ISO ====="
