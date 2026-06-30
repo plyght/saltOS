@@ -58,6 +58,29 @@ That same rule is also the automatic fallback for `salt run` on kernels that
 forbid unprivileged user namespaces (e.g. Ubuntu's AppArmor default); Void's
 kernel allows them, so the images are genuinely sudo-free for running commands.
 
+## Run & test on macOS without UTM
+
+UTM's "Apple Virtualization" backend is a GUI over Apple's
+`Virtualization.framework`. [`vm-run.sh`](vm-run.sh) drives the *same* framework
+from the shell (via [vfkit](https://github.com/crc-org/vfkit)), so you can boot,
+watch, and smoke-test the image exactly as UTM would — scriptably and over SSH,
+no UTM needed. vfkit is fetched to `~/.cache/saltos` on first use.
+
+```sh
+# headless boot, assert it reaches userspace (CI / "does it boot"); exit 0/1
+os/build/vm-run.sh --check out-vm/saltos-0.1.0-apple-aarch64.img
+
+# headless boot, stream the serial console (hvc0) live; Ctrl-C stops
+os/build/vm-run.sh out-vm/saltos-0.1.0-apple-aarch64.img
+
+# graphical, interactive window with keyboard/mouse — the UTM-equivalent display
+os/build/vm-run.sh --gui out-vm/saltos-0.1.0-apple-aarch64.img
+```
+
+With no image argument it picks the newest `*apple*.img` in `./`, `out-vm/`, or
+`~`. Knobs: `CPUS`, `MEM_MIB`, `TIMEOUT`. The image boots on a copy-on-write
+clone so the source stays pristine (`--in-place` to boot it directly).
+
 ---
 
 # Apple Virtualization / UTM (aarch64) — import notes
@@ -95,6 +118,17 @@ Apple's `Virtualization.framework` is not a generic PC:
    window (maps to `hvc0`).
 
 If the GUI misbehaves, pick the **safe graphics (nomodeset)** GRUB entry.
+
+### "read-only file system" / won't boot
+
+If the VM dies early complaining about a **read-only file system**, the disk was
+attached **read-only**. saltOS is a real read-write install: the root btrfs must
+be writable or runit's `remount,rw /` fails and the boot aborts. Make sure the
+`.img` is imported as a normal writable **VirtIO** drive — not as a CD/removable
+(read-only) device, and not via "Boot from kernel image". The `.img` file itself
+must also be writable (`chmod u+w`) and on a volume with free space. To take UTM
+out of the loop entirely, boot with [`vm-run.sh`](vm-run.sh) (above), which
+always attaches the disk read-write.
 
 ## First steps inside the VM
 

@@ -147,6 +147,9 @@ EOF
 fi
 chroot "$ROOTFS" chown -R salt:salt /home/salt 2>/dev/null || true
 
+echo "==> detaching runit supervisor from the console (no service flood)"
+saltos_quiet_runit_console
+
 # Make sure the virtio modules land in the generic (non-hostonly) initramfs so
 # the image boots on Apple's framework regardless of the build host.
 mkdir -p "$ROOTFS/etc/dracut.conf.d"

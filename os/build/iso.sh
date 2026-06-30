@@ -194,6 +194,9 @@ EOF
 fi
 chroot "$ROOTFS" chown -R salt:salt /home/salt 2>/dev/null || true
 
+echo "==> detaching runit supervisor from the console (no service flood)"
+saltos_quiet_runit_console
+
 echo "==> locating kernel"
 KVER="$(ls -1 "$ROOTFS/usr/lib/modules" 2>/dev/null | sort -V | tail -n1 || true)"
 [ -n "$KVER" ] || KVER="$(ls -1 "$ROOTFS/lib/modules" 2>/dev/null | sort -V | tail -n1 || true)"

@@ -64,6 +64,21 @@ EOF
   chmod 0440 "$ROOTFS/etc/sudoers.d/$user"
 }
 
+# Detach runit's service supervisor from the boot console. Stock Void's
+# /etc/runit/2 execs `runsvdir` with PID 1's console (stdin/stdout/stderr)
+# inherited, so every supervised service that does `exec 2>&1` -- sshd
+# announcing its port, chronyd, NetworkManager, dhcp clients, salt-update --
+# dumps onto the interactive console and races the login shell for keystrokes.
+# Redirect runsvdir's std{in,out,err} to /dev/null; per-service logs still reach
+# socklog/svlogd via /dev/log. (The Debian/pi image installs os/runit/stages/2,
+# which is already detached; this brings the Void images to parity.)
+saltos_quiet_runit_console() {
+  local two="$ROOTFS/etc/runit/2"
+  [ -f "$two" ] || return 0
+  grep -q '/dev/null' "$two" && return 0
+  sed -i '/runsvdir -P/ s|$| </dev/null >/dev/null 2>\&1|' "$two"
+}
+
 # os-release block.
 saltos_write_os_release() { # <pretty-suffix>
   cat > "$ROOTFS/etc/os-release" <<EOF
