@@ -12,10 +12,12 @@
 #include <sched.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
+#include <sys/file.h>
 #include <fcntl.h>
 #include <grp.h>
 #include <pwd.h>
 #include <errno.h>
+#include <signal.h>
 #endif
 
 void salt_run_opts_default(salt_run_opts *o) {
@@ -121,6 +123,172 @@ static void salt_run_mount_proc(void) {
   free(proc);
 }
 
+/* Set up every bind/mount that makes a stratum's filesystem view consistent
+ * with the host's data dirs. Called once inside a fresh mount namespace --
+ * either the per-stratum persistent holder (root path) or a per-command
+ * userns+CLONE_NEWNS (unprivileged path). g_root must already point at the
+ * stratum root. bind_workdir binds the caller's cwd too (only meaningful on the
+ * per-command path; the shared holder uses the fixed host data-dir set). */
+static void salt_run_setup_mounts(const salt_run_opts *opts, bool bind_workdir) {
+  mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL);
+
+  salt_run_mount_proc();
+
+  /* The whole point of the expose UX: see and run everything from any stratum.
+   * RUN: salt + the host shims on PATH -- salt is static so it runs under any
+   * libc, and when invoked in here it re-enters the host mount namespace to do
+   * its work (salt_escape_to_host in cli), so cross-stratum commands route to the
+   * host cleanly with no nesting. SEE: bind /strata so other strata's files are
+   * visible (a mount is the only way to share a filesystem view). Bound first so
+   * the recursive bind doesn't also re-bind the /home,/root,/tmp mounts below. */
+  salt_run_bind_dir("/strata", "/strata");
+  salt_run_bind_dir("/usr/local/salt", "/usr/local/salt");
+  salt_run_bind_file("/usr/bin/salt", "/usr/local/bin/salt");
+
+  salt_run_bind_dir("/sys", "/sys");
+  salt_run_bind_dir("/dev", "/dev");
+  salt_run_bind_dir("/run", "/run");
+  salt_run_bind_dir("/tmp", "/tmp");
+  salt_run_bind_dir("/home", "/home");
+  salt_run_bind_dir("/root", "/root");
+
+  salt_run_bind_file("/etc/resolv.conf", "/etc/resolv.conf");
+  salt_run_bind_file("/etc/hosts", "/etc/hosts");
+  salt_run_bind_file("/etc/localtime", "/etc/localtime");
+
+  /* Make the caller's working directory available at the same path inside the
+   * stratum so commands run "in the repo" exactly like a normal shell -- file
+   * watchers, relative paths and node_modules all resolve. /home, /root and
+   * /tmp are already bound above; binding the workdir explicitly also covers
+   * project dirs kept elsewhere (e.g. /srv, /opt, /mnt). */
+  if (bind_workdir && opts && opts->workdir && opts->workdir[0] == '/' &&
+      strcmp(opts->workdir, "/") != 0)
+    salt_run_bind_dir(opts->workdir, opts->workdir);
+}
+
+/* Path of the pid file that pins a stratum's persistent mount namespace. Lives
+ * under /run (bound identically into every stratum), so the holder's pid -- and
+ * thus /proc/<pid>/ns/mnt -- is reachable from any later invocation, host or
+ * stratum. */
+static void salt_run_ns_pidpath(const salt_stratum *s, char *out, size_t n) {
+  snprintf(out, n, "/run/salt/ns/%s.pid", (s->name && s->name[0]) ? s->name : "default");
+}
+
+static pid_t salt_run_read_holder(const char *pidpath) {
+  int fd = open(pidpath, O_RDONLY);
+  if (fd < 0) return -1;
+  char buf[32];
+  ssize_t r = read(fd, buf, sizeof(buf) - 1);
+  close(fd);
+  if (r <= 0) return -1;
+  buf[r] = '\0';
+  long p = strtol(buf, NULL, 10);
+  return p > 0 ? (pid_t)p : -1;
+}
+
+static bool salt_run_holder_alive(pid_t p) { return p > 0 && kill(p, 0) == 0; }
+
+/* Body of the detached holder: create the stratum's mount namespace, lay down
+ * all the binds ONCE, publish the pid file (atomically, so a poller never sees a
+ * half-written pid), then pause() forever. Its /proc/<pid>/ns/mnt is what every
+ * later `salt run <stratum>` setns()es into, giving all commands one consistent
+ * filesystem view. Returns 0 on success, -1 if namespace setup failed. */
+static int salt_run_holder_setup(const salt_stratum *s, const char *pidpath) {
+  g_root = s->root;
+  if (unshare(CLONE_NEWNS) != 0) return -1;
+  salt_run_setup_mounts(NULL, false);
+
+  char tmp[300];
+  snprintf(tmp, sizeof(tmp), "%s.tmp.%d", pidpath, (int)getpid());
+  int fd = open(tmp, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+  if (fd < 0) return -1;
+  char buf[32];
+  int n = snprintf(buf, sizeof(buf), "%d\n", (int)getpid());
+  ssize_t w = write(fd, buf, (size_t)n);
+  close(fd);
+  if (w != n) {
+    unlink(tmp);
+    return -1;
+  }
+  if (rename(tmp, pidpath) != 0) {
+    unlink(tmp);
+    return -1;
+  }
+  return 0;
+}
+
+/* Ensure the stratum's persistent namespace holder exists and return its pid.
+ * A live holder is reused; a stale/dead one (pid file present but process gone)
+ * is recreated. Creation double-forks + setsid so the holder is detached from
+ * this command and survives it, then blocks in salt_run_holder_setup's pause().
+ * An flock serializes concurrent first-runs so only one holder is created. */
+static pid_t salt_run_ensure_holder(const salt_stratum *s) {
+  char pidpath[256];
+  salt_run_ns_pidpath(s, pidpath, sizeof(pidpath));
+
+  pid_t existing = salt_run_read_holder(pidpath);
+  if (salt_run_holder_alive(existing)) return existing;
+
+  salt_mkdirs("/run/salt/ns", 0755);
+
+  char lockpath[300];
+  snprintf(lockpath, sizeof(lockpath), "%s.lock", pidpath);
+  int lockfd = open(lockpath, O_CREAT | O_RDWR, 0644);
+  if (lockfd >= 0) {
+    while (flock(lockfd, LOCK_EX) != 0 && errno == EINTR) {
+    }
+  }
+
+  /* Re-check under the lock: another invocation may have just created it. */
+  existing = salt_run_read_holder(pidpath);
+  if (salt_run_holder_alive(existing)) {
+    if (lockfd >= 0) close(lockfd);
+    return existing;
+  }
+  unlink(pidpath);
+
+  pid_t mid = fork();
+  if (mid < 0) {
+    if (lockfd >= 0) close(lockfd);
+    return -1;
+  }
+  if (mid == 0) {
+    if (lockfd >= 0) close(lockfd);
+    if (setsid() < 0) _exit(127);
+    pid_t h = fork();
+    if (h < 0) _exit(127);
+    if (h > 0) _exit(0);
+    int nul = open("/dev/null", O_RDWR);
+    if (nul >= 0) {
+      dup2(nul, 0);
+      dup2(nul, 1);
+      dup2(nul, 2);
+      if (nul > 2) close(nul);
+    }
+    /* Detach from EVERY inherited descriptor. The holder outlives this command,
+     * so any fd it keeps open is leaked forever -- most damagingly the parent's
+     * "userns denied" signal pipe (g_signal_fd), whose write end staying open
+     * makes the parent's read() block indefinitely and hangs the whole run. */
+    for (int fd = 3; fd < 256; fd++) close(fd);
+    if (salt_run_holder_setup(s, pidpath) != 0) _exit(127);
+    for (;;) pause();
+    _exit(0);
+  }
+
+  int st;
+  while (waitpid(mid, &st, 0) < 0 && errno == EINTR) {
+  }
+
+  pid_t holder = -1;
+  for (int i = 0; i < 500; i++) {
+    holder = salt_run_read_holder(pidpath);
+    if (salt_run_holder_alive(holder)) break;
+    usleep(10000);
+  }
+  if (lockfd >= 0) close(lockfd);
+  return salt_run_holder_alive(holder) ? holder : -1;
+}
+
 /* Write a one-shot string to a /proc/self/{uid,gid}_map or setgroups file. */
 static int salt_run_write_str(const char *path, const char *val) {
   int fd = open(path, O_WRONLY);
@@ -157,11 +325,40 @@ static void salt_run_child(const salt_stratum *s, const salt_run_opts *opts,
                            char *const argv[]) {
   g_root = s->root;
 
-  /* Unprivileged caller: get CAP_SYS_ADMIN via a user namespace instead of
-   * requiring sudo. If the kernel forbids it, exit 126 so the dispatcher can
-   * fall back to re-execing under sudo. */
+  /* Root path: JOIN the stratum's ONE persistent mount namespace instead of
+   * unsharing a throwaway one per command. The holder set up all the binds once
+   * and pins the namespace via pause(); setns()ing into it means every `salt run
+   * <stratum>` -- and therefore every exposed shim -- shares a single, coherent
+   * filesystem view (a file one command creates, the next command sees). Each
+   * stratum keeps its OWN namespace/root (Arch -> /strata/arch, Alpine ->
+   * /strata/alpine); only the host data dirs are bound identically into each. */
   bool in_userns = false;
-  if (geteuid() != 0) {
+  if (geteuid() == 0) {
+    pid_t holder = salt_run_ensure_holder(s);
+    if (holder <= 0) {
+      fprintf(stderr,
+              "salt run: could not set up the stratum mount namespace holder\n");
+      _exit(125);
+    }
+    char nspath[64];
+    snprintf(nspath, sizeof(nspath), "/proc/%d/ns/mnt", (int)holder);
+    int nsfd = open(nspath, O_RDONLY);
+    if (nsfd < 0) {
+      fprintf(stderr, "salt run: could not open %s: %s\n", nspath, strerror(errno));
+      _exit(125);
+    }
+    if (setns(nsfd, CLONE_NEWNS) != 0) {
+      fprintf(stderr, "salt run: could not join the stratum namespace: %s\n",
+              strerror(errno));
+      close(nsfd);
+      _exit(125);
+    }
+    close(nsfd);
+  } else {
+    /* Unprivileged caller: persistent-join needs CAP_SYS_ADMIN we don't have, so
+     * keep the per-command model -- get capabilities via a user namespace (no
+     * sudo) and unshare a fresh mount namespace. If the kernel forbids userns,
+     * exit 126 so the dispatcher can fall back to re-execing under sudo. */
     if (salt_run_enter_userns() != 0) {
       if (g_signal_fd >= 0) {
         char u = 'U';
@@ -171,48 +368,14 @@ static void salt_run_child(const salt_stratum *s, const salt_run_opts *opts,
       _exit(126);
     }
     in_userns = true;
+    if (unshare(CLONE_NEWNS) != 0) {
+      fprintf(stderr,
+              "salt run: could not set up the stratum mount namespace: %s\n",
+              strerror(errno));
+      _exit(125);
+    }
+    salt_run_setup_mounts(opts, true);
   }
-
-  if (unshare(CLONE_NEWNS) != 0) {
-    fprintf(stderr,
-            "salt run: could not set up the stratum mount namespace: %s\n",
-            strerror(errno));
-    _exit(125);
-  }
-
-  mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL);
-
-  salt_run_mount_proc();
-
-  /* The whole point of the expose UX: see and run everything from any stratum.
-   * RUN: salt + the host shims on PATH -- salt is static so it runs under any
-   * libc, and when invoked in here it re-enters the host mount namespace to do
-   * its work (salt_escape_to_host in cli), so cross-stratum commands route to the
-   * host cleanly with no nesting. SEE: bind /strata so other strata's files are
-   * visible (a mount is the only way to share a filesystem view). Bound first so
-   * the recursive bind doesn't also re-bind the /home,/root,/tmp mounts below. */
-  salt_run_bind_dir("/strata", "/strata");
-  salt_run_bind_dir("/usr/local/salt", "/usr/local/salt");
-  salt_run_bind_file("/usr/bin/salt", "/usr/local/bin/salt");
-
-  salt_run_bind_dir("/sys", "/sys");
-  salt_run_bind_dir("/dev", "/dev");
-  salt_run_bind_dir("/run", "/run");
-  salt_run_bind_dir("/tmp", "/tmp");
-  salt_run_bind_dir("/home", "/home");
-  salt_run_bind_dir("/root", "/root");
-
-  salt_run_bind_file("/etc/resolv.conf", "/etc/resolv.conf");
-  salt_run_bind_file("/etc/hosts", "/etc/hosts");
-  salt_run_bind_file("/etc/localtime", "/etc/localtime");
-
-  /* Make the caller's working directory available at the same path inside the
-   * stratum so commands run "in the repo" exactly like a normal shell -- file
-   * watchers, relative paths and node_modules all resolve. /home, /root and
-   * /tmp are already bound above; binding the workdir explicitly also covers
-   * project dirs kept elsewhere (e.g. /srv, /opt, /mnt). */
-  if (opts->workdir && opts->workdir[0] == '/' && strcmp(opts->workdir, "/") != 0)
-    salt_run_bind_dir(opts->workdir, opts->workdir);
 
   const char *sudo_uid = getenv("SUDO_UID");
   const char *sudo_gid = getenv("SUDO_GID");

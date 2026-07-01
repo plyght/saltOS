@@ -68,7 +68,21 @@ int cmd_run(const Options &o, const std::vector<std::string> &args) {
   // `cd ~/code/app && bun dev` behaves like a normal shell instead of starting
   // in $HOME. Falls back to the default (home) if cwd is somehow unavailable.
   char cwd[4096];
-  if (getcwd(cwd, sizeof(cwd))) opts.workdir = cwd;
+  // If we were re-exec'd by salt_escape_to_host (running a stratum command from
+  // inside another stratum), our getcwd() no longer reflects the caller's logical
+  // directory -- nsenter left us at a path under the wrong root. The escape stashed
+  // the caller's logical cwd in SALT_ESCAPE_CWD; prefer it. Unset it immediately so
+  // it doesn't leak into the run child or any nested `salt run` beneath it, which
+  // must derive their own cwd. Fall back to getcwd() for the normal (non-escaped)
+  // case.
+  const char *escaped_cwd = getenv("SALT_ESCAPE_CWD");
+  if (escaped_cwd && escaped_cwd[0] == '/') {
+    snprintf(cwd, sizeof(cwd), "%s", escaped_cwd);
+    unsetenv("SALT_ESCAPE_CWD");  // copied above; don't leak it to children
+    opts.workdir = cwd;
+  } else if (getcwd(cwd, sizeof(cwd))) {
+    opts.workdir = cwd;
+  }
   int st = 0;
   int rc = salt_stratum_run(&s, &opts, argv.data(), &st);
   salt_stratum_free_fields(&s);

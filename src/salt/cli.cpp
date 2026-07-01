@@ -299,11 +299,31 @@ static void salt_escape_to_host(int argc, char **argv) {
   self[a] = '\0';
   init[b] = '\0';
   if (strcmp(self, init) == 0) return;  // already on the host
+  // Reset the root to PID 1's (the host /). Entering PID 1's mount namespace via
+  // setns does NOT undo this process's chroot, so without -r we stay chroot'd in
+  // the calling stratum and a relative write (e.g. `git clone` with no path)
+  // lands in the stratum's ON-DISK root (/strata/<name>/root) instead of the
+  // shared, host-bound /root -- the split-brain the caller reports.
+  //
+  // Working directory: we deliberately do NOT use `nsenter -w`. nsenter opens the
+  // -w directory relative to the CALLER's namespace/root before switching, and
+  // that resolution lands on the stratum's unshared on-disk /root rather than the
+  // host-bound one, so the escaped salt's getcwd() comes back as
+  // /strata/<name>/root -- exactly the wrong place. Instead we hand the caller's
+  // LOGICAL cwd to the escaped salt out-of-band via SALT_ESCAPE_CWD; cmd_run uses
+  // it as the run workdir, and run.c chdir's to it inside the target stratum's
+  // holder, where that same logical path (/root, /home/..., /strata/...) is bound
+  // identically to the host -- so the command runs exactly where the caller stood
+  // and the files are consistent everywhere. Best-effort: if getcwd fails we skip
+  // it and the escaped salt falls back to PID 1's cwd.
+  char wd[4096];
+  if (getcwd(wd, sizeof(wd))) setenv("SALT_ESCAPE_CWD", wd, 1);
   std::vector<char *> a2;
   a2.push_back(const_cast<char *>("nsenter"));
   a2.push_back(const_cast<char *>("-t"));
   a2.push_back(const_cast<char *>("1"));
   a2.push_back(const_cast<char *>("-m"));
+  a2.push_back(const_cast<char *>("-r"));
   a2.push_back(const_cast<char *>("--"));
   a2.push_back(const_cast<char *>("/usr/bin/salt"));
   for (int i = 1; i < argc; i++) a2.push_back(argv[i]);
