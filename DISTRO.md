@@ -356,6 +356,24 @@ A stratum does not directly own:
 
 A stratum may provide a component that saltOS adopts into a host role. In that case, saltOS owns the adoption decision, integration metadata, rollback point, and conflict policy.
 
+### 8.0 Runtime model: one system, many userlands
+
+A stratum is not a container you live inside. It is a foreign **userland** grafted onto the one system. The dividing line is deliberate and fixed:
+
+- **Isolated, per stratum — the distro's own program files:** `/usr`, `/lib`, `/lib64`, `/bin`, `/sbin`, and the distro-specific parts of `/etc`/`/var`. This is the entire reason strata exist — Arch is glibc, Alpine is musl; their `/usr` and `/lib` cannot be shared. So they are not.
+- **Shared, one system — everything that is *yours*:**
+  - **Your data:** `/home`, `/root`, `/srv`, `/opt`, `/mnt`, `/media`, `/tmp`.
+  - **Your identity:** `/etc/passwd`, `/etc/group`, `/etc/shadow` — one user database.
+  - **The machine:** the kernel, and the runtime trees `/dev`, `/proc`, `/sys`, `/run`.
+
+The rule is a principle, not a hand-maintained allow-list: *your files and your identity belong to the system and are shared; the distro's binaries belong to the stratum and are isolated.* Consequences that follow directly and must hold:
+
+- **Files are consistent everywhere.** A file any command creates in a shared data dir is the same on-disk file the host and every other stratum sees. `git clone` in one command and `ls` in the next agree, whichever stratum each came from.
+- **A user is a user everywhere.** User accounts are system state, not stratum state. The human user database is one shared database, **merged into each stratum alongside — never over — that distro's own system users**, so the stratum's package manager still resolves its `alpm`/`http`/etc. Creating an account with the ordinary system tools, run anywhere, makes it exist host-wide and in every stratum; there is no `salt user` reinvention. (It is a merged/`extrausers`-style shared db with a writable target, not a raw single-file bind — a bind would shadow the distro's system users and break the atomic-rename that `useradd`/`passwd` use to write.)
+- **Tools compose across strata.** Exposed commands resolve from any shell, so Alpine's `git` and Arch's `gcc` are usable together, operating on your shared files. A tool installed in one stratum need not be reinstalled in another.
+
+**Namespace lifetime.** Each stratum has **one persistent mount namespace**, set up once (a detached holder pins it) and **joined** — not re-created — by every subsequent command. Per-command throwaway namespaces would split-brain the view (a directory one command made would be invisible to the next); a shared, persistent namespace is what makes the guarantees above true. `salt` itself is reachable from inside any stratum: invoked there, it re-enters the host mount namespace to do its work, so `salt …` and cross-stratum commands route cleanly with no nesting. Unprivileged callers fall back to a per-command unprivileged user namespace.
+
 ### 8.1 Stratum Commands
 
 Possible command shape:

@@ -203,6 +203,27 @@ VERSION="$VERSION"
 EOF
 echo "saltos" > "$ROOTFS/etc/hostname"
 
+# A real base user db so uid 0 resolves to a name and useradd has somewhere to
+# write. This is the ONE user database: run.c binds it into every stratum, so an
+# account created anywhere (host or a stratum) is the same account everywhere.
+cat > "$ROOTFS/etc/passwd" <<'EOF'
+root:x:0:0:root:/root:/bin/bash
+bin:x:1:1:bin:/bin:/sbin/nologin
+daemon:x:2:2:daemon:/sbin:/sbin/nologin
+nobody:x:65534:65534:nobody:/:/sbin/nologin
+EOF
+cat > "$ROOTFS/etc/group" <<'EOF'
+root:x:0:
+bin:x:1:
+daemon:x:2:
+tty:x:5:
+disk:x:6:
+wheel:x:10:
+nogroup:x:65534:
+EOF
+printf 'root::19000:0:99999:7:::\n' > "$ROOTFS/etc/shadow"
+chmod 600 "$ROOTFS/etc/shadow"
+
 mkdir -p "$ROOTFS/etc/runit/runsvdir/current"
 cat > "$ROOTFS/etc/runit/1" <<'EOF'
 #!/bin/sh
@@ -212,6 +233,14 @@ mount -t sysfs sys /sys 2>/dev/null
 mount -t devtmpfs dev /dev 2>/dev/null
 mount -t tmpfs run /run 2>/dev/null
 mount -t tmpfs tmp /tmp 2>/dev/null
+mkdir -p /dev/pts /dev/shm 2>/dev/null
+mount -t devpts devpts /dev/pts -o gid=5,mode=620,ptmxmode=666 2>/dev/null
+mount -t tmpfs shm /dev/shm -o mode=1777 2>/dev/null
+# devtmpfs has no /dev/fd; process substitution <(...) and /dev/std* need these.
+ln -sf /proc/self/fd /dev/fd 2>/dev/null
+ln -sf /proc/self/fd/0 /dev/stdin 2>/dev/null
+ln -sf /proc/self/fd/1 /dev/stdout 2>/dev/null
+ln -sf /proc/self/fd/2 /dev/stderr 2>/dev/null
 [ -r /etc/hostname ] && hostname "$(cat /etc/hostname)" 2>/dev/null
 echo "saltOS self-hosted (aarch64): stage 1 complete" > /dev/console
 EOF

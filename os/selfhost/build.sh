@@ -277,6 +277,14 @@ mount -t sysfs sys /sys 2>/dev/null
 mount -t devtmpfs dev /dev 2>/dev/null
 mount -t tmpfs run /run 2>/dev/null
 mount -t tmpfs tmp /tmp 2>/dev/null
+mkdir -p /dev/pts /dev/shm 2>/dev/null
+mount -t devpts devpts /dev/pts -o gid=5,mode=620,ptmxmode=666 2>/dev/null
+mount -t tmpfs shm /dev/shm -o mode=1777 2>/dev/null
+# devtmpfs has no /dev/fd; process substitution <(...) and /dev/std* need these.
+ln -sf /proc/self/fd /dev/fd 2>/dev/null
+ln -sf /proc/self/fd/0 /dev/stdin 2>/dev/null
+ln -sf /proc/self/fd/1 /dev/stdout 2>/dev/null
+ln -sf /proc/self/fd/2 /dev/stderr 2>/dev/null
 [ -r /etc/hostname ] && hostname "$(cat /etc/hostname)" 2>/dev/null
 echo "saltOS self-hosted: stage 1 complete" > /dev/console
 EOF

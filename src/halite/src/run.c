@@ -148,13 +148,26 @@ static void salt_run_setup_mounts(const salt_run_opts *opts, bool bind_workdir) 
   salt_run_bind_dir("/sys", "/sys");
   salt_run_bind_dir("/dev", "/dev");
   salt_run_bind_dir("/run", "/run");
+  /* Share ALL of the user/data dirs, not a cherry-picked few: anywhere you keep
+   * files should be the same inside any stratum as on the host. The distro's own
+   * program dirs (/usr,/lib,/bin) stay isolated -- that's the point of strata --
+   * but your data is the system's, shared. (bind_dir skips any that don't exist.) */
   salt_run_bind_dir("/tmp", "/tmp");
   salt_run_bind_dir("/home", "/home");
   salt_run_bind_dir("/root", "/root");
+  salt_run_bind_dir("/srv", "/srv");
+  salt_run_bind_dir("/opt", "/opt");
+  salt_run_bind_dir("/mnt", "/mnt");
+  salt_run_bind_dir("/media", "/media");
 
   salt_run_bind_file("/etc/resolv.conf", "/etc/resolv.conf");
   salt_run_bind_file("/etc/hosts", "/etc/hosts");
   salt_run_bind_file("/etc/localtime", "/etc/localtime");
+  /* NOTE: the user identity db (/etc/passwd,/group,/shadow) is deliberately NOT
+   * bound here. A single-file bind breaks useradd (it renames over the file --
+   * EBUSY) and shadows each distro's own system users (Arch's alpm/http -> pacman
+   * refuses to run). Unified identity is a merge (host users + each stratum's
+   * system users, via an NSS extrausers-style shared db), not a raw bind. */
 
   /* Make the caller's working directory available at the same path inside the
    * stratum so commands run "in the repo" exactly like a normal shell -- file
