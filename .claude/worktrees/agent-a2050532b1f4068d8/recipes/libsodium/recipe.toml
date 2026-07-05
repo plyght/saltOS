@@ -1,0 +1,28 @@
+name = "libsodium"
+version = "1.0.20"
+release = 1
+summary = "Modern easy-to-use crypto library"
+license = "ISC"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://download.libsodium.org/libsodium/releases/libsodium-1.0.20.tar.gz"
+sha256 = "ebb65ef6ca439333c2bb41a0c1990587288da07f6c7fd07cb3a18cc18d30ce19"
+
+[build]
+system = "autotools"
+deps = ["gcc", "make"]
+script = """
+#!/bin/sh
+./configure --prefix=/usr \\
+    --disable-static
+make -j"$SALT_JOBS"
+make check
+make DESTDIR="$SALT_DEST" install
+"""
+
+[package]
+deps = ["glibc"]
+
+[reproducibility]
+status = "verified"

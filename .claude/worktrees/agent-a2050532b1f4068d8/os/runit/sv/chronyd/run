@@ -1,0 +1,5 @@
+#!/bin/sh
+exec 2>&1
+[ -d /run/chrony ] || mkdir -p /run/chrony
+[ -d /var/lib/chrony ] || mkdir -p /var/lib/chrony
+exec chronyd -d

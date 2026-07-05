@@ -1,0 +1,27 @@
+name = "bzip2"
+version = "1.0.8"
+release = 1
+summary = "Freely available high-quality block-sorting file compressor"
+license = "bzip2-1.0.6"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://sourceware.org/pub/bzip2/bzip2-1.0.8.tar.gz"
+sha256 = "ab5a03176ee106d3f0fa90e381da478ddae405918153cca248e682cd0c4a2269"
+
+[build]
+system = "make"
+deps = ["gcc", "make", "glibc"]
+script = """
+#!/bin/sh
+make -f Makefile-libbz2_so
+make clean
+make -j"$SALT_JOBS"
+make PREFIX="$SALT_DEST/usr" install
+"""
+
+[package]
+deps = ["glibc"]
+
+[reproducibility]
+status = "verified"

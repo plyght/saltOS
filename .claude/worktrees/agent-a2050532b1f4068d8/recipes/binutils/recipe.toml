@@ -1,0 +1,33 @@
+name = "binutils"
+version = "2.42"
+release = 1
+summary = "GNU binary utilities (assembler, linker, and related tools)"
+license = "GPL-3.0-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://ftp.gnu.org/gnu/binutils/binutils-2.42.tar.xz"
+sha256 = "f6e4d41fd5fc778b06b7891457b3620da5ecea1006c6a4a41ae998109f85a800"
+
+[build]
+system = "autotools"
+deps = ["gcc", "make", "glibc"]
+script = """
+#!/bin/sh
+mkdir -p build
+cd build
+../configure --prefix=/usr \\
+    --enable-gold \\
+    --enable-ld=default \\
+    --enable-plugins \\
+    --enable-64-bit-bfd \\
+    --disable-werror
+make -j"$SALT_JOBS" tooldir=/usr
+make DESTDIR="$SALT_DEST" tooldir=/usr install
+"""
+
+[package]
+deps = ["glibc", "zlib"]
+
+[reproducibility]
+status = "verified"

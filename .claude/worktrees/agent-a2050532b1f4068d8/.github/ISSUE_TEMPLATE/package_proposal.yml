@@ -1,0 +1,121 @@
+name: Package proposal
+description: Propose a new package for the curated saltOS repository
+title: "[package] <name>"
+labels: ["package-proposal"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Packages enter the official repository only through review by a trusted
+        maintainer. Proposals must satisfy the admission rules in
+        `docs/trust-model.md`. The repository is intentionally small and curated;
+        there is no untrusted user repository.
+  - type: input
+    id: name
+    attributes:
+      label: Package name
+      placeholder: zlib
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Upstream version to package
+      placeholder: 1.3.1
+    validations:
+      required: true
+  - type: input
+    id: license
+    attributes:
+      label: License (SPDX identifier)
+      placeholder: Zlib
+    validations:
+      required: true
+  - type: input
+    id: source_url
+    attributes:
+      label: Pinned source URL
+      placeholder: https://zlib.net/zlib-1.3.1.tar.gz
+    validations:
+      required: true
+  - type: input
+    id: source_sha256
+    attributes:
+      label: Source sha256
+      placeholder: 9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23
+    validations:
+      required: true
+  - type: dropdown
+    id: arches
+    attributes:
+      label: Target architectures
+      multiple: true
+      options:
+        - x86_64
+        - aarch64
+    validations:
+      required: true
+  - type: dropdown
+    id: build_system
+    attributes:
+      label: Build system
+      options:
+        - make
+        - autotools
+        - cmake
+        - meson
+        - kernel
+        - custom
+    validations:
+      required: true
+  - type: textarea
+    id: build_deps
+    attributes:
+      label: Declared build dependencies
+      placeholder: gcc, make
+    validations:
+      required: true
+  - type: textarea
+    id: runtime_deps
+    attributes:
+      label: Declared runtime dependencies
+      placeholder: glibc
+    validations:
+      required: true
+  - type: dropdown
+    id: reproducibility
+    attributes:
+      label: Reproducibility status
+      options:
+        - verified
+        - unverified
+    validations:
+      required: true
+  - type: input
+    id: reproducibility_reason
+    attributes:
+      label: Reason (required if unverified)
+      placeholder: Browser build currently not bit-for-bit reproducible
+  - type: textarea
+    id: justification
+    attributes:
+      label: Why should this package be in the curated base?
+    validations:
+      required: true
+  - type: checkboxes
+    id: admission
+    attributes:
+      label: Admission checklist
+      options:
+        - label: Source URL is pinned
+          required: true
+        - label: Source hash is pinned
+          required: true
+        - label: License is declared
+          required: true
+        - label: Build dependencies are declared
+          required: true
+        - label: Runtime dependencies are declared
+          required: true
+        - label: No install-time network access or arbitrary maintainer scripts
+          required: true

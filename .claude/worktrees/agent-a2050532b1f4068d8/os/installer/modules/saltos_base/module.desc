@@ -1,0 +1,5 @@
+---
+type: job
+name: saltos_base
+interface: python
+script: main.py

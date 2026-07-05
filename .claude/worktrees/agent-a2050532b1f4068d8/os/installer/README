@@ -1,0 +1,53 @@
+saltOS graphical installer (Calamares)
+
+Overview
+--------
+The graphical installer is Calamares, the same Qt installer used by EndeavourOS,
+paired with the LXQt desktop. It runs inside the live ISO and installs saltOS to
+disk using the native salt package manager.
+
+Layout
+------
+settings.conf                       top-level Calamares settings (module sequence)
+branding/saltos/branding.desc       branding component "saltos"
+branding/saltos/show.qml            installer slideshow (slideshowAPI 2)
+branding/saltos/*.png               referenced brand assets (logo, banner, welcome)
+modules/saltos_btrfs/               creates @ @home @var @log @snapshots, mounts them
+modules/saltos_base/                installs the base system with salt --root, seeds db
+modules/saltos_runit/               installs/enables the runit service tree
+modules/saltos_bootloader/          installs GRUB and registers the deployment
+
+Module order
+------------
+show:  welcome, locale, keyboard, partition, users, summary
+exec:  partition, mount,
+       saltos_btrfs, saltos_base, saltos_runit, saltos_bootloader,
+       umount
+show:  finished
+
+The stock partition and mount modules create and mount the root filesystem.
+saltos_btrfs then re-creates the canonical subvolume set and remounts the target
+with subvol options. saltos_base installs packages into rootMountPoint and seeds
+/var/lib/salt/db.sqlite. saltos_runit enables network (dhcpcd), dbus, seatd,
+udevd, socklog, chronyd, and sddm; sshd is installed but left disabled.
+saltos_bootloader installs GRUB for the detected architecture (x86_64-efi,
+arm64-efi, or i386-pc for BIOS x86_64) and registers the current deployment so
+the rollback model can boot previous roots.
+
+Integration into the live ISO
+-----------------------------
+os/iso/build-iso.sh copies this directory into the live rootfs:
+
+    branding -> /usr/share/calamares/branding/saltos
+    modules  -> /usr/lib/calamares/modules
+    settings.conf -> /etc/calamares/settings.conf
+
+The live session offers an "Install saltOS" desktop launcher
+(os/iso/live/Install-saltOS.desktop) that runs calamares. The signed repository
+used by saltos_base is exposed to the live session at /run/salt/repo (bind-mounted
+from the ISO's bundled repository, or configured to a network mirror).
+
+Requirements in the live image
+------------------------------
+calamares, the salt CLI, btrfs-progs, grub (with the EFI target for the arch and,
+on x86_64, i386-pc), efibootmgr, and dosfstools.

@@ -1,0 +1,29 @@
+name = "gptfdisk"
+version = "1.0.10"
+release = 1
+summary = "GPT partition table manipulator (gdisk, sgdisk, cgdisk)"
+license = "GPL-2.0-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://downloads.sourceforge.net/gptfdisk/gptfdisk-1.0.10.tar.gz"
+sha256 = "2abed61bc6d2b9ec498973c0440b8b804b7a72d7144069b5a9209b2ad693a282"
+
+[build]
+system = "make"
+deps = ["gcc", "make", "util-linux", "popt", "ncurses"]
+script = """
+#!/bin/sh
+make -j"$SALT_JOBS" gdisk sgdisk cgdisk fixparts
+install -Dm755 gdisk "$SALT_DEST/usr/sbin/gdisk"
+install -Dm755 sgdisk "$SALT_DEST/usr/sbin/sgdisk"
+install -Dm755 cgdisk "$SALT_DEST/usr/sbin/cgdisk"
+install -Dm755 fixparts "$SALT_DEST/usr/sbin/fixparts"
+"""
+
+[package]
+deps = ["glibc", "util-linux", "popt", "ncurses"]
+
+[reproducibility]
+status = "unverified"
+reason = "not yet built and bit-compared in a clean environment"

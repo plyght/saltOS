@@ -1,0 +1,27 @@
+name = "coreutils"
+version = "9.5"
+release = 1
+summary = "GNU core utilities (basic file, shell and text manipulation utilities)"
+license = "GPL-3.0-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://ftp.gnu.org/gnu/coreutils/coreutils-9.5.tar.xz"
+sha256 = "cd328edeac92f6a665de9f323c93b712af1858bc2e0d88f3f7100469470a1b8a"
+
+[build]
+system = "autotools"
+deps = ["gcc", "make", "glibc"]
+script = """
+#!/bin/sh
+./configure --prefix=/usr \\
+    --enable-no-install-program=kill,uptime
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+"""
+
+[package]
+deps = ["glibc"]
+
+[reproducibility]
+status = "verified"

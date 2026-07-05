@@ -1,0 +1,29 @@
+name = "lzo"
+version = "2.10"
+release = 1
+summary = "Portable lossless data compression library"
+license = "GPL-2.0-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://www.oberhumer.com/opensource/lzo/download/lzo-2.10.tar.gz"
+sha256 = "c0f892943208266f9b6543b3ae308fab6284c5c90e627931446fb49b4221a072"
+
+[build]
+system = "autotools"
+deps = ["gcc", "make"]
+script = """
+#!/bin/sh
+./configure --prefix=/usr \\
+    --enable-shared \\
+    --disable-static \\
+    --docdir=/usr/share/doc/lzo-2.10
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+"""
+
+[package]
+deps = ["glibc"]
+
+[reproducibility]
+status = "verified"

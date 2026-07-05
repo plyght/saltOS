@@ -1,0 +1,4 @@
+#!/bin/sh
+exec 2>&1
+udevadm control --exit 2>/dev/null
+exit 0

@@ -1,0 +1,43 @@
+#!/bin/sh
+PATH=/usr/bin:/usr/sbin:/bin:/sbin
+export PATH
+
+exec 2>&1
+
+LANG=C
+export LANG
+
+echo "saltOS: waiting for services to stop..."
+sv -w196 force-stop /etc/runit/runsvdir/current/* 2>/dev/null
+sv exit /etc/runit/runsvdir/current/* 2>/dev/null
+
+if [ -x /usr/bin/udevadm ]; then
+	udevadm control --exit 2>/dev/null
+fi
+
+echo "saltOS: stopping remaining processes..."
+kill -s TERM -1
+sleep 1
+kill -s KILL -1
+
+swapoff -a 2>/dev/null
+
+echo "saltOS: unmounting filesystems..."
+umount -r -a -t notmpfs,noproc,nosysfs,nodevtmpfs 2>/dev/null
+
+mount -o remount,ro / 2>/dev/null
+sync
+
+if [ -f /run/runit/reboot ] && [ ! -s /run/runit/reboot ]; then
+	exec /sbin/reboot -d -f -i
+fi
+
+if [ -x /usr/bin/udevadm ]; then
+	true
+fi
+
+case "$(cat /run/runit/poweroff 2>/dev/null)" in
+	*)
+		exec /sbin/poweroff -d -f -i
+		;;
+esac

@@ -1,0 +1,90 @@
+#!/bin/sh
+set -eu
+
+SV_DIR=/etc/runit/sv
+RUNSVDIR=/etc/runit/runsvdir/current
+
+prog=${0##*/}
+
+usage() {
+	cat <<EOF
+usage: $prog <command> <service>
+
+commands:
+  enable   <service>   link $SV_DIR/<service> into $RUNSVDIR
+  disable  <service>   remove <service> from $RUNSVDIR
+  start    <service>   start an enabled service
+  stop     <service>   stop an enabled service
+  restart  <service>   restart an enabled service
+  status   <service>   show status of a service (omit to list all)
+EOF
+}
+
+die() {
+	printf '%s: %s\n' "$prog" "$1" >&2
+	exit 1
+}
+
+require_definition() {
+	[ -n "$1" ] || die "missing service name"
+	[ -d "$SV_DIR/$1" ] || die "no such service: $1 (looked in $SV_DIR)"
+	[ -x "$SV_DIR/$1/run" ] || die "service $1 has no executable run script"
+}
+
+require_enabled() {
+	[ -n "$1" ] || die "missing service name"
+	[ -e "$RUNSVDIR/$1" ] || die "service not enabled: $1"
+}
+
+cmd=${1:-}
+[ -n "$cmd" ] || { usage >&2; exit 1; }
+shift || true
+
+svc=${1:-}
+
+case "$cmd" in
+	enable)
+		require_definition "$svc"
+		[ -d "$RUNSVDIR" ] || die "runsvdir not found: $RUNSVDIR"
+		if [ -e "$RUNSVDIR/$svc" ]; then
+			printf '%s: already enabled: %s\n' "$prog" "$svc"
+			exit 0
+		fi
+		ln -s "$SV_DIR/$svc" "$RUNSVDIR/$svc"
+		printf '%s: enabled %s\n' "$prog" "$svc"
+		;;
+	disable)
+		require_enabled "$svc"
+		[ -L "$RUNSVDIR/$svc" ] || die "$RUNSVDIR/$svc is not a symlink; refusing to remove"
+		sv force-stop "$RUNSVDIR/$svc" >/dev/null 2>&1 || true
+		rm -f "$RUNSVDIR/$svc"
+		printf '%s: disabled %s\n' "$prog" "$svc"
+		;;
+	start)
+		require_enabled "$svc"
+		exec sv start "$RUNSVDIR/$svc"
+		;;
+	stop)
+		require_enabled "$svc"
+		exec sv stop "$RUNSVDIR/$svc"
+		;;
+	restart)
+		require_enabled "$svc"
+		exec sv restart "$RUNSVDIR/$svc"
+		;;
+	status)
+		if [ -z "$svc" ]; then
+			set -- "$RUNSVDIR"/*
+			[ -e "$1" ] || die "no services enabled in $RUNSVDIR"
+			exec sv status "$@"
+		fi
+		require_enabled "$svc"
+		exec sv status "$RUNSVDIR/$svc"
+		;;
+	-h|--help|help)
+		usage
+		;;
+	*)
+		die "unknown command: $cmd (try '$prog --help')"
+		;;
+esac

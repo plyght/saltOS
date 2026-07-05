@@ -1,0 +1,25 @@
+/build/
+/build-vm/
+/out/
+*.o
+*.a
+*.grain
+keys/*.sec
+keys/*.secret
+.DS_Store
+compile_commands.json
+/work/
+/rootfs/
+/sources/
+*.iso
+
+# build outputs
+out-vm/
+out-pi/
+out-iso/
+*.img
+*.img.zst
+*.iso
+vm-work/
+pi-work/
+void-work/

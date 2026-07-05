@@ -1,0 +1,65 @@
+schema = 1
+generated = "2026-06-25T00:00:00Z"
+config_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+
+[[native]]
+name = "git"
+version = "2.47.0"
+release = 1
+arch = "x86_64"
+grain_sha256 = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+source_url = "https://www.kernel.org/pub/software/scm/git/git-2.47.0.tar.xz"
+source_sha256 = "sha256:1ce114da88704271b43e027c51e04d9399f8c88e9ef7542dae7aebae7d87bc4e"
+repo = "current"
+repo_index_sha256 = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+reproducibility = "verified"
+build_deps = ["gcc", "make", "curl", "openssl", "zlib", "expat", "perl", "gettext", "pcre2"]
+
+[[stratum]]
+name = "arch"
+family = "arch"
+package_manager = "pacman"
+bootstrap_url = "https://geo.mirror.pkgbuild.com/iso/latest/archlinux-bootstrap-x86_64.tar.zst"
+bootstrap_sha256 = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+repo_snapshot = "https://archive.archlinux.org/repos/2026/06/25/"
+
+  [[stratum.package]]
+  name = "ripgrep"
+  version = "14.1.1-1"
+  arch = "x86_64"
+  pkg_sha256 = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  pkg_url = "https://archive.archlinux.org/packages/r/ripgrep/ripgrep-14.1.1-1-x86_64.pkg.tar.zst"
+  origin_repo = "extra"
+
+  [[stratum.package]]
+  name = "fd"
+  version = "10.2.0-1"
+  arch = "x86_64"
+  pkg_sha256 = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  pkg_url = "https://archive.archlinux.org/packages/f/fd/fd-10.2.0-1-x86_64.pkg.tar.zst"
+  origin_repo = "extra"
+
+[[stratum]]
+name = "alpine"
+family = "alpine"
+package_manager = "apk"
+bootstrap_url = "https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/x86_64/alpine-minirootfs-3.20.0-x86_64.tar.gz"
+bootstrap_sha256 = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+repo_snapshot = "https://dl-cdn.alpinelinux.org/alpine/v3.20/main"
+
+  [[stratum.package]]
+  name = "nano"
+  version = "7.2-r0"
+  arch = "x86_64"
+  pkg_sha256 = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  origin_repo = "main"
+
+[[expose]]
+ref = "arch/rg"
+alias = "rg"
+kind = "cli"
+
+[[expose]]
+ref = "arch/fd"
+alias = "fd"
+kind = "cli"

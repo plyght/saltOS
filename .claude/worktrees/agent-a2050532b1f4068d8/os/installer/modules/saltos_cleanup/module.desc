@@ -1,0 +1,5 @@
+---
+type: job
+name: saltos_cleanup
+interface: python
+script: main.py

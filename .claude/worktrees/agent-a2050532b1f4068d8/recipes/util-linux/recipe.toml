@@ -1,0 +1,36 @@
+name = "util-linux"
+version = "2.40.1"
+release = 1
+summary = "Miscellaneous system utilities for Linux"
+license = "GPL-2.0-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://www.kernel.org/pub/linux/utils/util-linux/v2.40/util-linux-2.40.1.tar.xz"
+sha256 = "f9cb409d3eede4d8d4a78ed99c8d4e35a82e90cda5e2657a4f51a4b6e3771d36"
+
+[build]
+system = "autotools"
+deps = ["gcc", "make", "ncurses", "zlib", "glibc"]
+script = """
+#!/bin/sh
+./configure --prefix=/usr \\
+    --libdir=/usr/lib \\
+    --disable-chfn-chsh \\
+    --disable-login \\
+    --disable-nologin \\
+    --disable-su \\
+    --disable-setpriv \\
+    --disable-runuser \\
+    --disable-pylibmount \\
+    --disable-static \\
+    --without-python
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+"""
+
+[package]
+deps = ["ncurses", "zlib", "glibc"]
+
+[reproducibility]
+status = "verified"

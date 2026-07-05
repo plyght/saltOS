@@ -1,0 +1,25 @@
+name = "arch"
+family = "arch"
+arch = "x86_64"
+package_manager = "pacman"
+root = "/strata/arch"
+trust = "official"
+
+[bootstrap]
+method = "rootfs"
+url = "https://geo.mirror.pkgbuild.com/iso/latest/archlinux-bootstrap-x86_64.tar.zst"
+sha256 = ""
+strip = 1
+
+[integration]
+graphics = true
+audio = true
+dbus = true
+
+[[repository]]
+name = "core"
+url = "https://geo.mirror.pkgbuild.com/$repo/os/$arch"
+
+[[repository]]
+name = "extra"
+url = "https://geo.mirror.pkgbuild.com/$repo/os/$arch"

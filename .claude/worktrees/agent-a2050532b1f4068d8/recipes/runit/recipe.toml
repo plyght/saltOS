@@ -1,0 +1,36 @@
+name = "runit"
+version = "2.1.2"
+release = 1
+summary = "UNIX init scheme with service supervision"
+license = "BSD-3-Clause"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "http://smarden.org/runit/runit-2.1.2.tar.gz"
+sha256 = "6fd0160cb0cf1207de4e66754b6d39750cff14bb0aa66ab49490992c0c479101"
+
+[build]
+system = "custom"
+deps = ["gcc", "make"]
+script = """
+#!/bin/sh
+cd admin/runit-2.1.2
+sed -i 's/ -static$//' src/Makefile
+cd src
+make -j"$SALT_JOBS"
+make check
+cd ..
+install -d "$SALT_DEST/usr/bin"
+for bin in runit runit-init runsv runsvchdir runsvdir sv svlogd chpst utmpset; do
+    install -m 0755 "command/$bin" "$SALT_DEST/usr/bin/$bin"
+done
+install -d "$SALT_DEST/etc/runit"
+install -d "$SALT_DEST/etc/runit/runsvdir/default"
+install -d "$SALT_DEST/var/service"
+"""
+
+[package]
+deps = ["glibc"]
+
+[reproducibility]
+status = "verified"

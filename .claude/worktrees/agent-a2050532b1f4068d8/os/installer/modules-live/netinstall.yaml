@@ -1,0 +1,77 @@
+---
+- name: "Desktop / window manager"
+  description: "Choose a desktop or window manager. LXQt is preselected."
+  selected: true
+  hidden: false
+  critical: false
+  expanded: true
+  immutable: false
+  subgroups:
+      - name: "LXQt (default)"
+        description: "Lightweight Qt desktop"
+        selected: true
+        packages:
+            - lxqt-core
+            - lxqt-panel
+            - openbox
+            - pcmanfm-qt
+            - qterminal
+      - name: "Openbox (minimal)"
+        description: "Standalone openbox window manager"
+        selected: false
+        packages:
+            - openbox
+            - obconf
+            - tint2
+            - lxterminal
+      - name: "XFCE"
+        description: "Xfce desktop environment"
+        selected: false
+        packages:
+            - xfce4
+            - xfce4-terminal
+
+- name: "Login manager"
+  description: "Choose how you log in. SDDM is preselected."
+  selected: true
+  hidden: false
+  critical: false
+  expanded: true
+  subgroups:
+      - name: "SDDM (default)"
+        description: "Qt display manager"
+        selected: true
+        packages:
+            - sddm
+      - name: "greetd + tuigreet"
+        description: "Minimal console-based greeter"
+        selected: false
+        packages:
+            - greetd
+            - greetd-tuigreet
+      - name: "None (console login)"
+        description: "No graphical login manager"
+        selected: false
+        packages: []
+
+- name: "Web browser"
+  description: "Choose a web browser."
+  selected: true
+  hidden: false
+  critical: false
+  expanded: true
+  subgroups:
+      - name: "Firefox ESR (default)"
+        description: "Mozilla Firefox, extended support release"
+        selected: true
+        packages:
+            - firefox-esr
+      - name: "Chromium"
+        description: "Open-source Chromium browser"
+        selected: false
+        packages:
+            - chromium
+      - name: "None"
+        description: "Install a browser later via salt or a stratum"
+        selected: false
+        packages: []

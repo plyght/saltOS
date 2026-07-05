@@ -1,0 +1,29 @@
+name = "readline"
+version = "8.2"
+release = 1
+summary = "Library for command line editing and history"
+license = "GPL-3.0-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://ftp.gnu.org/gnu/readline/readline-8.2.tar.gz"
+sha256 = "3feb7171f16a84ee82ca18a36d7b9be109a52c04f492a053331d7d1095007c35"
+
+[build]
+system = "autotools"
+deps = ["gcc", "make", "ncurses"]
+script = """
+#!/bin/sh
+./configure --prefix=/usr \\
+    --disable-static \\
+    --with-curses \\
+    --docdir=/usr/share/doc/readline-8.2
+make SHLIB_LIBS="-lncursesw" -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" SHLIB_LIBS="-lncursesw" install
+"""
+
+[package]
+deps = ["glibc", "ncurses"]
+
+[reproducibility]
+status = "verified"

@@ -1,0 +1,50 @@
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config \
+            libzstd-dev libsodium-dev libsqlite3-dev \
+            build-essential
+
+      - name: Cache CMake build tree
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: cmake-${{ matrix.arch }}-${{ hashFiles('CMakeLists.txt', 'src/**/CMakeLists.txt', 'src/**/*.c', 'src/**/*.cpp', 'src/**/*.h') }}
+          restore-keys: |
+            cmake-${{ matrix.arch }}-
+
+      - name: Configure
+        run: cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure

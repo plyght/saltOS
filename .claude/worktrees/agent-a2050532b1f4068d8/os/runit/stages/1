@@ -1,0 +1,54 @@
+#!/bin/sh
+PATH=/usr/bin:/usr/sbin:/bin:/sbin
+export PATH
+
+exec 2>&1
+
+umask 022
+
+mount -o remount,rw / 2>/dev/null
+
+mountpoint -q /proc || mount -t proc proc /proc -o nosuid,noexec,nodev
+mountpoint -q /sys || mount -t sysfs sys /sys -o nosuid,noexec,nodev
+mountpoint -q /run || mount -t tmpfs run /run -o mode=0755,nosuid,nodev
+mountpoint -q /dev || mount -t devtmpfs dev /dev -o mode=0755,nosuid
+
+mkdir -p /run/runit /run/lvm /run/user /run/lock /dev/pts /dev/shm
+mountpoint -q /dev/pts || mount -t devpts devpts /dev/pts -o mode=0620,gid=5,nosuid,noexec
+mountpoint -q /dev/shm || mount -t tmpfs shm /dev/shm -o mode=1777,nosuid,nodev
+
+ln -sf /proc/self/fd /dev/fd
+ln -sf /proc/self/fd/0 /dev/stdin
+ln -sf /proc/self/fd/1 /dev/stdout
+ln -sf /proc/self/fd/2 /dev/stderr
+
+dmesg -n 3 2>/dev/null
+
+if [ -x /usr/bin/udevd ] || [ -x /sbin/udevd ]; then
+	udevd --daemon
+	udevadm trigger --action=add --type=subsystems
+	udevadm trigger --action=add --type=devices
+	udevadm settle
+fi
+
+[ -r /etc/hostname ] && read -r HOSTNAME < /etc/hostname
+[ -n "$HOSTNAME" ] && printf '%s\n' "$HOSTNAME" > /proc/sys/kernel/hostname
+
+if [ -x /usr/sbin/swapon ] || [ -x /sbin/swapon ]; then
+	swapon -a 2>/dev/null
+fi
+
+fsck -A -T -a -t noopts=_netdev 2>/dev/null
+mount -a -t nonfs,nfs4,smbfs,cifs -O no_netdev 2>/dev/null
+
+if [ -x /usr/bin/udevadm ]; then
+	udevadm control --exit 2>/dev/null
+fi
+
+mount -o remount,rw / 2>/dev/null
+
+[ -d /run/runit ] || mkdir -p /run/runit
+touch /run/runit/stopit
+chmod 0 /run/runit/stopit
+touch /run/runit/reboot
+chmod 0 /run/runit/reboot

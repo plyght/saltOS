@@ -1,0 +1,20 @@
+name = "findutils"
+version = "4.10.0"
+release = 1
+summary = "GNU utilities to locate files (find, locate, xargs)"
+license = "GPL-3.0-or-later"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://ftp.gnu.org/gnu/findutils/findutils-4.10.0.tar.xz"
+sha256 = "1387e0b67ff247d2abde998f90dfbf70c1491391a59ddfecb8ae698789f0a4f5"
+
+[build]
+system = "autotools"
+deps = ["gcc", "make", "glibc"]
+
+[package]
+deps = ["glibc"]
+
+[reproducibility]
+status = "verified"

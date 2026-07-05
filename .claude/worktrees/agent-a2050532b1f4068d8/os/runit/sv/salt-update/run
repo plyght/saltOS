@@ -1,0 +1,12 @@
+#!/bin/sh
+exec 2>&1
+[ -x /usr/bin/salt-ota ] || exec sleep 3600
+[ "$(/usr/bin/salt-ota status 2>/dev/null | awk -F': ' '/^ota.enabled/{print $2}')" = "true" ] || exec sleep 3600
+/usr/bin/salt-ota confirm 2>/dev/null || true
+sleep "${SALTOS_OTA_STARTUP_DELAY:-120}"
+interval=$(/usr/bin/salt-ota interval 2>/dev/null)
+[ -n "$interval" ] || interval=86400
+while :; do
+	/usr/bin/salt-ota run || true
+	sleep "$interval"
+done

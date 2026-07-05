@@ -1,0 +1,91 @@
+#!/bin/sh
+PATH=/usr/bin:/usr/sbin:/bin:/sbin
+export PATH
+
+rescue() {
+	echo "saltOS live-init: $1"
+	echo "Dropping to an emergency shell."
+	exec /bin/sh
+}
+
+mountpoint -q /proc || mount -t proc proc /proc
+mountpoint -q /sys || mount -t sysfs sys /sys
+mountpoint -q /dev || mount -t devtmpfs dev /dev
+mkdir -p /run
+mountpoint -q /run || mount -t tmpfs tmpfs /run
+
+LIVE_LABEL=""
+for arg in $(cat /proc/cmdline); do
+	case "$arg" in
+		root=live:LABEL=*) LIVE_LABEL="${arg#root=live:LABEL=}" ;;
+		rd.live.label=*) LIVE_LABEL="${arg#rd.live.label=}" ;;
+	esac
+done
+[ -n "$LIVE_LABEL" ] || LIVE_LABEL="SALTOS"
+
+if [ -x /usr/bin/udevd ] || [ -x /sbin/udevd ]; then
+	udevd --daemon
+	udevadm trigger --action=add
+	udevadm settle
+fi
+
+MEDIUM=/run/live/medium
+mkdir -p "$MEDIUM"
+
+DEV=""
+for i in 1 2 3 4 5 6 7 8 9 10; do
+	DEV=$(blkid -L "$LIVE_LABEL" 2>/dev/null)
+	[ -n "$DEV" ] && break
+	sleep 1
+done
+[ -n "$DEV" ] || rescue "could not find live medium with label $LIVE_LABEL"
+
+mount -o ro "$DEV" "$MEDIUM" || rescue "could not mount live medium"
+
+SQUASH="$MEDIUM/live/filesystem.squashfs"
+[ -f "$SQUASH" ] || rescue "missing $SQUASH"
+
+mkdir -p /run/live/rootfs.lower /run/live/overlay
+modprobe loop 2>/dev/null
+modprobe squashfs 2>/dev/null
+modprobe overlay 2>/dev/null
+
+mount -t squashfs -o ro "$SQUASH" /run/live/rootfs.lower || rescue "could not mount squashfs"
+
+TORAM=0
+for arg in $(cat /proc/cmdline); do
+	[ "$arg" = "toram" ] && TORAM=1
+done
+if [ "$TORAM" = "1" ]; then
+	mkdir -p /run/live/rootfs.ram
+	mount -t tmpfs -o size=100% tmpfs /run/live/rootfs.ram
+	cp -a /run/live/rootfs.lower/. /run/live/rootfs.ram/
+	umount /run/live/rootfs.lower
+	LOWER=/run/live/rootfs.ram
+	umount "$MEDIUM" 2>/dev/null
+else
+	LOWER=/run/live/rootfs.lower
+fi
+
+mount -t tmpfs -o mode=0755 tmpfs /run/live/overlay
+mkdir -p /run/live/overlay/upper /run/live/overlay/work
+
+NEWROOT=/run/live/newroot
+mkdir -p "$NEWROOT"
+mount -t overlay overlay \
+	-o lowerdir="$LOWER",upperdir=/run/live/overlay/upper,workdir=/run/live/overlay/work \
+	"$NEWROOT" || rescue "could not mount overlay"
+
+if [ "$TORAM" != "1" ]; then
+	mkdir -p "$NEWROOT/run/live/medium"
+	mount --bind "$MEDIUM" "$NEWROOT/run/live/medium"
+fi
+
+mount --move /proc "$NEWROOT/proc" 2>/dev/null
+mount --move /sys "$NEWROOT/sys" 2>/dev/null
+mount --move /dev "$NEWROOT/dev" 2>/dev/null
+mount --move /run "$NEWROOT/run" 2>/dev/null || true
+
+[ -x "$NEWROOT/sbin/init" ] || [ -x "$NEWROOT/usr/bin/runit-init" ] || rescue "no init in new root"
+
+exec switch_root "$NEWROOT" /sbin/init

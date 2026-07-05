@@ -1,0 +1,36 @@
+name = "openssl"
+version = "3.3.1"
+release = 1
+summary = "Toolkit for TLS/SSL and general purpose cryptography"
+license = "Apache-2.0"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://www.openssl.org/source/openssl-3.3.1.tar.gz"
+sha256 = "777cd596284c883375a2a7a11bf5d2786fc5413255efab20c50d6ffe6d020b7e"
+
+[build]
+system = "custom"
+deps = ["gcc", "make", "perl", "zlib"]
+script = """
+#!/bin/sh
+case "$SALT_ARCH" in
+    x86_64) target=linux-x86_64 ;;
+    aarch64) target=linux-aarch64 ;;
+    *) target=linux-generic64 ;;
+esac
+./Configure "$target" \\
+    --prefix=/usr \\
+    --openssldir=/etc/ssl \\
+    --libdir=lib \\
+    shared \\
+    zlib-dynamic
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+"""
+
+[package]
+deps = ["glibc", "zlib"]
+
+[reproducibility]
+status = "verified"

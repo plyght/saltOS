@@ -1,0 +1,25 @@
+name = "ninja"
+version = "1.12.1"
+release = 1
+summary = "Small build system focused on speed"
+license = "Apache-2.0"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://github.com/ninja-build/ninja/archive/refs/tags/v1.12.1.tar.gz"
+sha256 = "821bdff48a3f683bc4bb3b6f0b5fe7b2d647cf65d52aeb63328c91a6c6df285a"
+
+[build]
+system = "custom"
+deps = ["gcc", "make", "python"]
+script = """
+#!/bin/sh
+python configure.py --bootstrap
+install -Dm755 ninja "$SALT_DEST/usr/bin/ninja"
+"""
+
+[package]
+deps = ["glibc"]
+
+[reproducibility]
+status = "verified"

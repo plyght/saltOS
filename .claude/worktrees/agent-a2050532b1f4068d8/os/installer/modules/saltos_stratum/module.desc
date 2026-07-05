@@ -1,0 +1,5 @@
+---
+type: job
+name: saltos_stratum
+interface: python
+script: main.py

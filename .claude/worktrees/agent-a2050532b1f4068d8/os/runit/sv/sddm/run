@@ -1,0 +1,6 @@
+#!/bin/sh
+exec 2>&1
+sv check dbus >/dev/null || exit 1
+sv check seatd >/dev/null || exit 1
+[ -d /run/sddm ] || mkdir -p /run/sddm
+exec sddm
