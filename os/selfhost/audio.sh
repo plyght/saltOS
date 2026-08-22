@@ -24,6 +24,10 @@ if ! audiodone alsa-lib; then
     ./configure --prefix=/usr --libdir=/usr/lib --sysconfdir=/etc --disable-python
     make -j"$JOBS"
     make DESTDIR="$A" install )
+  # Drop libtool archives before anything links against them. They record the
+  # configured prefix (/usr/lib/libasound.la), which does not exist under the
+  # staging DESTDIR, and alsa-utils fails to link rather than ignoring them.
+  find "$A" -name '*.la' -delete 2>/dev/null || true
   audiomark alsa-lib
 fi
 
@@ -38,7 +42,7 @@ if ! audiodone alsa-utils; then
     ./configure --prefix=/usr --libdir=/usr/lib --sysconfdir=/etc \
       --with-alsa-prefix="$A/usr/lib" --with-alsa-inc-prefix="$A/usr/include" \
       --disable-alsamixer --disable-xmlto --disable-nls --disable-rst2man \
-      --disable-alsaconf --disable-bat
+      --disable-alsaconf --disable-bat --disable-alsatplg --disable-alsaloop
     make -j"$JOBS"
     make DESTDIR="$A" install )
   audiomark alsa-utils
