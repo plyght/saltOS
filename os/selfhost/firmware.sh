@@ -10,25 +10,18 @@ FWCACHE="${FWCACHE:-}"
 SRC="$WORK/linux-firmware"
 DEST="$ROOTFS/lib/firmware"
 
+# Scoped to the ThinkPad P40 Yoga: Skylake i915, Intel Wireless-AC 8260
+# (iwlwifi + ibt bluetooth), NVIDIA Quadro M500M (nouveau), Realtek HDA.
+# All iwlwifi generations are kept rather than just 8000C, because the machine
+# has no Ethernet port and guessing the exact card wrong would leave it with no
+# network at all.
 PATTERNS=(
   "/regulatory.db"
   "/regulatory.db.p7s"
   "/iwlwifi-*"
   "/i915/"
-  "/amdgpu/"
-  "/ath9k_htc/"
-  "/ath10k/"
-  "/ath11k/"
-  "/ath12k/"
-  "/rtw88/"
-  "/rtw89/"
-  "/rtlwifi/"
-  "/rtl_bt/"
-  "/mediatek/"
-  "/brcm/"
-  "/qca/"
-  "/intel/"
-  "/amd-ucode/"
+  "/nvidia/"
+  "/intel/ibt-*"
   "/intel-ucode/"
   "/edid/"
 )
@@ -81,7 +74,11 @@ mkdir -p "$ROOTFS/usr/lib"
 
 echo "===== firmware installed ====="
 du -sh "$DEST"
-for f in regulatory.db.xz iwlwifi-cc-a0-77.ucode.xz i915 amdgpu; do
+for f in regulatory.db.xz i915 nvidia intel-ucode; do
   if [ -e "$DEST/$f" ]; then echo "  present: $f"; else echo "  MISSING: $f"; fi
 done
+echo "  iwlwifi blobs: $(find "$DEST" -maxdepth 1 -name 'iwlwifi-*' | wc -l)"
+echo "  iwlwifi-8000C (AC 8260): $(find "$DEST" -maxdepth 1 -name 'iwlwifi-8000C-*' | wc -l) files"
+find "$DEST" -maxdepth 1 -name 'iwlwifi-8000C-*' | grep -q . \
+  || echo "  WARNING: no iwlwifi-8000C firmware; an AC 8260 will not associate"
 [ -e "$DEST/regulatory.db.xz" ] || { echo "FATAL: regulatory.db missing, wifi regdomain will fail"; exit 1; }
