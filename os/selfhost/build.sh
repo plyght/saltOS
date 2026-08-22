@@ -708,6 +708,12 @@ else
       cp -a "$ROOTFS/lib/modules/." "$KCACHE/modules/"
     fi
   fi
+
+  # The kernel image and modules are extracted by now, and the object tree is
+  # tens of gigabytes. Firmware is fetched next and needs that space back.
+  cd "$WORK"
+  rm -rf "$SRC/linux-${KERNEL_VER}"
+  df -h "$WORK" || true
 fi
 
 if [ "$PROFILE" = "thinkpad" ]; then

@@ -47,9 +47,11 @@ else
     git checkout )
 
   mkdir -p "$DEST"
+  # move rather than copy: the kernel build tree is still on disk at this point
+  # and a second full copy of linux-firmware is enough to fill the runner.
   ( cd "$SRC"
     find . -mindepth 1 -maxdepth 1 -name '.git*' -prune -o -print0 \
-      | xargs -0 -I{} cp -a {} "$DEST/" )
+      | xargs -0 -I{} mv {} "$DEST/" )
 
   rm -rf "$DEST/.git" "$DEST/.gitignore" "$DEST/.gitattributes"
   rm -rf "$SRC"
