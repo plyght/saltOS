@@ -5,15 +5,11 @@ PATH=/usr/local/salt/shims:/usr/bin:/usr/sbin:/bin:/sbin
 export PATH
 
 load_modaliases() {
-  loaded=0
-  for f in $(find /sys/devices -name modalias -type f 2>/dev/null); do
+  find /sys/devices -name modalias -type f 2>/dev/null | while read -r f; do
     alias="$(cat "$f" 2>/dev/null)" || continue
     [ -n "$alias" ] || continue
-    if modprobe -q "$alias" 2>/dev/null; then
-      loaded=$((loaded + 1))
-    fi
-  done
-  echo "$loaded"
+    modprobe -q "$alias" 2>/dev/null && echo x || true
+  done | wc -l | tr -d ' '
 }
 
 case "${1:-coldplug}" in

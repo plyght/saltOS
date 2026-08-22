@@ -60,6 +60,12 @@ jobs:
           path: .netcache
           key: tp-net-${{ hashFiles('os/selfhost/net.sh') }}
 
+      - name: Cache audio userland
+        uses: actions/cache@v4
+        with:
+          path: .audiocache
+          key: tp-audio-${{ hashFiles('os/selfhost/audio.sh') }}
+
       - name: Cache base tools
         uses: actions/cache@v4
         with:
@@ -85,8 +91,10 @@ jobs:
             KERNEL_VER="$KERNEL_VER" FWREF="$FWREF" \
             KCACHE=/src/.kcache FWCACHE=/src/.fwcache \
             NETCACHE=/src/.netcache TOOLSCACHE=/src/.toolscache \
+            AUDIOCACHE=/src/.audiocache \
               bash os/selfhost/build.sh x86_64'
-          sudo chown -R "$USER" out-iso selfhost-work .kcache .fwcache .netcache .toolscache 2>/dev/null || true
+          sudo chown -R "$USER" out-iso selfhost-work \
+            .kcache .fwcache .netcache .toolscache .audiocache 2>/dev/null || true
           ls -lh out-iso/
           df -h /
 

@@ -211,10 +211,19 @@ if [ "$PROFILE" = "thinkpad" ]; then
   rm -rf "$ROOTFS/usr/.salt-done"
   ldconfig -r "$ROOTFS" 2>/dev/null || true
 
+  echo "===== audio userland (alsa-lib, alsa-utils) ====="
+  if [ -n "${AUDIOCACHE:-}" ]; then A="$AUDIOCACHE/audio"; else A="$WORK/audio"; fi
+  mkdir -p "$A"
+  . "$REPO/os/selfhost/audio.sh"
+  cp -a "$A/usr/." "$ROOTFS/usr/" 2>/dev/null || true
+  cp -a "$A/etc/." "$ROOTFS/etc/" 2>/dev/null || true
+  rm -rf "$ROOTFS/usr/.salt-done"
+  ldconfig -r "$ROOTFS" 2>/dev/null || true
+
   install -Dm755 "$REPO/os/selfhost/salt-wifi" "$ROOTFS/usr/bin/salt-wifi"
   install -Dm755 "$REPO/os/selfhost/salt-hw" "$ROOTFS/usr/bin/salt-hw"
 
-  for t in sfdisk mkfs.ext4 blkid; do
+  for t in sfdisk mkfs.ext4 blkid amixer aplay; do
     find "$ROOTFS/usr" -name "$t" -type f | grep -q . \
       || { echo "FATAL: $t missing from thinkpad rootfs"; exit 1; }
   done
@@ -365,6 +374,12 @@ else
   mkdir -p /run/wpa_supplicant
   echo "SALTOS_COLDPLUG_DONE" > /dev/console
 fi
+if [ -d /proc/asound ] && command -v alsactl >/dev/null 2>&1; then
+  alsactl restore 2>/dev/null || alsactl init 2>/dev/null || true
+  for ctl in Master Speaker Headphone PCM; do
+    amixer -q sset "$ctl" unmute 2>/dev/null || true
+  done
+fi
 EOF
 
   mkdir -p "$ROOTFS/etc/runit/sv/wifi"
@@ -432,6 +447,13 @@ if wpa_supplicant -v 2>&1 | head -1 | grep -qi wpa_supplicant; then
   echo "SALTOS_HW_WIFI_STACK_OK $(wpa_supplicant -v 2>&1 | head -1)"
 else
   echo "SALTOS_HW_WIFI_STACK_FAIL wpa_supplicant did not run"; ok=0
+fi
+
+if command -v amixer >/dev/null 2>&1 && command -v aplay >/dev/null 2>&1; then
+  echo "SALTOS_HW_AUDIO_OK $(aplay --version 2>&1 | head -1)"
+  aplay -l 2>/dev/null | head -5 || echo "  no PCM devices in this environment"
+else
+  echo "SALTOS_HW_AUDIO_FAIL alsa userland missing"; ok=0
 fi
 
 if curl --version 2>/dev/null | grep -qi openssl; then
