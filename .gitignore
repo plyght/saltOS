@@ -24,3 +24,10 @@ out-iso/
 vm-work/
 pi-work/
 void-work/
+
+# selfhost build caches
+selfhost-work/
+.kcache/
+.fwcache/
+.netcache/
+.toolscache/

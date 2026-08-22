@@ -1,3 +1,0 @@
-#!/bin/sh
-exec 2>&1
-exec agetty --noclear tty1 38400 linux

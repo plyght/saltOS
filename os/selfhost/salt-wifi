@@ -1,0 +1,138 @@
+#!/bin/sh
+set -eu
+
+PATH=/usr/local/salt/shims:/usr/bin:/usr/sbin:/bin:/sbin
+export PATH
+
+CONF=/etc/wpa_supplicant.conf
+CTRL=/run/wpa_supplicant
+PIDF=/run/salt-wifi.pid
+
+die() { echo "salt-wifi: $*" >&2; exit 1; }
+
+wdev() {
+  for p in /sys/class/net/*; do
+    [ -d "$p/wireless" ] || [ -L "$p/phy80211" ] || continue
+    echo "${p##*/}"
+    return 0
+  done
+  return 1
+}
+
+ensure_conf() {
+  [ -f "$CONF" ] && return 0
+  cat > "$CONF" <<'EOF'
+ctrl_interface=/run/wpa_supplicant
+update_config=1
+EOF
+  chmod 600 "$CONF"
+}
+
+running() { [ -S "$CTRL/$1" ]; }
+
+start_supplicant() {
+  dev="$1"
+  running "$dev" && return 0
+  ensure_conf
+  mkdir -p "$CTRL"
+  ip link set "$dev" up 2>/dev/null || true
+  wpa_supplicant -B -i "$dev" -c "$CONF" -P "$PIDF" >/dev/null 2>&1 \
+    || die "wpa_supplicant failed to start on $dev"
+  n=0
+  while [ $n -lt 20 ]; do
+    running "$dev" && return 0
+    n=$((n + 1))
+    sleep 1
+  done
+  die "wpa_supplicant control socket never appeared on $dev"
+}
+
+dhcp() {
+  dev="$1"
+  udhcpc -n -q -i "$dev" -s /usr/share/udhcpc/default.script >/dev/null 2>&1 \
+    || die "DHCP failed on $dev"
+}
+
+cmd="${1:-help}"
+[ $# -gt 0 ] && shift || true
+
+case "$cmd" in
+  scan|list)
+    dev="$(wdev)" || die "no wireless interface found (is the driver loaded? try: salt-hw)"
+    start_supplicant "$dev"
+    wpa_cli -i "$dev" scan >/dev/null 2>&1 || true
+    sleep 3
+    echo "SIGNAL  SECURITY   SSID"
+    wpa_cli -i "$dev" scan_results 2>/dev/null | awk 'NR>2 && $5 != "" {
+      sec = ($4 ~ /WPA|RSN/) ? (($4 ~ /SAE/) ? "WPA3" : "WPA2") : "open"
+      ssid = $5
+      for (i = 6; i <= NF; i++) ssid = ssid " " $i
+      printf "%-7s %-10s %s\n", $3, sec, ssid
+    }' | sort -rn | awk '!seen[$3]++'
+    ;;
+  connect)
+    ssid="${1:-}"; [ -n "$ssid" ] || die "usage: salt-wifi connect <ssid> [password]"
+    psk="${2:-}"
+    dev="$(wdev)" || die "no wireless interface found"
+    start_supplicant "$dev"
+    id="$(wpa_cli -i "$dev" add_network 2>/dev/null | tail -1)"
+    [ -n "$id" ] || die "could not allocate a network entry"
+    wpa_cli -i "$dev" set_network "$id" ssid "\"$ssid\"" >/dev/null
+    if [ -n "$psk" ]; then
+      wpa_cli -i "$dev" set_network "$id" psk "\"$psk\"" >/dev/null
+    else
+      wpa_cli -i "$dev" set_network "$id" key_mgmt NONE >/dev/null
+    fi
+    wpa_cli -i "$dev" enable_network "$id" >/dev/null
+    wpa_cli -i "$dev" select_network "$id" >/dev/null
+    echo "associating with $ssid ..."
+    n=0
+    while [ $n -lt 30 ]; do
+      state="$(wpa_cli -i "$dev" status 2>/dev/null | sed -n 's/^wpa_state=//p')"
+      [ "$state" = "COMPLETED" ] && break
+      n=$((n + 1))
+      sleep 1
+    done
+    [ "${state:-}" = "COMPLETED" ] || die "failed to associate with $ssid (wrong password?)"
+    wpa_cli -i "$dev" save_config >/dev/null 2>&1 || true
+    dhcp "$dev"
+    echo "connected to $ssid"
+    ip -4 addr show "$dev" | sed -n 's/.*inet \([0-9.]*\).*/  address: \1/p'
+    ;;
+  status)
+    dev="$(wdev)" || die "no wireless interface found"
+    if running "$dev"; then
+      wpa_cli -i "$dev" status 2>/dev/null | grep -E '^(wpa_state|ssid|ip_address|freq)=' || true
+    else
+      echo "wpa_state=STOPPED"
+    fi
+    ;;
+  disconnect)
+    dev="$(wdev)" || die "no wireless interface found"
+    running "$dev" && wpa_cli -i "$dev" disconnect >/dev/null 2>&1 || true
+    echo "disconnected"
+    ;;
+  forget)
+    ssid="${1:-}"; [ -n "$ssid" ] || die "usage: salt-wifi forget <ssid>"
+    dev="$(wdev)" || die "no wireless interface found"
+    running "$dev" || die "wpa_supplicant is not running"
+    id="$(wpa_cli -i "$dev" list_networks 2>/dev/null | awk -v s="$ssid" -F'\t' '$2 == s {print $1; exit}')"
+    [ -n "$id" ] || die "no saved network named $ssid"
+    wpa_cli -i "$dev" remove_network "$id" >/dev/null
+    wpa_cli -i "$dev" save_config >/dev/null 2>&1 || true
+    echo "forgot $ssid"
+    ;;
+  *)
+    cat <<'EOF'
+usage: salt-wifi <command>
+
+  scan                       list nearby networks
+  connect <ssid> [password]  join a network and request DHCP
+  status                     show association and address
+  disconnect                 drop the current association
+  forget <ssid>              remove a saved network
+
+Saved networks live in /etc/wpa_supplicant.conf and reconnect at boot.
+EOF
+    ;;
+esac

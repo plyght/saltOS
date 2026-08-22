@@ -1,0 +1,237 @@
+name: thinkpad-image
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "publish a GitHub Release with the ISO"
+        default: "true"
+  push:
+    paths:
+      - "os/selfhost/**"
+      - "src/**"
+      - ".github/workflows/thinkpad-image.yml"
+
+concurrency:
+  group: thinkpad-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: saltOS ThinkPad image (x86_64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    env:
+      VERSION: "0.1.0"
+      KERNEL_VER: "6.12.30"
+      FWREF: "20250211"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          df -h /
+          sudo rm -rf \
+            /usr/local/lib/android /opt/ghc /usr/share/dotnet \
+            /opt/hostedtoolcache/CodeQL /usr/local/.ghcup \
+            /usr/share/swift /usr/local/share/powershell \
+            /usr/local/lib/node_modules /opt/az 2>/dev/null || true
+          sudo docker image prune -af 2>/dev/null || true
+          df -h /
+
+      - name: Cache compiled kernel and modules
+        uses: actions/cache@v4
+        with:
+          path: .kcache
+          key: tp-kernel-${{ env.KERNEL_VER }}-${{ hashFiles('os/selfhost/kernel-thinkpad-x86_64.config') }}
+
+      - name: Cache curated linux-firmware
+        uses: actions/cache@v4
+        with:
+          path: .fwcache
+          key: tp-firmware-${{ env.FWREF }}-${{ hashFiles('os/selfhost/firmware.sh') }}
+
+      - name: Cache network stack
+        uses: actions/cache@v4
+        with:
+          path: .netcache
+          key: tp-net-${{ hashFiles('os/selfhost/net.sh') }}
+
+      - name: Cache base tools
+        uses: actions/cache@v4
+        with:
+          path: .toolscache
+          key: tp-tools-${{ hashFiles('os/selfhost/base-tools.sh') }}
+
+      - name: Build ThinkPad ISO (clean Debian container)
+        run: |
+          docker run --rm -v "$PWD":/src -w /src \
+            -e VERSION -e KERNEL_VER -e FWREF \
+            debian:bookworm bash -c '
+            set -e
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update
+            apt-get install -y --no-install-recommends \
+              build-essential cmake pkg-config \
+              bison flex bc libssl-dev libelf-dev \
+              gawk texinfo python3 perl kmod rsync git \
+              xz-utils bzip2 zstd curl file cpio ca-certificates \
+              grub-pc-bin grub-efi-amd64-bin grub-common xorriso mtools
+            PROFILE=thinkpad \
+            REPO_DIR=/src OUT=/src/out-iso VERSION="$VERSION" \
+            KERNEL_VER="$KERNEL_VER" FWREF="$FWREF" \
+            KCACHE=/src/.kcache FWCACHE=/src/.fwcache \
+            NETCACHE=/src/.netcache TOOLSCACHE=/src/.toolscache \
+              bash os/selfhost/build.sh x86_64'
+          sudo chown -R "$USER" out-iso selfhost-work .kcache .fwcache .netcache .toolscache 2>/dev/null || true
+          ls -lh out-iso/
+          df -h /
+
+      - name: Install QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf
+
+      - name: Gate 1 - live ISO boots and hardware plane is ready
+        run: |
+          set -euo pipefail
+          ISO=$(ls out-iso/*.iso | head -1)
+          echo "boot-testing $ISO"
+          set +e
+          timeout 600 qemu-system-x86_64 \
+            -machine q35 -m 6144 -smp 2 -display none -no-reboot \
+            -serial file:qemu-live.log \
+            -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
+            -cdrom "$ISO" -boot d
+          set -e
+          echo "----- serial tail -----"
+          tail -n 200 qemu-live.log || true
+          grep -q "SALTOS_SELFHOST_OK" qemu-live.log \
+            || { echo "FAIL: base self-host marker missing"; exit 1; }
+          grep -q "SALTOS_COLDPLUG_DONE" qemu-live.log \
+            || { echo "FAIL: module coldplug never ran"; exit 1; }
+          grep -q "SALTOS_THINKPAD_OK" qemu-live.log \
+            || { echo "FAIL: hardware plane incomplete"; exit 1; }
+          echo "GATE 1 PASS"
+
+      - name: Gate 2 - installer writes a GPT disk
+        run: |
+          set -euo pipefail
+          cat > selfhost-work/rootfs/autoinstall-test <<'EOF'
+          #!/bin/sh
+          PATH=/usr/local/salt/shims:/usr/bin:/usr/sbin:/bin:/sbin; export PATH
+          mount -t proc proc /proc 2>/dev/null
+          mount -t sysfs sys /sys 2>/dev/null
+          mount -t devtmpfs dev /dev 2>/dev/null
+          mount -t tmpfs run /run 2>/dev/null
+          mount -t tmpfs tmp /tmp 2>/dev/null
+          /usr/bin/salt-hw coldplug
+          printf "YES\n" | saltos-install /dev/vda
+          st=$?
+          echo "SALTOS_INSTALL_EXIT=$st" >/dev/console
+          if command -v sfdisk >/dev/null 2>&1; then
+            sfdisk -l /dev/vda >/dev/console 2>&1
+          fi
+          sync
+          poweroff -f
+          EOF
+          chmod +x selfhost-work/rootfs/autoinstall-test
+          ( cd selfhost-work/rootfs && find . | cpio -o -H newc 2>/dev/null | gzip -1 > ../initrd-autoinstall.gz )
+
+          truncate -s 12G saltos-thinkpad-x86_64.img
+          set +e
+          timeout 900 qemu-system-x86_64 \
+            -machine q35 -m 6144 -smp 2 -display none -no-reboot \
+            -serial file:qemu-install.log \
+            -kernel selfhost-work/bzImage \
+            -initrd selfhost-work/initrd-autoinstall.gz \
+            -append "console=ttyS0,115200 rdinit=/autoinstall-test" \
+            -drive file=saltos-thinkpad-x86_64.img,format=raw,if=none,id=hd0 \
+            -device virtio-blk-pci,drive=hd0
+          set -e
+          tail -n 200 qemu-install.log || true
+          grep -q "SALTOS_INSTALL_EXIT=0" qemu-install.log \
+            || { echo "FAIL: installer did not exit cleanly"; exit 1; }
+          grep -qi "gpt" qemu-install.log \
+            || { echo "FAIL: installed disk is not GPT"; exit 1; }
+          echo "GATE 2 PASS"
+
+      - name: Gate 3 - installed disk boots under UEFI
+        run: |
+          set -euo pipefail
+          OVMF_CODE=""
+          for f in /usr/share/OVMF/OVMF_CODE.fd /usr/share/ovmf/OVMF.fd; do
+            [ -f "$f" ] && OVMF_CODE="$f" && break
+          done
+          [ -n "$OVMF_CODE" ] || { echo "missing OVMF firmware"; exit 1; }
+          set +e
+          timeout 600 qemu-system-x86_64 \
+            -machine q35 -m 6144 -smp 2 -display none -no-reboot \
+            -bios "$OVMF_CODE" \
+            -serial file:qemu-uefi.log \
+            -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
+            -drive file=saltos-thinkpad-x86_64.img,format=raw,if=none,id=hd0 \
+            -device virtio-blk-pci,drive=hd0
+          set -e
+          tail -n 200 qemu-uefi.log || true
+          grep -q "SALTOS_SELFHOST_OK" qemu-uefi.log \
+            || { echo "FAIL: installed system did not reach userspace"; exit 1; }
+          grep -q "SALTOS_THINKPAD_OK" qemu-uefi.log \
+            || { echo "FAIL: installed system lost the hardware plane"; exit 1; }
+          echo "GATE 3 PASS"
+
+      - name: Checksums
+        run: |
+          cd out-iso
+          sha256sum *.iso > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Upload serial logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: thinkpad-serial-logs
+          path: |
+            qemu-live.log
+            qemu-install.log
+            qemu-uefi.log
+          if-no-files-found: ignore
+
+      - name: Upload ISO
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: saltos-thinkpad-x86_64
+          path: |
+            out-iso/*.iso
+            out-iso/SHA256SUMS
+          if-no-files-found: warn
+
+      - name: Publish GitHub Release
+        if: success() && (github.event_name == 'workflow_dispatch' && inputs.publish == 'true' || github.ref == 'refs/heads/main')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="thinkpad-v${VERSION}-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" \
+            --title "saltOS ThinkPad $VERSION (build $GITHUB_RUN_NUMBER)" \
+            --notes "Self-hosted saltOS installer ISO for ThinkPad hardware.
+
+          Verified in CI:
+          - live ISO boots to userspace
+          - kernel module coldplug loads drivers
+          - firmware, wpa_supplicant, and OpenSSL-backed curl present
+          - installer writes a GPT disk
+          - installed disk boots under UEFI (OVMF)
+
+          Write to a USB stick, then boot with Secure Boot disabled:
+
+              sudo dd if=saltos-${VERSION}-selfhost-x86_64.iso of=/dev/sdX bs=4M status=progress oflag=sync
+
+          At the console run \`salt-hw report\` to see detected hardware and
+          \`salt-wifi scan\` / \`salt-wifi connect <ssid> <password>\` for wireless.
+          Install to disk with \`saltos-install\`." \
+            out-iso/*.iso out-iso/SHA256SUMS

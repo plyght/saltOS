@@ -1,0 +1,89 @@
+#!/bin/sh
+set -u
+
+PATH=/usr/local/salt/shims:/usr/bin:/usr/sbin:/bin:/sbin
+export PATH
+
+load_modaliases() {
+  loaded=0
+  for f in $(find /sys/devices -name modalias -type f 2>/dev/null); do
+    alias="$(cat "$f" 2>/dev/null)" || continue
+    [ -n "$alias" ] || continue
+    if modprobe -q "$alias" 2>/dev/null; then
+      loaded=$((loaded + 1))
+    fi
+  done
+  echo "$loaded"
+}
+
+case "${1:-coldplug}" in
+  coldplug)
+    [ -d /lib/modules/"$(uname -r)" ] || {
+      echo "salt-hw: no module tree for $(uname -r); kernel is fully built-in"
+      exit 0
+    }
+    [ -f /lib/modules/"$(uname -r)"/modules.alias ] || depmod -a 2>/dev/null || true
+    n1="$(load_modaliases)"
+    n2="$(load_modaliases)"
+    echo "salt-hw: loaded $((n1 + n2)) driver modules"
+    ;;
+  report)
+    echo "=== saltOS hardware report ==="
+    echo
+    echo "--- system ---"
+    for f in product_name product_version sys_vendor; do
+      [ -r "/sys/class/dmi/id/$f" ] && printf "  %-16s %s\n" "$f" "$(cat "/sys/class/dmi/id/$f")"
+    done
+    printf "  %-16s %s\n" kernel "$(uname -r)"
+    echo
+    echo "--- cpu ---"
+    grep -m1 "model name" /proc/cpuinfo | sed 's/^/  /'
+    printf "  cores            %s\n" "$(grep -c ^processor /proc/cpuinfo)"
+    echo
+    echo "--- storage ---"
+    for d in /sys/block/*; do
+      n="${d##*/}"
+      case "$n" in loop*|ram*|zram*) continue ;; esac
+      sz="$(awk "BEGIN{printf \"%.0fG\", $(cat "$d/size") * 512 / 1073741824}" 2>/dev/null)"
+      printf "  /dev/%-12s %-8s %s\n" "$n" "$sz" "$(cat "$d/device/model" 2>/dev/null || echo '')"
+    done
+    echo
+    echo "--- network ---"
+    for p in /sys/class/net/*; do
+      n="${p##*/}"
+      [ "$n" = "lo" ] && continue
+      kind=wired
+      { [ -d "$p/wireless" ] || [ -L "$p/phy80211" ]; } && kind=wireless
+      drv="$(basename "$(readlink -f "$p/device/driver" 2>/dev/null)" 2>/dev/null || echo '?')"
+      printf "  %-10s %-9s driver=%-12s %s\n" "$n" "$kind" "$drv" "$(cat "$p/operstate" 2>/dev/null)"
+    done
+    echo
+    echo "--- graphics ---"
+    for c in /sys/class/drm/card[0-9]; do
+      [ -e "$c" ] || continue
+      drv="$(basename "$(readlink -f "$c/device/driver" 2>/dev/null)" 2>/dev/null || echo '?')"
+      printf "  %-10s driver=%s\n" "${c##*/}" "$drv"
+    done
+    echo
+    echo "--- audio ---"
+    if [ -d /proc/asound ]; then
+      grep -h . /proc/asound/cards 2>/dev/null | sed 's/^/  /' || echo "  none"
+    else
+      echo "  no sound cards"
+    fi
+    echo
+    echo "--- power ---"
+    for b in /sys/class/power_supply/*; do
+      [ -e "$b" ] || continue
+      printf "  %-10s %s %s%%\n" "${b##*/}" \
+        "$(cat "$b/type" 2>/dev/null)" "$(cat "$b/capacity" 2>/dev/null || echo '-')"
+    done
+    echo
+    echo "--- missing firmware (from dmesg) ---"
+    dmesg 2>/dev/null | grep -i "firmware.*fail\|Direct firmware load.*failed" | sed 's/^/  /' | head -20 \
+      || echo "  none reported"
+    ;;
+  *)
+    echo "usage: salt-hw [coldplug|report]"
+    ;;
+esac

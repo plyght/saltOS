@@ -1,5 +1,0 @@
----
-type: job
-name: saltos_runit
-interface: python
-script: main.py

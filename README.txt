@@ -115,6 +115,7 @@ Documentation
   docs/trust-model.md       trust and supply-chain policy
   docs/installation.md      installation notes
   docs/raspberry-pi.md      Raspberry Pi 5 image
+  docs/thinkpad.md          ThinkPad hardware image
   docs/ota.md               over-the-air update server and client
   docs/contributing.md      contribution guide
   docs/CONVENTIONS.md       build and repository conventions
