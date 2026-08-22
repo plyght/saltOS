@@ -90,10 +90,20 @@ The installer references the root filesystem by `PARTUUID`, not by `/dev/sdX` or
 stick is attached, and a laptop that boots correctly on the bench and fails with
 a dock attached is the usual symptom.
 
-## Not done yet
+## Scope
 
-The image is console-only. `os/selfhost/desktop.sh` builds Xorg against the
-fbdev driver with GLX, DRI, and glamor disabled, which is enough to prove X runs
-from source but is not an accelerated desktop. Mesa, a modesetting-driver Xorg,
-and a real session are the next milestone, along with audio userspace —
-the kernel has the HDA and SOF drivers, but nothing in userspace drives them.
+The image is console-only by design. It ships the hardware plane — kernel,
+firmware, module loading, wireless, wired networking, audio, storage, and the
+installer — and stops there. Choosing and installing a desktop is left to
+whoever runs it.
+
+`os/selfhost/desktop.sh` still exists and builds Xorg against the fbdev driver
+with GLX, DRI, and glamor disabled. It is a proof that X can be built from
+source, not an accelerated desktop, and the `thinkpad` profile does not use it.
+
+A desktop on top of this base can come from either direction. A stratum is the
+path the architecture is built for: the host stays self-hosted and the GUI
+userland comes from Arch or Debian, exposed with `salt expose`. Building Mesa
+and a modesetting Xorg from source is the self-hosted path, and needs libdrm,
+Mesa, and — for a laptop-quality touchpad — libinput, which pulls in eudev for
+libudev.

@@ -36,10 +36,26 @@ ROOTFS="$WORK/rootfs"
 rm -rf "$WORK"
 mkdir -p "$SRC" "$DEPS" "$ROOTFS" "$OUT"
 
+# Long builds fetch a lot of large tarballs; a single transient HTTP/2 stream
+# error on a mirror used to abort the whole run after minutes of work. Retry,
+# and force HTTP/1.1 because the observed failure was PROTOCOL_ERROR on h2.
 fetch() {
-  local url="$1" out="$2"
+  local url="$1" out="$2" n=0
   echo "fetch $url"
-  curl -fsSL "$url" -o "$out"
+  while [ "$n" -lt 5 ]; do
+    if curl -fsSL --http1.1 \
+         --retry 3 --retry-delay 5 --retry-connrefused \
+         --connect-timeout 30 --max-time 2400 \
+         "$url" -o "$out"; then
+      return 0
+    fi
+    n=$((n + 1))
+    rm -f "$out"
+    echo "fetch attempt $n failed for $url, retrying"
+    sleep 10
+  done
+  echo "FATAL: could not fetch $url after $n attempts"
+  return 1
 }
 
 cd "$SRC"
