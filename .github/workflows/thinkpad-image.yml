@@ -93,22 +93,36 @@ jobs:
       - name: Install QEMU
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 ovmf socat netpbm
 
       - name: Gate 1 - live ISO boots and hardware plane is ready
         run: |
-          set -euo pipefail
+          set -uo pipefail
           ISO=$(ls out-iso/*.iso | head -1)
           echo "boot-testing $ISO"
-          set +e
-          timeout 600 qemu-system-x86_64 \
+          rm -f /tmp/qmon qemu-live.log
+          timeout 900 qemu-system-x86_64 \
             -machine q35 -m 6144 -smp 2 -display none -no-reboot \
             -serial file:qemu-live.log \
+            -monitor unix:/tmp/qmon,server,nowait \
             -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
-            -cdrom "$ISO" -boot d
-          set -e
+            -cdrom "$ISO" -boot d &
+          QPID=$!
+          for i in $(seq 1 90); do
+            sleep 10
+            grep -q "SALTOS_THINKPAD_OK" qemu-live.log 2>/dev/null && break
+            grep -q "SALTOS_THINKPAD_FAIL" qemu-live.log 2>/dev/null && break
+            kill -0 $QPID 2>/dev/null || break
+          done
+          printf 'screendump /tmp/screen.ppm\n' | socat - unix-connect:/tmp/qmon || true
+          sleep 3
+          [ -f /tmp/screen.ppm ] && pnmtopng /tmp/screen.ppm > saltos-thinkpad-screen.png || true
+          kill $QPID 2>/dev/null || true
           echo "----- serial tail -----"
-          tail -n 200 qemu-live.log || true
+          tail -n 250 qemu-live.log || true
+          echo "----- serial size: $(wc -c < qemu-live.log 2>/dev/null || echo 0) bytes -----"
+          set -e
           grep -q "SALTOS_SELFHOST_OK" qemu-live.log \
             || { echo "FAIL: base self-host marker missing"; exit 1; }
           grep -q "SALTOS_COLDPLUG_DONE" qemu-live.log \
@@ -167,16 +181,25 @@ jobs:
             [ -f "$f" ] && OVMF_CODE="$f" && break
           done
           [ -n "$OVMF_CODE" ] || { echo "missing OVMF firmware"; exit 1; }
+          rm -f qemu-uefi.log
           set +e
-          timeout 600 qemu-system-x86_64 \
+          timeout 900 qemu-system-x86_64 \
             -machine q35 -m 6144 -smp 2 -display none -no-reboot \
             -bios "$OVMF_CODE" \
             -serial file:qemu-uefi.log \
             -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
             -drive file=saltos-thinkpad-x86_64.img,format=raw,if=none,id=hd0 \
-            -device virtio-blk-pci,drive=hd0
+            -device virtio-blk-pci,drive=hd0 &
+          QPID=$!
+          for i in $(seq 1 90); do
+            sleep 10
+            grep -q "SALTOS_THINKPAD_OK" qemu-uefi.log 2>/dev/null && break
+            grep -q "SALTOS_THINKPAD_FAIL" qemu-uefi.log 2>/dev/null && break
+            kill -0 $QPID 2>/dev/null || break
+          done
+          kill $QPID 2>/dev/null || true
           set -e
-          tail -n 200 qemu-uefi.log || true
+          tail -n 250 qemu-uefi.log || true
           grep -q "SALTOS_SELFHOST_OK" qemu-uefi.log \
             || { echo "FAIL: installed system did not reach userspace"; exit 1; }
           grep -q "SALTOS_THINKPAD_OK" qemu-uefi.log \
@@ -198,6 +221,7 @@ jobs:
             qemu-live.log
             qemu-install.log
             qemu-uefi.log
+            saltos-thinkpad-screen.png
           if-no-files-found: ignore
 
       - name: Upload ISO

@@ -356,9 +356,15 @@ chmod +x "$ROOTFS"/etc/runit/1 "$ROOTFS"/etc/runit/2 "$ROOTFS"/etc/runit/3
 
 if [ "$PROFILE" = "thinkpad" ]; then
   cat >> "$ROOTFS/etc/runit/1" <<'EOF'
-/usr/bin/salt-hw coldplug > /dev/console 2>&1 || true
-mkdir -p /run/wpa_supplicant
-echo "SALTOS_COLDPLUG_DONE" > /dev/console
+if [ -c /dev/ttyS0 ]; then
+  /usr/bin/salt-hw coldplug 2>&1 | tee /dev/ttyS0 > /dev/console || true
+  mkdir -p /run/wpa_supplicant
+  echo "SALTOS_COLDPLUG_DONE" | tee /dev/ttyS0 > /dev/console
+else
+  /usr/bin/salt-hw coldplug > /dev/console 2>&1 || true
+  mkdir -p /run/wpa_supplicant
+  echo "SALTOS_COLDPLUG_DONE" > /dev/console
+fi
 EOF
 
   mkdir -p "$ROOTFS/etc/runit/sv/wifi"
@@ -396,9 +402,9 @@ EOF
   mkdir -p "$ROOTFS/etc/runit/sv/hw-check"
   cat > "$ROOTFS/etc/runit/sv/hw-check/run" <<'EOF'
 #!/bin/sh
-exec >/dev/console 2>&1
 PATH=/usr/local/salt/shims:/usr/bin:/usr/sbin:/bin:/sbin; export PATH
 sleep 6
+hwreport() {
 ok=1
 
 kver="$(uname -r)"
@@ -451,6 +457,12 @@ if [ "$ok" = 1 ]; then
 else
   echo "SALTOS_THINKPAD_FAIL hardware plane incomplete"
 fi
+}
+if [ -c /dev/ttyS0 ]; then
+  hwreport 2>&1 | tee /dev/ttyS0 > /dev/console
+else
+  hwreport > /dev/console 2>&1
+fi
 exec >/dev/null 2>&1
 exec sleep infinity
 EOF
@@ -461,18 +473,28 @@ fi
 mkdir -p "$ROOTFS/etc/runit/sv/boot-check"
 cat > "$ROOTFS/etc/runit/sv/boot-check/run" <<'EOF'
 #!/bin/sh
-exec >/dev/console 2>&1
-echo "----------------------------------------"
-cat /etc/os-release
-ok=1
-salt --version || ok=0
-bash --version | head -1 || ok=0
-ls --version | head -1 || ok=0
-echo "ldd salt:"; file /usr/bin/bash 2>/dev/null || true
-if [ "$ok" = 1 ]; then
-  echo "SALTOS_SELFHOST_OK kernel+glibc+bash+coreutils+runit+salt, all from source, no distro base"
+# /dev/console follows the last console= on the cmdline, so the graphical menu
+# entry sends these markers to tty1 only and a serial-capturing harness sees an
+# empty log. Mirror to ttyS0 as well when it exists, without making ttyS0 the
+# console on real hardware that enumerates a legacy UART with no connector.
+report() {
+  echo "----------------------------------------"
+  cat /etc/os-release
+  ok=1
+  salt --version || ok=0
+  bash --version | head -1 || ok=0
+  ls --version | head -1 || ok=0
+  echo "ldd salt:"; file /usr/bin/bash 2>/dev/null || true
+  if [ "$ok" = 1 ]; then
+    echo "SALTOS_SELFHOST_OK kernel+glibc+bash+coreutils+runit+salt, all from source, no distro base"
+  else
+    echo "SALTOS_SELFHOST_FAIL a component did not run"
+  fi
+}
+if [ -c /dev/ttyS0 ]; then
+  report 2>&1 | tee /dev/ttyS0 > /dev/console
 else
-  echo "SALTOS_SELFHOST_FAIL a component did not run"
+  report > /dev/console 2>&1
 fi
 exec >/dev/null 2>&1
 exec sleep infinity
