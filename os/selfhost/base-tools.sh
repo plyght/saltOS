@@ -26,11 +26,17 @@ if ! toolsdone util-linux; then
     ./configure --prefix=/usr --libdir=/usr/lib \
       --disable-all-programs \
       --enable-libblkid --enable-libuuid --enable-libmount --enable-libsmartcols \
+      --enable-libfdisk \
       --enable-sfdisk --enable-blkid --enable-lsblk --enable-partx --enable-wipefs \
       --enable-fdisk --enable-mount --enable-lscpu \
       --disable-static --without-python --without-systemd --without-udev
     make -j"$JOBS"
     make DESTDIR="$T" install )
+  find "$T" -name '*.la' -delete 2>/dev/null || true
+  for prog in sfdisk blkid lsblk wipefs; do
+    [ -e "$T/usr/sbin/$prog" ] || [ -e "$T/usr/bin/$prog" ] \
+      || { echo "FATAL: util-linux did not build $prog"; exit 1; }
+  done
   toolsmark util-linux
 fi
 

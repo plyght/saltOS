@@ -32,3 +32,4 @@ selfhost-work/
 .netcache/
 .toolscache/
 .audiocache/
+.gnucache/

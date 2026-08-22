@@ -31,10 +31,13 @@ COREUTILS_VER="9.5"
 
 SRC="$WORK/src"
 DEPS="$WORK/deps"
-GNU="$WORK/gnu"
 ROOTFS="$WORK/rootfs"
 rm -rf "$WORK"
-mkdir -p "$SRC" "$DEPS" "$ROOTFS" "$OUT"
+# glibc, bash, and coreutils take about fifteen minutes and are rebuilt on every
+# run because $WORK is wiped above. Keep them outside $WORK when a cache is
+# provided so repeated CI attempts skip them.
+if [ -n "${GNUCACHE:-}" ]; then GNU="$GNUCACHE/gnu"; else GNU="$WORK/gnu"; fi
+mkdir -p "$SRC" "$DEPS" "$ROOTFS" "$OUT" "$GNU"
 
 # Long builds fetch a lot of large tarballs; a single transient HTTP/2 stream
 # error on a mirror used to abort the whole run after minutes of work. Retry,
@@ -114,38 +117,51 @@ RUNIT_SRC="$SRC/admin/runit-${RUNIT_VER}/src"
   echo 'gcc -static' > conf-ld
   make )
 
-echo "===== glibc (from source) ====="
-GLIBC_CC="${GLIBC_CC:-gcc-12}"
-command -v "$GLIBC_CC" >/dev/null 2>&1 || GLIBC_CC=gcc
-mkdir -p "$SRC/glibc-build"
-( cd "$SRC/glibc-build"
-  "$SRC/glibc-${GLIBC_VER}/configure" \
-    CC="$GLIBC_CC" CXX="${GLIBC_CC/gcc/g++}" \
-    --prefix=/usr \
-    --disable-werror \
-    --disable-nscd \
-    --without-selinux \
-    --enable-kernel=4.19
-  make -j"$JOBS"
-  make DESTDIR="$GNU" install )
+gnudone() { [ -f "$GNU/.salt-done/$1" ]; }
+gnumark() { mkdir -p "$GNU/.salt-done"; touch "$GNU/.salt-done/$1"; }
 
-echo "===== bash (from source) ====="
-( cd "$SRC/bash-${BASH_VER}"
-  ./configure --prefix=/usr --without-bash-malloc
-  make -j"$JOBS"
-  make DESTDIR="$GNU" install )
+if ! gnudone glibc; then
+  echo "===== glibc (from source) ====="
+  GLIBC_CC="${GLIBC_CC:-gcc-12}"
+  command -v "$GLIBC_CC" >/dev/null 2>&1 || GLIBC_CC=gcc
+  mkdir -p "$SRC/glibc-build"
+  ( cd "$SRC/glibc-build"
+    "$SRC/glibc-${GLIBC_VER}/configure" \
+      CC="$GLIBC_CC" CXX="${GLIBC_CC/gcc/g++}" \
+      --prefix=/usr \
+      --disable-werror \
+      --disable-nscd \
+      --without-selinux \
+      --enable-kernel=4.19
+    make -j"$JOBS"
+    make DESTDIR="$GNU" install )
+  gnumark glibc
+fi
 
-echo "===== coreutils (from source) ====="
-( cd "$SRC/coreutils-${COREUTILS_VER}"
-  FORCE_UNSAFE_CONFIGURE=1 ./configure --prefix=/usr
-  make -j"$JOBS"
-  make DESTDIR="$GNU" install )
+if ! gnudone bash; then
+  echo "===== bash (from source) ====="
+  ( cd "$SRC/bash-${BASH_VER}"
+    ./configure --prefix=/usr --without-bash-malloc
+    make -j"$JOBS"
+    make DESTDIR="$GNU" install )
+  gnumark bash
+fi
+
+if ! gnudone coreutils; then
+  echo "===== coreutils (from source) ====="
+  ( cd "$SRC/coreutils-${COREUTILS_VER}"
+    FORCE_UNSAFE_CONFIGURE=1 ./configure --prefix=/usr
+    make -j"$JOBS"
+    make DESTDIR="$GNU" install )
+  gnumark coreutils
+fi
 
 echo "===== assemble rootfs ====="
 mkdir -p "$ROOTFS"/{proc,sys,dev,run,tmp,root,var/lib/salt,var/cache/salt,etc,strata}
 
 echo "===== lay down GNU userland first (glibc/bash/coreutils -> /usr,/lib) ====="
 cp -a "$GNU/." "$ROOTFS/"
+rm -rf "$ROOTFS/.salt-done"
 
 for d in bin sbin usr/bin usr/sbin; do
   [ -L "$ROOTFS/$d" ] && rm -f "$ROOTFS/$d"
@@ -239,8 +255,9 @@ if [ "$PROFILE" = "thinkpad" ]; then
   install -Dm755 "$REPO/os/selfhost/salt-wifi" "$ROOTFS/usr/bin/salt-wifi"
   install -Dm755 "$REPO/os/selfhost/salt-hw" "$ROOTFS/usr/bin/salt-hw"
 
-  for t in sfdisk mkfs.ext4 blkid amixer aplay; do
-    find "$ROOTFS/usr" -name "$t" -type f | grep -q . \
+  # mkfs.ext4 is a symlink to mke2fs, so this must accept links as well as files.
+  for t in sfdisk mkfs.ext4 blkid amixer aplay wpa_supplicant curl; do
+    find "$ROOTFS/usr" -name "$t" \( -type f -o -type l \) | grep -q . \
       || { echo "FATAL: $t missing from thinkpad rootfs"; exit 1; }
   done
 

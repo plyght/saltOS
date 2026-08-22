@@ -75,6 +75,12 @@ jobs:
           path: .toolscache
           key: tp-tools-${{ hashFiles('os/selfhost/base-tools.sh') }}
 
+      - name: Restore GNU userland cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .gnucache
+          key: tp-gnu-glibc2.40-bash5.2.21-coreutils9.5
+
       - name: Build ThinkPad ISO (clean Debian container)
         run: |
           docker run --rm -v "$PWD":/src -w /src \
@@ -94,10 +100,10 @@ jobs:
             KERNEL_VER="$KERNEL_VER" FWREF="$FWREF" \
             KCACHE=/src/.kcache FWCACHE=/src/.fwcache \
             NETCACHE=/src/.netcache TOOLSCACHE=/src/.toolscache \
-            AUDIOCACHE=/src/.audiocache \
+            AUDIOCACHE=/src/.audiocache GNUCACHE=/src/.gnucache \
               bash os/selfhost/build.sh x86_64'
           sudo chown -R "$USER" out-iso selfhost-work \
-            .kcache .fwcache .netcache .toolscache .audiocache 2>/dev/null || true
+            .kcache .fwcache .netcache .toolscache .audiocache .gnucache 2>/dev/null || true
           ls -lh out-iso/
           df -h /
 
@@ -108,7 +114,7 @@ jobs:
         run: |
           sudo chown -R "$USER" \
             out-iso selfhost-work \
-            .kcache .fwcache .netcache .toolscache .audiocache 2>/dev/null || true
+            .kcache .fwcache .netcache .toolscache .audiocache .gnucache 2>/dev/null || true
           df -h /
 
       - name: Save kernel cache
@@ -150,6 +156,14 @@ jobs:
         with:
           path: .toolscache
           key: tp-tools-${{ hashFiles('os/selfhost/base-tools.sh') }}
+
+      - name: Save GNU userland cache
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .gnucache
+          key: tp-gnu-glibc2.40-bash5.2.21-coreutils9.5
 
       - name: Install QEMU
         run: |
