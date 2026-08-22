@@ -95,9 +95,16 @@ CONFIG_P2P=y
 CONFIG_MESH=y
 CONFIG_DEBUG_FILE=y
 WPAEOF
-    make -j"$JOBS" \
-      CFLAGS="-I$N/usr/include -I$N/usr/include/libnl3 -O2" \
-      LIBS="-L$N/usr/lib -L$N/usr/lib64 -Wl,-rpath-link,$N/usr/lib"
+    # .config is included as a makefile, so append with += here. Passing CFLAGS=
+    # on the make command line would override the tree's own -I../src include
+    # paths and the build cannot then find includes.h.
+    cat >> .config <<EOF
+CFLAGS += -I$N/usr/include -I$N/usr/include/libnl3
+LIBS += -L$N/usr/lib -L$N/usr/lib64 -Wl,-rpath-link,$N/usr/lib
+LIBS_p += -L$N/usr/lib -L$N/usr/lib64
+LIBS_c += -L$N/usr/lib -L$N/usr/lib64
+EOF
+    make -j"$JOBS"
     install -Dm755 wpa_supplicant "$N/usr/sbin/wpa_supplicant"
     install -Dm755 wpa_cli "$N/usr/sbin/wpa_cli"
     install -Dm755 wpa_passphrase "$N/usr/sbin/wpa_passphrase" )

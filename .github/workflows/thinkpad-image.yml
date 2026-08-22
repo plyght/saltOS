@@ -42,32 +42,35 @@ jobs:
           sudo docker image prune -af 2>/dev/null || true
           df -h /
 
-      - name: Cache compiled kernel and modules
-        uses: actions/cache@v4
+      # restore/save are split deliberately: actions/cache only writes its cache
+      # when the job succeeds, so a late failure would discard an hour of kernel
+      # and openssl work and the next attempt would rebuild it from scratch.
+      - name: Restore kernel cache
+        uses: actions/cache/restore@v4
         with:
           path: .kcache
           key: tp-kernel-${{ env.KERNEL_VER }}-${{ hashFiles('os/selfhost/kernel-thinkpad-x86_64.config') }}
 
-      - name: Cache curated linux-firmware
-        uses: actions/cache@v4
+      - name: Restore firmware cache
+        uses: actions/cache/restore@v4
         with:
           path: .fwcache
           key: tp-firmware-${{ env.FWREF }}-${{ hashFiles('os/selfhost/firmware.sh') }}
 
-      - name: Cache network stack
-        uses: actions/cache@v4
+      - name: Restore network stack cache
+        uses: actions/cache/restore@v4
         with:
           path: .netcache
           key: tp-net-${{ hashFiles('os/selfhost/net.sh') }}
 
-      - name: Cache audio userland
-        uses: actions/cache@v4
+      - name: Restore audio cache
+        uses: actions/cache/restore@v4
         with:
           path: .audiocache
           key: tp-audio-${{ hashFiles('os/selfhost/audio.sh') }}
 
-      - name: Cache base tools
-        uses: actions/cache@v4
+      - name: Restore base tools cache
+        uses: actions/cache/restore@v4
         with:
           path: .toolscache
           key: tp-tools-${{ hashFiles('os/selfhost/base-tools.sh') }}
@@ -97,6 +100,56 @@ jobs:
             .kcache .fwcache .netcache .toolscache .audiocache 2>/dev/null || true
           ls -lh out-iso/
           df -h /
+
+      # The build step's own chown never runs when the container fails, which
+      # would leave these root-owned and unreadable by the cache save below.
+      - name: Reclaim ownership of build outputs
+        if: always()
+        run: |
+          sudo chown -R "$USER" \
+            out-iso selfhost-work \
+            .kcache .fwcache .netcache .toolscache .audiocache 2>/dev/null || true
+          df -h /
+
+      - name: Save kernel cache
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .kcache
+          key: tp-kernel-${{ env.KERNEL_VER }}-${{ hashFiles('os/selfhost/kernel-thinkpad-x86_64.config') }}
+
+      - name: Save firmware cache
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .fwcache
+          key: tp-firmware-${{ env.FWREF }}-${{ hashFiles('os/selfhost/firmware.sh') }}
+
+      - name: Save network stack cache
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .netcache
+          key: tp-net-${{ hashFiles('os/selfhost/net.sh') }}
+
+      - name: Save audio cache
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .audiocache
+          key: tp-audio-${{ hashFiles('os/selfhost/audio.sh') }}
+
+      - name: Save base tools cache
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .toolscache
+          key: tp-tools-${{ hashFiles('os/selfhost/base-tools.sh') }}
 
       - name: Install QEMU
         run: |
