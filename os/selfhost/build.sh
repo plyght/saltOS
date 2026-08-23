@@ -240,6 +240,9 @@ if [ "$PROFILE" = "thinkpad" ]; then
   mkdir -p "$T"
   . "$REPO/os/selfhost/base-tools.sh"
   cp -a "$T/usr/." "$ROOTFS/usr/" 2>/dev/null || true
+  # Some autotools packages ignore --prefix for sbindir and land in /sbin.
+  [ -d "$T/sbin" ] && cp -a "$T/sbin/." "$ROOTFS/usr/sbin/" 2>/dev/null || true
+  [ -d "$T/bin" ] && cp -a "$T/bin/." "$ROOTFS/usr/bin/" 2>/dev/null || true
   rm -rf "$ROOTFS/usr/.salt-done"
   ldconfig -r "$ROOTFS" 2>/dev/null || true
 

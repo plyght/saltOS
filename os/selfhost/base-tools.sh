@@ -53,7 +53,10 @@ if ! toolsdone util-linux; then
     # enable_sfdisk=$enable_fdisks and defines no --enable-sfdisk at all, so
     # that spelling is silently ignored. lsblk has no AC_ARG_ENABLE whatsoever
     # and can only be re-enabled through the variable.
+    # util-linux special-cases prefix=/usr and forces sbindir=/sbin per FHS,
+    # which puts sfdisk outside the $T/usr tree that gets copied into the rootfs.
     ./configure --prefix=/usr --libdir=/usr/lib \
+      --bindir=/usr/bin --sbindir=/usr/sbin \
       --disable-all-programs \
       --enable-libblkid --enable-libuuid --enable-libmount --enable-libsmartcols \
       --enable-libfdisk \
@@ -65,10 +68,12 @@ if ! toolsdone util-linux; then
     make DESTDIR="$T" install )
   find "$T" -name '*.la' -delete 2>/dev/null || true
   for prog in sfdisk blkid wipefs; do
-    [ -e "$T/usr/sbin/$prog" ] || [ -e "$T/usr/bin/$prog" ] \
+    find "$T" -name "$prog" -type f | grep -q . \
       || { echo "FATAL: util-linux did not build $prog"; exit 1; }
+    [ -e "$T/usr/sbin/$prog" ] || [ -e "$T/usr/bin/$prog" ] \
+      || { echo "FATAL: $prog built but landed outside \$T/usr: $(find "$T" -name "$prog" -type f)"; exit 1; }
   done
-  [ -e "$T/usr/bin/lsblk" ] || echo "note: lsblk was not built (optional)"
+  find "$T" -name lsblk -type f | grep -q . || echo "note: lsblk was not built (optional)"
   toolsmark util-linux
 fi
 
