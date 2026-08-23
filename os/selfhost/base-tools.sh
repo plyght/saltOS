@@ -23,20 +23,26 @@ if ! toolsdone util-linux; then
   rm -rf "util-linux-${UTIL_LINUX_VER}"
   tar -xf "util-linux-${UTIL_LINUX_VER}.tar.xz"
   ( cd "util-linux-${UTIL_LINUX_VER}"
+    # The option is --enable-fdisks, plural: configure.ac sets
+    # enable_sfdisk=$enable_fdisks and defines no --enable-sfdisk at all, so
+    # that spelling is silently ignored. lsblk has no AC_ARG_ENABLE whatsoever
+    # and can only be re-enabled through the variable.
     ./configure --prefix=/usr --libdir=/usr/lib \
       --disable-all-programs \
       --enable-libblkid --enable-libuuid --enable-libmount --enable-libsmartcols \
       --enable-libfdisk \
-      --enable-sfdisk --enable-blkid --enable-lsblk --enable-partx --enable-wipefs \
-      --enable-fdisk --enable-mount --enable-lscpu \
-      --disable-static --without-python --without-systemd --without-udev
+      --enable-fdisks --enable-blkid --enable-partx --enable-wipefs \
+      --enable-mount --enable-lscpu \
+      --disable-static --without-python --without-systemd --without-udev \
+      enable_lsblk=yes
     make -j"$JOBS"
     make DESTDIR="$T" install )
   find "$T" -name '*.la' -delete 2>/dev/null || true
-  for prog in sfdisk blkid lsblk wipefs; do
+  for prog in sfdisk blkid wipefs; do
     [ -e "$T/usr/sbin/$prog" ] || [ -e "$T/usr/bin/$prog" ] \
       || { echo "FATAL: util-linux did not build $prog"; exit 1; }
   done
+  [ -e "$T/usr/bin/lsblk" ] || echo "note: lsblk was not built (optional)"
   toolsmark util-linux
 fi
 
