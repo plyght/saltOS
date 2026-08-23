@@ -2,6 +2,7 @@ set -euxo pipefail
 
 UTIL_LINUX_VER="2.40.2"
 E2FSPROGS_VER="1.47.1"
+NCURSES_VER="6.5"
 
 export PKG_CONFIG_PATH="$T/usr/lib/pkgconfig:$T/usr/share/pkgconfig"
 export CPPFLAGS="-I$T/usr/include"
@@ -13,6 +14,31 @@ toolsdone() { [ -f "$T/.salt-done/$1" ]; }
 toolsmark() { mkdir -p "$T/.salt-done"; touch "$T/.salt-done/$1"; }
 
 cd "$SRC"
+
+if ! toolsdone ncurses; then
+  # --enable-fdisks turns on cfdisk too, and configure.ac assigns
+  # enable_cfdisk=$enable_fdisks unconditionally so it cannot be switched off
+  # on its own. cfdisk hard-requires curses, so build ncurses rather than
+  # linking against the container's copy, which is absent from the rootfs.
+  # The terminfo database it installs is worth having on a console-only image.
+  echo "===== ncurses ====="
+  [ -f "ncurses-${NCURSES_VER}.tar.gz" ] || fetch \
+    "https://ftp.gnu.org/gnu/ncurses/ncurses-${NCURSES_VER}.tar.gz" \
+    "ncurses-${NCURSES_VER}.tar.gz"
+  rm -rf "ncurses-${NCURSES_VER}"
+  tar -xf "ncurses-${NCURSES_VER}.tar.gz"
+  ( cd "ncurses-${NCURSES_VER}"
+    ./configure --prefix=/usr --libdir=/usr/lib \
+      --with-shared --without-debug --without-ada --without-manpages \
+      --enable-widec --enable-pc-files \
+      --with-pkg-config-libdir=/usr/lib/pkgconfig \
+      --enable-overwrite
+    make -j"$JOBS"
+    make DESTDIR="$T" install )
+  find "$T" -name '*.la' -delete 2>/dev/null || true
+  [ -e "$T/usr/lib/libncursesw.so" ] || { echo "FATAL: ncurses did not install"; exit 1; }
+  toolsmark ncurses
+fi
 
 if ! toolsdone util-linux; then
   echo "===== util-linux (sfdisk, blkid, lsblk) ====="
