@@ -642,6 +642,19 @@ source = ""
 key = ""
 EOF
 
+echo "===== busybox provenance ====="
+ls -la "$SRC/busybox-${BUSYBOX_VER}/busybox" || true
+file "$SRC/busybox-${BUSYBOX_VER}/busybox" || true
+ls -la "$WORK/bb-install/bin/busybox" || true
+file "$WORK/bb-install/bin/busybox" || true
+ls -la "$ROOTFS/bin/busybox" || true
+
+# Re-assert the exact binary that passed the static check during the busybox
+# build. Something between that copy and here has been replacing /bin/busybox
+# with a small dynamically linked file, and a dynamic init shell cannot run
+# before the loader is available.
+install -Dm755 "$SRC/busybox-${BUSYBOX_VER}/busybox" "$ROOTFS/bin/busybox"
+
 echo "===== sanity: rootfs init shell must be static ====="
 file "$ROOTFS/bin/busybox"
 if ! file "$ROOTFS/bin/busybox" | grep -q 'statically linked'; then
