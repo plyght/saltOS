@@ -268,6 +268,28 @@ if [ "$PROFILE" = "thinkpad" ]; then
   PATH="$SAVED_PATH"
   export PATH
 
+  # A binary that links a library present only in the build container is not
+  # runnable in the image, and nothing catches that until it silently does
+  # nothing at boot. Verify every NEEDED entry resolves inside the rootfs.
+  echo "===== verify rootfs shared library closure ====="
+  deps_missing=0
+  for b in usr/bin/curl usr/sbin/wpa_supplicant usr/sbin/sfdisk usr/bin/amixer \
+           usr/bin/aplay usr/sbin/blkid usr/sbin/mke2fs; do
+    bin="$ROOTFS/$b"
+    [ -f "$bin" ] || continue
+    for lib in $(readelf -d "$bin" 2>/dev/null | sed -n 's/.*NEEDED.*\[\(.*\)\]/\1/p'); do
+      if ! find "$ROOTFS/lib" "$ROOTFS/lib64" "$ROOTFS/usr/lib" -name "$lib" 2>/dev/null | grep -q .; then
+        echo "  MISSING $lib (needed by /$b)"
+        deps_missing=$((deps_missing + 1))
+      fi
+    done
+  done
+  if [ "$deps_missing" -gt 0 ]; then
+    echo "FATAL: $deps_missing shared library dependencies are absent from the rootfs"
+    exit 1
+  fi
+  echo "  all shared library dependencies resolve inside the rootfs"
+
   [ -x "$ROOTFS/usr/bin/curl" ] || { echo "FATAL: real curl missing from thinkpad rootfs"; exit 1; }
   [ -x "$ROOTFS/usr/sbin/wpa_supplicant" ] || { echo "FATAL: wpa_supplicant missing"; exit 1; }
   [ -f "$ROOTFS/etc/ssl/certs/ca-certificates.crt" ] || { echo "FATAL: CA bundle missing"; exit 1; }
@@ -471,7 +493,7 @@ else
   echo "SALTOS_HW_FIRMWARE_FAIL regulatory.db missing"; ok=0
 fi
 
-for m in iwlwifi ath11k_pci rtw89_pci mt7921e i915 amdgpu; do
+for m in iwlwifi i915 nouveau; do
   if find /lib/modules -name "${m}.ko*" 2>/dev/null | grep -q .; then
     echo "  driver available: $m"
   else

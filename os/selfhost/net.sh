@@ -53,10 +53,15 @@ if ! netdone curl; then
   rm -rf "curl-${CURL_VER}"
   tar -xf "curl-${CURL_VER}.tar.xz"
   ( cd "curl-${CURL_VER}"
+    # Refuse every optional dependency. The build container has zlib1g-dev (and
+    # friends) pulled in transitively, and curl links them automatically; those
+    # libraries do not exist in the rootfs, so the binary would fail to start.
     ./configure --prefix=/usr --libdir=/usr/lib \
       --with-openssl="$N/usr" \
       --with-ca-bundle=/etc/ssl/certs/ca-certificates.crt \
-      --disable-ldap --disable-ldaps --disable-manual --without-libpsl
+      --disable-ldap --disable-ldaps --disable-manual \
+      --without-libpsl --without-zlib --without-brotli --without-zstd \
+      --without-libidn2 --without-nghttp2 --without-librtmp --without-libssh2
     make -j"$JOBS"
     make DESTDIR="$N" install )
   netmark curl
