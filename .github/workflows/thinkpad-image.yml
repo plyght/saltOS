@@ -204,6 +204,8 @@ jobs:
             || { echo "FAIL: module coldplug never ran"; exit 1; }
           grep -q "SALTOS_THINKPAD_OK" qemu-live.log \
             || { echo "FAIL: hardware plane incomplete"; exit 1; }
+          echo "--- network reachability (reported, not gated) ---"
+          grep -E "SALTOS_HW_NET_(OK|WARN)" qemu-live.log || echo "  no network marker emitted"
           echo "GATE 1 PASS"
 
       - name: Gate 2 - installer writes a GPT disk

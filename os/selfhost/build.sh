@@ -272,13 +272,19 @@ if [ "$PROFILE" = "thinkpad" ]; then
   # runnable in the image, and nothing catches that until it silently does
   # nothing at boot. Verify every NEEDED entry resolves inside the rootfs.
   echo "===== verify rootfs shared library closure ====="
+  # Index every shared object actually present rather than assuming a layout:
+  # from-source glibc does not necessarily land in lib, lib64, or usr/lib.
+  LIBIDX="$WORK/rootfs-libs.txt"
+  find "$ROOTFS" -name '*.so' -o -name '*.so.*' 2>/dev/null \
+    | sed 's|.*/||' | sort -u > "$LIBIDX"
+  echo "  indexed $(wc -l < "$LIBIDX") shared objects in the rootfs"
   deps_missing=0
   for b in usr/bin/curl usr/sbin/wpa_supplicant usr/sbin/sfdisk usr/bin/amixer \
            usr/bin/aplay usr/sbin/blkid usr/sbin/mke2fs; do
     bin="$ROOTFS/$b"
     [ -f "$bin" ] || continue
     for lib in $(readelf -d "$bin" 2>/dev/null | sed -n 's/.*NEEDED.*\[\(.*\)\]/\1/p'); do
-      if ! find "$ROOTFS/lib" "$ROOTFS/lib64" "$ROOTFS/usr/lib" -name "$lib" 2>/dev/null | grep -q .; then
+      if ! grep -qxF "$lib" "$LIBIDX"; then
         echo "  MISSING $lib (needed by /$b)"
         deps_missing=$((deps_missing + 1))
       fi
@@ -529,6 +535,22 @@ fi
 for f in suspend_to_idle mem; do
   grep -qw "$f" /sys/power/state 2>/dev/null && echo "  suspend supported: $f"
 done
+
+# End-to-end proof that this machine can actually fetch software: a real TLS
+# handshake against the mirror the strata bootstrap uses. Not folded into $ok,
+# because an external network hiccup must not fail the whole image build.
+n=0
+while [ $n -lt 20 ]; do
+  ip route 2>/dev/null | grep -q '^default' && break
+  n=$((n + 1))
+  sleep 1
+done
+if curl -sSf --max-time 30 -o /dev/null \
+     https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/ 2>/dev/null; then
+  echo "SALTOS_HW_NET_OK https fetch works; salt sync and stratum bootstrap can reach the network"
+else
+  echo "SALTOS_HW_NET_WARN https fetch failed (no lease, DNS, or TLS in this environment)"
+fi
 
 salt-hw report 2>/dev/null | head -60 || true
 
