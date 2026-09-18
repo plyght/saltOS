@@ -4,6 +4,7 @@ extern "C" {
 #include "salt/util.h"
 #include "salt/db.h"
 #include "salt/toml.h"
+#include "salt/hash.h"
 }
 
 #include <cstdio>
@@ -40,6 +41,19 @@ static int config_show(const Options &o) {
   return 0;
 }
 
+static bool config_matches_lock(const Options &o, const std::string &lock_path) {
+  salt_toml *t = salt_toml_parse_file(lock_path.c_str());
+  if (!t) return true;
+  const char *locked = salt_toml_string(t, "config_hash", nullptr);
+  std::string want = locked ? locked : "";
+  salt_toml_free(t);
+  if (want.rfind("sha256:", 0) == 0) want = want.substr(7);
+  char cur[SALT_SHA256_HEXLEN + 1] = {0};
+  bool have_cfg = salt_sha256_file(system_config_path(o).c_str(), cur) == SALT_OK;
+  if (want.empty()) return !have_cfg;
+  return have_cfg && want == cur;
+}
+
 static int config_diff(const Options &o) {
   return lock_diff(o, lock_path_for(o, ""), false);
 }
@@ -62,6 +76,12 @@ static int config_apply(const Options &o, const std::vector<std::string> &in_arg
     return 2;
   }
   std::string lp = lock_path_for(o, "");
+  if (!relock && !config_matches_lock(o, lp)) {
+    fprintf(stderr,
+            "salt: %s changed since %s was generated; pass --relock to apply and regenerate\n",
+            system_config_path(o).c_str(), lp.c_str());
+    return 1;
+  }
   int rc = lock_apply(o, lp, f);
   if (rc == 0 && relock && !f.dry_run && !f.download_only) rc = lock_write(o, lp, false);
   return rc;
