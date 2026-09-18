@@ -75,6 +75,9 @@ xbuild "$XR/lib/libXt-1.3.1.tar.xz"
 xbuild "$XR/lib/libXmu-1.2.1.tar.xz"
 xbuild "$XR/lib/libXcursor-1.2.3.tar.xz"
 xbuild "$XR/lib/libxkbfile-1.1.3.tar.xz"
+xbuild "$XR/lib/libXpm-3.5.17.tar.xz"
+xbuild "$XR/lib/libXaw-1.0.16.tar.xz"
+xbuild "$XR/data/xbitmaps-1.1.3.tar.xz"
 
 echo "===== fonts + rendering deps ====="
 xbuild "https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz"
@@ -97,15 +100,19 @@ xbuild "https://www.x.org/releases/individual/data/xkeyboard-config/xkeyboard-co
 
 echo "===== X server (fbdev) + input/video drivers ====="
 xbuild "$XR/lib/libpciaccess-0.18.1.tar.xz"
+xbuild "$XR/lib/libxcvt-0.1.2.tar.xz"
+xbuild "https://libbsd.freedesktop.org/releases/libmd-1.1.0.tar.xz"
 xbuild "$XR/xserver/xorg-server-21.1.13.tar.xz" \
   --disable-glx --disable-dri --disable-dri2 --disable-dri3 --disable-glamor \
   --disable-xvfb --disable-xnest --disable-xephyr --disable-dmx --disable-xwin \
   --disable-xwayland \
   --disable-docs --disable-devel-docs --disable-unit-tests \
   --disable-systemd-logind --disable-libunwind --without-dtrace \
+  --disable-libdrm --disable-config-udev --disable-config-udev-kms --disable-config-hal \
+  --with-sha1=libmd \
   --enable-xorg --with-fontrootdir="$FONTROOTDIR"
-xbuild "$XR/driver/xf86-video-fbdev-0.5.0.tar.xz"
-xbuild "$XR/driver/xf86-input-keyboard-2.1.0.tar.xz"
+xbuild "$XR/driver/xf86-video-fbdev-0.5.1.tar.xz"
+xbuild "$XR/driver/xf86-input-keyboard-1.9.0.tar.bz2"
 xbuild "$XR/driver/xf86-input-mouse-1.9.5.tar.xz"
 
 echo "===== X apps + WM + terminal ====="

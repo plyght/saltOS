@@ -360,6 +360,7 @@ xsetroot -solid "#1a3a5a"
 xclock -geometry 160x160-10+10 &
 xterm -geometry 90x30+20+20 -fn fixed -e /bin/bash &
 echo "SALTOS_X_OK xorg + twm + xterm running, all from source, no Debian" > /dev/console
+[ -c /dev/ttyS0 ] && echo "SALTOS_X_OK xorg + twm + xterm running, all from source, no Debian" > /dev/ttyS0
 exec twm
 EOF
 
@@ -371,7 +372,13 @@ export HOME=/root
 export PATH=/usr/local/salt/shims:/usr/bin:/usr/sbin:/bin:/sbin
 export XKB_CONFIG_ROOT=/usr/share/X11/xkb
 sleep 3
-exec startx -- :0 vt1
+xinit /root/.xinitrc -- /usr/bin/Xorg :0 vt1 -logfile /var/log/Xorg.0.log
+rc=$?
+if [ -c /dev/ttyS0 ]; then
+  { echo "xinit exited with status $rc"; tail -n 40 /var/log/Xorg.0.log; } > /dev/ttyS0 2>&1
+fi
+sleep 30
+exit $rc
 EOF
   chmod +x "$ROOTFS/etc/runit/sv/xorg/run"
   mkdir -p "$ROOTFS/etc/runit/runsvdir/current"
