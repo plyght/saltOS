@@ -12,6 +12,13 @@ export FONTROOTDIR="/usr/share/fonts/X11"
 
 find "$X" -name '*.la' -delete 2>/dev/null || true
 
+XLAYOUT=1
+if [ "$(cat "$X/.salt-layout" 2>/dev/null)" != "$XLAYOUT" ]; then
+  echo "X sysroot layout changed; discarding cached sysroot"
+  find "$X" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+  echo "$XLAYOUT" > "$X/.salt-layout"
+fi
+
 xbuild() {
   local url="$1"; shift
   local tarball dir marker
@@ -31,7 +38,7 @@ xbuild() {
     make -j"$JOBS" ${XBUILD_MAKE_ARGS:-}
     make DESTDIR="$X" install ${XBUILD_MAKE_ARGS:-}
   elif [ -f meson.build ]; then
-    meson setup _b --prefix=/usr --buildtype=release "$@"
+    meson setup _b --prefix=/usr --libdir=lib --buildtype=release "$@"
     ninja -C _b -j"$JOBS"
     DESTDIR="$X" ninja -C _b install
   else

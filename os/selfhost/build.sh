@@ -315,6 +315,7 @@ if [ "$EDITION" = "desktop" ]; then
   mkdir -p "$X"
   . "$REPO/os/selfhost/desktop.sh"
   cp -a "$X/." "$ROOTFS/"
+  rm -rf "$ROOTFS/.salt-done" "$ROOTFS/.salt-layout"
   ldconfig -r "$ROOTFS" 2>/dev/null || true
 
   mkdir -p "$ROOTFS/etc/X11"
