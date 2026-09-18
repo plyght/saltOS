@@ -1,8 +1,15 @@
 #ifndef SALT_CLI_HPP
 #define SALT_CLI_HPP
 
+#include <cstdint>
 #include <string>
 #include <vector>
+
+extern "C" {
+#include "salt/repo.h"
+#include "salt/db.h"
+#include "salt/txn.h"
+}
 
 struct Options {
   std::string root = "/";
@@ -23,6 +30,45 @@ struct RepoConf {
   std::string source;
   std::string key;
 };
+
+struct TxnFlags {
+  bool allow_unverified = false;
+  bool download_only = false;
+  bool locked = false;
+  bool cascade = false;
+  bool dry_run = false;
+  std::string lockfile;
+};
+
+struct NativePlan {
+  std::vector<std::string> remove;
+  std::vector<const salt_repo_entry *> install;
+};
+
+struct LockEntry {
+  std::string name;
+  std::string version;
+  int release = 1;
+  std::string arch;
+  std::string sha256;
+  std::string repo;
+  std::string filename;
+};
+
+bool parse_txn_flags(std::vector<std::string> &args, TxnFlags &f, const char *usage);
+void order_by_deps(const salt_repo_index &idx, std::vector<const salt_repo_entry *> &items);
+int native_transaction(const Options &o, const RepoConf &c, salt_ctx *ctx, salt_db *db,
+                       const NativePlan &plan, const char *op, const TxnFlags &f);
+
+std::string lock_path_for(const Options &o, const std::string &override_path);
+bool lock_load(const std::string &path, std::vector<LockEntry> &out, std::string &err);
+int lock_apply(const Options &o, const std::string &path, const TxnFlags &f);
+int lock_diff(const Options &o, const std::string &path, bool quiet);
+int lock_write(const Options &o, const std::string &path, bool update_existing);
+
+int gc_keep_from_conf(const Options &o, std::vector<int64_t> &pinned_out);
+int cmd_gc(const Options &o, const std::vector<std::string> &args);
+int cmd_clean(const Options &o, const std::vector<std::string> &args);
 
 std::string arch_detect();
 std::string path_join(const std::string &a, const std::string &b);

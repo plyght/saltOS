@@ -154,18 +154,25 @@ static void usage() {
           "  update  <stratum>         upgrade packages inside a stratum\n"
           "  <stratum>/<cmd> [args]    run a stratum command (e.g. salt alpine/nvim file)\n\n"
           "package commands:\n"
-          "  sync                 refresh the repository index\n"
-          "  search <term>        search available packages\n"
+          "  sync                 refresh and verify the repository index\n"
+          "  search <term>        search package names and descriptions\n"
           "  install <pkg>...     install packages (use <stratum>/<pkg> for foreign)\n"
-          "  remove <pkg>...      remove packages\n"
+          "      [--allow-unverified] [--download-only] [--dry-run] [--locked [--lockfile F]]\n"
+          "  remove <pkg>...      remove packages ([--cascade] removes dependents too)\n"
           "  update [stratum...]  upgrade the host, or named strata\n"
+          "      [--download-only] [--allow-unverified] [--dry-run]\n"
           "  rollback             roll back the last transaction\n"
-          "  deployments          list transactions/deployments\n"
-          "  verify [pkg]         verify installed files against the database\n"
-          "  query <pkg>          show package details\n"
+          "  history              list transactions/deployments (alias: deployments)\n"
+          "  verify [pkg]         compare installed files against the package manifest\n"
+          "  info <pkg>           show package details (alias: query)\n"
           "  files <pkg>          list files owned by a package\n"
           "  owner <path>         show which package owns a path\n"
-          "  list                 list installed packages\n\n"
+          "  list                 list packages [--installed | --upgradable | --available]\n"
+          "  clean [--all]        remove downloaded package artifacts from the cache\n"
+          "  lock                 write etc/salt/system.lock.toml pinning every package\n"
+          "  lock apply [FILE]    reproduce a lockfile exactly (fails on hash mismatch)\n"
+          "  lock diff [FILE]     compare the live system with a lockfile\n"
+          "  config <subcommand>  declarative config: show, apply, diff, history, rollback, gc\n\n"
           "maintainer commands:\n"
           "  build <recipe-dir>   build a package from a recipe\n"
           "  lint <recipe-dir>    lint a recipe\n"
@@ -203,9 +210,11 @@ static int dispatch(const Options &o, const std::string &cmd,
   if (cmd == "remove") return cmd_remove(o, args);
   if (cmd == "update") return cmd_update(o, args);
   if (cmd == "rollback") return cmd_rollback(o, args);
-  if (cmd == "deployments") return cmd_deployments(o, args);
+  if (cmd == "deployments" || cmd == "history") return cmd_deployments(o, args);
   if (cmd == "verify") return cmd_verify(o, args);
-  if (cmd == "query") return cmd_query(o, args);
+  if (cmd == "query" || cmd == "info" || cmd == "show") return cmd_query(o, args);
+  if (cmd == "clean") return cmd_clean(o, args);
+  if (cmd == "gc") return cmd_gc(o, args);
   if (cmd == "files") return cmd_files(o, args);
   if (cmd == "owner") return cmd_owner(o, args);
   if (cmd == "which") return cmd_which(o, args);
@@ -254,7 +263,7 @@ static bool cmd_needs_root(const std::string &cmd) {
   static const char *root_cmds[] = {
       "pkg",     "pm",       "stratum",  "expose",  "unexpose",
       "expose-desktop", "expose-all", "service", "install",
-      "remove", "update", "sync", "rollback", "lock", nullptr};
+      "remove", "update", "sync", "rollback", "lock", "clean", "gc", nullptr};
   for (int i = 0; root_cmds[i]; i++)
     if (cmd == root_cmds[i]) return true;
   return false;
