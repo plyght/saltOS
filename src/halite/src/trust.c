@@ -120,13 +120,13 @@ static int lint_common(const char *recipe_path, salt_findings *out, bool strict)
   if (!url || !url[0]) salt_findings_push(out, SALT_RISK_BLOCK, "source-url", "missing source.url");
 
   const char *sha = salt_toml_string(t, "source.sha256", NULL);
+  bool local_src = strncmp(url ? url : "", "file://", 7) == 0;
   if (!sha || !sha[0]) {
-    salt_findings_push(out, SALT_RISK_BLOCK, "source-sha", "missing source.sha256");
-  } else if (strcmp(sha, "TODO-sha256") == 0) {
-    salt_findings_push(out, strict ? SALT_RISK_BLOCK : SALT_RISK_WARN, "source-sha-todo",
-                       "source.sha256 is a placeholder");
-  } else if (!is_hex64(sha) && strncmp(url ? url : "", "file://", 7) != 0) {
-    salt_findings_push(out, SALT_RISK_WARN, "source-sha-fmt", "source.sha256 is not 64 hex chars");
+    if (!local_src)
+      salt_findings_push(out, SALT_RISK_BLOCK, "source-sha", "missing source.sha256");
+  } else if (!is_hex64(sha)) {
+    salt_findings_push(out, SALT_RISK_BLOCK, "source-sha-fmt",
+                       "source.sha256 is not a 64 hex digit checksum");
   }
 
   const salt_toml *bdeps = salt_toml_path(t, "build.deps");

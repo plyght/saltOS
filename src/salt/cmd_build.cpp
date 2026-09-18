@@ -66,6 +66,13 @@ int cmd_lint(const Options &o, const std::vector<std::string> &args) {
   return blocked ? 1 : 0;
 }
 
+static bool is_sha256_hex(const std::string &s) {
+  if (s.size() != SALT_SHA256_HEXLEN) return false;
+  for (char c : s)
+    if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+  return true;
+}
+
 static std::string recipe_file(const std::string &dir) {
   std::string p = dir;
   if (salt_is_dir(dir.c_str())) p = path_join(dir, "recipe.toml");
@@ -148,6 +155,24 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
 
   std::string localpath = url.rfind("file://", 0) == 0 ? url.substr(7) : "";
   bool local = !localpath.empty() && salt_is_dir(localpath.c_str());
+  if (url.empty()) {
+    fprintf(stderr, "salt: recipe has no source.url\n");
+    salt_toml_free(t);
+    return 1;
+  }
+  if (local) {
+    if (!sha.empty()) {
+      fprintf(stderr, "salt: source.sha256 is not applicable to a local source directory (%s)\n",
+              localpath.c_str());
+      salt_toml_free(t);
+      return 1;
+    }
+  } else if (!is_sha256_hex(sha)) {
+    fprintf(stderr, "salt: source.sha256 must be 64 lowercase hex digits, got '%s'\n",
+            sha.c_str());
+    salt_toml_free(t);
+    return 1;
+  }
   if (local) {
     std::string srcpath = localpath;
     std::string copy = "cp -a '" + srcpath + "/.' '" + src + "/'";
@@ -164,18 +189,13 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
       salt_toml_free(t);
       return 1;
     }
-    if (!sha.empty() && sha != "TODO-sha256") {
-      char hex[SALT_SHA256_HEXLEN + 1];
-      if (salt_sha256_file(tarball.c_str(), hex) != SALT_OK || sha != hex) {
-        fprintf(stderr, "salt: SOURCE HASH MISMATCH (expected %s, got %s)\n", sha.c_str(), hex);
-        salt_toml_free(t);
-        return 1;
-      }
-      printf("==> source hash verified\n");
-    } else {
-      fprintf(stderr, "warning: source hash not verified (%s)\n",
-              sha.empty() ? "missing" : "placeholder");
+    char hex[SALT_SHA256_HEXLEN + 1];
+    if (salt_sha256_file(tarball.c_str(), hex) != SALT_OK || sha != hex) {
+      fprintf(stderr, "salt: SOURCE HASH MISMATCH (expected %s, got %s)\n", sha.c_str(), hex);
+      salt_toml_free(t);
+      return 1;
     }
+    printf("==> source hash verified\n");
     std::string ex = "tar -C '" + src + "' -xf '" + tarball + "' 2>/dev/null || true";
     system(ex.c_str());
     std::string strip = "set -- '" + src +

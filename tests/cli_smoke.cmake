@@ -30,7 +30,6 @@ license = \"MIT\"
 
 [source]
 url = \"file://${SRC}\"
-sha256 = \"TODO-sha256\"
 
 [build]
 system = \"custom\"
