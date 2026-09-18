@@ -1,6 +1,6 @@
 name = "ncurses"
 version = "6.5"
-release = 1
+release = 2
 summary = "Library for terminal-independent text user interfaces"
 license = "MIT"
 arch = ["x86_64", "aarch64"]
@@ -24,6 +24,11 @@ script = """
     --enable-widec
 make -j"$SALT_JOBS"
 make DESTDIR="$SALT_DEST" install
+for lib in ncurses form panel menu; do
+    ln -sf lib${lib}w.so "$SALT_DEST/usr/lib/lib${lib}.so"
+    ln -sf ${lib}w.pc "$SALT_DEST/usr/lib/pkgconfig/${lib}.pc"
+done
+ln -sf libncursesw.so "$SALT_DEST/usr/lib/libcurses.so"
 """
 
 [package]

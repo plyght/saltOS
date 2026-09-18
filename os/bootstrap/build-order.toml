@@ -18,6 +18,7 @@ packages = [
 packages = [
   "m4",
   "ncurses",
+  "readline",
   "bash",
   "coreutils",
   "diffutils",

@@ -1,6 +1,6 @@
 name = "linux"
 version = "6.12.30"
-release = 1
+release = 2
 summary = "Linux kernel"
 license = "GPL-2.0-only"
 arch = ["x86_64", "aarch64"]
@@ -36,6 +36,7 @@ install -Dm644 "$kimage" "$SALT_DEST/boot/vmlinuz-$kver"
 install -Dm644 .config "$SALT_DEST/boot/config-$kver"
 install -Dm644 System.map "$SALT_DEST/boot/System.map-$kver"
 make ARCH="$karch" INSTALL_MOD_PATH="$SALT_DEST/usr" modules_install
+make ARCH="$karch" INSTALL_HDR_PATH="$SALT_DEST/usr" headers_install
 """
 
 [package]

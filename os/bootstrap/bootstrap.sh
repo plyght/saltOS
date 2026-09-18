@@ -83,9 +83,34 @@ build_one() {
   fi
 }
 
+sysroot_toolchain_env() {
+  for tool in gcc g++ ar ranlib strip nm objcopy objdump; do
+    if [ ! -x "$SYSROOT/usr/bin/$tool" ]; then
+      echo "sysroot toolchain incomplete: missing $SYSROOT/usr/bin/$tool (run the cross-toolchain stage first)" >&2
+      return 1
+    fi
+  done
+  export CC="$SYSROOT/usr/bin/gcc --sysroot=$SYSROOT"
+  export CXX="$SYSROOT/usr/bin/g++ --sysroot=$SYSROOT"
+  export CPP="$SYSROOT/usr/bin/gcc --sysroot=$SYSROOT -E"
+  export AR="$SYSROOT/usr/bin/ar"
+  export RANLIB="$SYSROOT/usr/bin/ranlib"
+  export STRIP="$SYSROOT/usr/bin/strip"
+  export NM="$SYSROOT/usr/bin/nm"
+  export OBJCOPY="$SYSROOT/usr/bin/objcopy"
+  export OBJDUMP="$SYSROOT/usr/bin/objdump"
+  export PKG_CONFIG_SYSROOT_DIR="$SYSROOT"
+  export PKG_CONFIG_LIBDIR="$SYSROOT/usr/lib/pkgconfig:$SYSROOT/usr/share/pkgconfig"
+  export ACLOCAL_PATH="$SYSROOT/usr/share/aclocal"
+}
+
 run_stage() {
   stage="$1"
   log "=== stage: $stage ==="
+  case "$stage" in
+    cross-toolchain) ;;
+    *) sysroot_toolchain_env ;;
+  esac
   stage_packages "$stage" | while IFS= read -r pkg; do
     [ -n "$pkg" ] || continue
     build_one "$pkg"
