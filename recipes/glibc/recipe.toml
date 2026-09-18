@@ -1,13 +1,13 @@
 name = "glibc"
-version = "2.39"
+version = "2.41"
 release = 1
 summary = "GNU C Library"
 license = "LGPL-2.1-or-later"
 arch = ["x86_64", "aarch64"]
 
 [source]
-url = "https://ftp.gnu.org/gnu/glibc/glibc-2.39.tar.xz"
-sha256 = "f77bd47cf8170c57365ae7bf86696c118adb3b120d3259c64c502d3dc1e2d926"
+url = "https://ftp.gnu.org/gnu/glibc/glibc-2.41.tar.xz"
+sha256 = "a5a26b22f545d6b7d7b3dd828e11e428f24f4fac43c934fb071b6a7d0828e901"
 
 [build]
 system = "autotools"

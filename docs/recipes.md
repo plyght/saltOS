@@ -211,15 +211,15 @@ configure flags. It shows how `SALT_JOBS` and `SALT_DEST` are used:
 
 ```toml
 name = "glibc"
-version = "2.39"
+version = "2.41"
 release = 1
 summary = "GNU C Library"
 license = "LGPL-2.1-or-later"
 arch = ["x86_64", "aarch64"]
 
 [source]
-url = "https://ftp.gnu.org/gnu/glibc/glibc-2.39.tar.xz"
-sha256 = "f77bd47cf8170c57365ae7f8e575d6a1bdde2da767bcb0c34a0e9d8bde5cc41a"
+url = "https://ftp.gnu.org/gnu/glibc/glibc-2.41.tar.xz"
+sha256 = "a5a26b22f545d6b7d7b3dd828e11e428f24f4fac43c934fb071b6a7d0828e901"
 
 [build]
 system = "autotools"
