@@ -8,6 +8,7 @@
 void salt_pkg_meta_init(salt_pkg_meta *m) {
   memset(m, 0, sizeof(*m));
   salt_strlist_init(&m->deps);
+  salt_strlist_init(&m->conflicts);
 }
 
 void salt_pkg_meta_free(salt_pkg_meta *m) {
@@ -19,6 +20,7 @@ void salt_pkg_meta_free(salt_pkg_meta *m) {
   free(m->repro_status);
   free(m->repro_reason);
   salt_strlist_free(&m->deps);
+  salt_strlist_free(&m->conflicts);
   memset(m, 0, sizeof(*m));
 }
 
@@ -65,6 +67,7 @@ int salt_pkg_meta_to_toml(const salt_pkg_meta *m, salt_buf *out) {
   toml_escape(out, m->license ? m->license : "");
   salt_buf_append_str(out, "\n");
   emit_str_array(out, "deps", &m->deps);
+  if (m->conflicts.len) emit_str_array(out, "conflicts", &m->conflicts);
   salt_buf_append_str(out, "\n[reproducibility]\n");
   salt_buf_append_str(out, "status = ");
   toml_escape(out, m->repro_status ? m->repro_status : "unverified");
@@ -91,6 +94,7 @@ int salt_pkg_meta_from_toml(const char *text, size_t len, salt_pkg_meta *out) {
   const char *reason = salt_toml_string(t, "reproducibility.reason", NULL);
   out->repro_reason = reason ? salt_strdup(reason) : NULL;
   salt_toml_string_array(t, "deps", &out->deps);
+  salt_toml_string_array(t, "conflicts", &out->conflicts);
   salt_toml_free(t);
   return SALT_OK;
 }

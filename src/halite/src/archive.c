@@ -74,6 +74,8 @@ int salt_archive_build_from_dir(const char *staging_dir, const salt_pkg_meta *me
   out->meta.repro_status = salt_strdup(meta->repro_status ? meta->repro_status : "unverified");
   out->meta.repro_reason = meta->repro_reason ? salt_strdup(meta->repro_reason) : NULL;
   for (size_t i = 0; i < meta->deps.len; i++) salt_strlist_push(&out->meta.deps, meta->deps.items[i]);
+  for (size_t i = 0; i < meta->conflicts.len; i++)
+    salt_strlist_push(&out->meta.conflicts, meta->conflicts.items[i]);
 
   salt_strlist paths;
   salt_strlist_init(&paths);

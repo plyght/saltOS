@@ -23,9 +23,50 @@ static const char *SCHEMA =
     "CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);"
     "CREATE TABLE IF NOT EXISTS deps(name TEXT, dep TEXT);"
     "CREATE INDEX IF NOT EXISTS idx_deps_dep ON deps(dep);"
+    "CREATE TABLE IF NOT EXISTS conflicts(name TEXT, conflict TEXT);"
+    "CREATE INDEX IF NOT EXISTS idx_conflicts_conflict ON conflicts(conflict);"
     "CREATE TABLE IF NOT EXISTS transactions("
     " id INTEGER PRIMARY KEY AUTOINCREMENT, op TEXT, status TEXT,"
     " time INTEGER, snapshot TEXT);";
+
+#define PKG_COLUMNS \
+  "name,version,release,arch,repo,sig_status,install_time,txn_id,summary,license,filename,sha256"
+
+static bool table_has_column(sqlite3 *h, const char *schema, const char *table, const char *col) {
+  salt_buf sql;
+  salt_buf_init(&sql);
+  salt_buf_printf(&sql, "PRAGMA %s.table_info(%s);", schema, table);
+  sqlite3_stmt *st;
+  bool found = false;
+  if (sqlite3_prepare_v2(h, sql.data, -1, &st, NULL) == SQLITE_OK) {
+    while (sqlite3_step(st) == SQLITE_ROW) {
+      const char *name = (const char *)sqlite3_column_text(st, 1);
+      if (name && strcmp(name, col) == 0) found = true;
+    }
+    sqlite3_finalize(st);
+  }
+  salt_buf_free(&sql);
+  return found;
+}
+
+static int migrate(sqlite3 *h) {
+  static const char *added[][2] = {{"filename", "TEXT"}, {"sha256", "TEXT"}};
+  for (size_t i = 0; i < sizeof(added) / sizeof(added[0]); i++) {
+    if (table_has_column(h, "main", "packages", added[i][0])) continue;
+    salt_buf sql;
+    salt_buf_init(&sql);
+    salt_buf_printf(&sql, "ALTER TABLE packages ADD COLUMN %s %s;", added[i][0], added[i][1]);
+    char *err = NULL;
+    int rc = sqlite3_exec(h, sql.data, NULL, NULL, &err);
+    salt_buf_free(&sql);
+    if (rc != SQLITE_OK) {
+      salt_set_error("db migrate: %s", err ? err : "?");
+      sqlite3_free(err);
+      return SALT_ERR;
+    }
+  }
+  return SALT_OK;
+}
 
 void salt_db_pkglist_init(salt_db_pkglist *l) {
   l->items = NULL;
@@ -39,6 +80,10 @@ void salt_db_pkg_free_fields(salt_db_pkg *p) {
   free(p->arch);
   free(p->repo);
   free(p->sig_status);
+  free(p->summary);
+  free(p->license);
+  free(p->filename);
+  free(p->sha256);
   memset(p, 0, sizeof(*p));
 }
 
@@ -83,6 +128,11 @@ int salt_db_open(const char *path, salt_db **out) {
   if (sqlite3_exec(db->h, SCHEMA, NULL, NULL, &err) != SQLITE_OK) {
     salt_set_error("db schema: %s", err ? err : "?");
     sqlite3_free(err);
+    sqlite3_close(db->h);
+    free(db);
+    return SALT_ERR;
+  }
+  if (migrate(db->h) != SALT_OK) {
     sqlite3_close(db->h);
     free(db);
     return SALT_ERR;
@@ -175,6 +225,10 @@ int salt_db_record_install(salt_db *db, const salt_pkg_meta *meta, const salt_ma
   sqlite3_bind_text(st, 1, meta->name, -1, SQLITE_TRANSIENT);
   sqlite3_step(st);
   sqlite3_finalize(st);
+  sqlite3_prepare_v2(db->h, "DELETE FROM conflicts WHERE name=?;", -1, &st, NULL);
+  sqlite3_bind_text(st, 1, meta->name, -1, SQLITE_TRANSIENT);
+  sqlite3_step(st);
+  sqlite3_finalize(st);
 
   sqlite3_prepare_v2(db->h,
                      "INSERT INTO packages(name,version,release,arch,summary,license,repo,"
@@ -211,15 +265,53 @@ int salt_db_record_install(salt_db *db, const salt_pkg_meta *meta, const salt_ma
     sqlite3_bind_text(st, 5, e->sha256 ? e->sha256 : "", -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(st, 6, tf, -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(st, 7, e->linkname ? e->linkname : "", -1, SQLITE_TRANSIENT);
-    sqlite3_step(st);
+    rc = sqlite3_step(st);
     sqlite3_finalize(st);
+    if (rc != SQLITE_DONE) {
+      salt_set_error("db install file %s: %s", e->path, sqlite3_errmsg(db->h));
+      return SALT_ERR;
+    }
   }
   for (size_t i = 0; i < meta->deps.len; i++) {
     sqlite3_prepare_v2(db->h, "INSERT INTO deps(name,dep) VALUES(?,?);", -1, &st, NULL);
     sqlite3_bind_text(st, 1, meta->name, -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(st, 2, meta->deps.items[i], -1, SQLITE_TRANSIENT);
-    sqlite3_step(st);
+    rc = sqlite3_step(st);
     sqlite3_finalize(st);
+    if (rc != SQLITE_DONE) {
+      salt_set_error("db install dep %s: %s", meta->deps.items[i], sqlite3_errmsg(db->h));
+      return SALT_ERR;
+    }
+  }
+  for (size_t i = 0; i < meta->conflicts.len; i++) {
+    sqlite3_prepare_v2(db->h, "INSERT INTO conflicts(name,conflict) VALUES(?,?);", -1, &st, NULL);
+    sqlite3_bind_text(st, 1, meta->name, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 2, meta->conflicts.items[i], -1, SQLITE_TRANSIENT);
+    rc = sqlite3_step(st);
+    sqlite3_finalize(st);
+    if (rc != SQLITE_DONE) {
+      salt_set_error("db install conflict %s: %s", meta->conflicts.items[i],
+                     sqlite3_errmsg(db->h));
+      return SALT_ERR;
+    }
+  }
+  return SALT_OK;
+}
+
+int salt_db_set_pkg_artifact(salt_db *db, const char *name, const char *filename,
+                             const char *sha256) {
+  sqlite3_stmt *st;
+  if (sqlite3_prepare_v2(db->h, "UPDATE packages SET filename=?,sha256=? WHERE name=?;", -1, &st,
+                         NULL) != SQLITE_OK)
+    return SALT_ERR;
+  sqlite3_bind_text(st, 1, filename ? filename : "", -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(st, 2, sha256 ? sha256 : "", -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(st, 3, name, -1, SQLITE_TRANSIENT);
+  int rc = sqlite3_step(st);
+  sqlite3_finalize(st);
+  if (rc != SQLITE_DONE) {
+    salt_set_error("db set artifact %s: %s", name, sqlite3_errmsg(db->h));
+    return SALT_ERR;
   }
   return SALT_OK;
 }
@@ -232,6 +324,10 @@ int salt_db_record_remove(salt_db *db, const char *name, int64_t txn_id) {
   sqlite3_step(st);
   sqlite3_finalize(st);
   sqlite3_prepare_v2(db->h, "DELETE FROM deps WHERE name=?;", -1, &st, NULL);
+  sqlite3_bind_text(st, 1, name, -1, SQLITE_TRANSIENT);
+  sqlite3_step(st);
+  sqlite3_finalize(st);
+  sqlite3_prepare_v2(db->h, "DELETE FROM conflicts WHERE name=?;", -1, &st, NULL);
   sqlite3_bind_text(st, 1, name, -1, SQLITE_TRANSIENT);
   sqlite3_step(st);
   sqlite3_finalize(st);
@@ -252,14 +348,19 @@ static void fill_pkg(sqlite3_stmt *st, salt_db_pkg *p) {
   p->sig_status = salt_strdup((const char *)sqlite3_column_text(st, 5));
   p->install_time = sqlite3_column_int64(st, 6);
   p->txn_id = sqlite3_column_int64(st, 7);
+  const char *summary = (const char *)sqlite3_column_text(st, 8);
+  const char *license = (const char *)sqlite3_column_text(st, 9);
+  const char *filename = (const char *)sqlite3_column_text(st, 10);
+  const char *sha256 = (const char *)sqlite3_column_text(st, 11);
+  p->summary = salt_strdup(summary ? summary : "");
+  p->license = salt_strdup(license ? license : "");
+  p->filename = salt_strdup(filename ? filename : "");
+  p->sha256 = salt_strdup(sha256 ? sha256 : "");
 }
 
 int salt_db_get_pkg(salt_db *db, const char *name, salt_db_pkg *out) {
   sqlite3_stmt *st;
-  sqlite3_prepare_v2(db->h,
-                     "SELECT name,version,release,arch,repo,sig_status,install_time,txn_id "
-                     "FROM packages WHERE name=?;",
-                     -1, &st, NULL);
+  sqlite3_prepare_v2(db->h, "SELECT " PKG_COLUMNS " FROM packages WHERE name=?;", -1, &st, NULL);
   sqlite3_bind_text(st, 1, name, -1, SQLITE_TRANSIENT);
   int rc = sqlite3_step(st);
   if (rc == SQLITE_ROW) {
@@ -282,10 +383,7 @@ bool salt_db_is_installed(salt_db *db, const char *name) {
 
 int salt_db_list_installed(salt_db *db, salt_db_pkglist *out) {
   sqlite3_stmt *st;
-  sqlite3_prepare_v2(db->h,
-                     "SELECT name,version,release,arch,repo,sig_status,install_time,txn_id "
-                     "FROM packages ORDER BY name;",
-                     -1, &st, NULL);
+  sqlite3_prepare_v2(db->h, "SELECT " PKG_COLUMNS " FROM packages ORDER BY name;", -1, &st, NULL);
   while (sqlite3_step(st) == SQLITE_ROW) {
     salt_db_pkg p;
     fill_pkg(st, &p);
@@ -298,8 +396,8 @@ int salt_db_list_installed(salt_db *db, salt_db_pkglist *out) {
 int salt_db_search(salt_db *db, const char *term, salt_db_pkglist *out) {
   sqlite3_stmt *st;
   sqlite3_prepare_v2(db->h,
-                     "SELECT name,version,release,arch,repo,sig_status,install_time,txn_id "
-                     "FROM packages WHERE name LIKE ?1 OR summary LIKE ?1 ORDER BY name;",
+                     "SELECT " PKG_COLUMNS
+                     " FROM packages WHERE name LIKE ?1 OR summary LIKE ?1 ORDER BY name;",
                      -1, &st, NULL);
   salt_buf like;
   salt_buf_init(&like);
@@ -384,20 +482,37 @@ int salt_db_vacuum_into(salt_db *db, const char *path) {
 }
 
 int salt_db_restore_state_from(salt_db *db, const char *before_path) {
+  sqlite3_stmt *st;
+  if (sqlite3_prepare_v2(db->h, "ATTACH ? AS before;", -1, &st, NULL) != SQLITE_OK) {
+    salt_set_error("db attach prepare: %s", sqlite3_errmsg(db->h));
+    return SALT_ERR;
+  }
+  sqlite3_bind_text(st, 1, before_path, -1, SQLITE_TRANSIENT);
+  int src = sqlite3_step(st);
+  sqlite3_finalize(st);
+  if (src != SQLITE_DONE) {
+    salt_set_error("db attach %s: %s", before_path, sqlite3_errmsg(db->h));
+    return SALT_ERR;
+  }
+  bool full = table_has_column(db->h, "before", "packages", "sha256");
+  bool has_conflicts = table_has_column(db->h, "before", "conflicts", "conflict");
+  const char *cols = full ? PKG_COLUMNS : "name,version,release,arch,repo,sig_status,install_time,txn_id";
   salt_buf sql;
   salt_buf_init(&sql);
   salt_buf_printf(&sql,
                   "BEGIN IMMEDIATE;"
-                  "DELETE FROM packages;DELETE FROM files;DELETE FROM deps;"
-                  "ATTACH '%s' AS before;"
-                  "INSERT INTO packages SELECT * FROM before.packages;"
+                  "DELETE FROM packages;DELETE FROM files;DELETE FROM deps;DELETE FROM conflicts;"
+                  "INSERT INTO packages(%s) SELECT %s FROM before.packages;"
                   "INSERT INTO files SELECT * FROM before.files;"
                   "INSERT INTO deps SELECT * FROM before.deps;"
-                  "DETACH before;"
+                  "%s"
                   "COMMIT;",
-                  before_path);
+                  cols, cols,
+                  has_conflicts ? "INSERT INTO conflicts SELECT * FROM before.conflicts;" : "");
   int rc = exec(db, sql.data);
   salt_buf_free(&sql);
+  if (rc != SALT_OK) sqlite3_exec(db->h, "ROLLBACK;", NULL, NULL, NULL);
+  sqlite3_exec(db->h, "DETACH before;", NULL, NULL, NULL);
   return rc;
 }
 
@@ -454,7 +569,7 @@ int salt_db_last_ok_txn(salt_db *db, int64_t *id_out, char **snapshot_out) {
   sqlite3_stmt *st;
   sqlite3_prepare_v2(db->h,
                      "SELECT id,snapshot FROM transactions WHERE status='ok' "
-                     "ORDER BY id DESC LIMIT 1;",
+                     "AND op<>'rollback' ORDER BY id DESC LIMIT 1;",
                      -1, &st, NULL);
   int rc = sqlite3_step(st);
   if (rc == SQLITE_ROW) {
@@ -472,6 +587,50 @@ int salt_db_revdeps(salt_db *db, const char *name, salt_strlist *out) {
   sqlite3_stmt *st;
   sqlite3_prepare_v2(db->h, "SELECT DISTINCT name FROM deps WHERE dep=? ORDER BY name;", -1, &st,
                      NULL);
+  sqlite3_bind_text(st, 1, name, -1, SQLITE_TRANSIENT);
+  while (sqlite3_step(st) == SQLITE_ROW)
+    salt_strlist_push(out, (const char *)sqlite3_column_text(st, 0));
+  sqlite3_finalize(st);
+  return SALT_OK;
+}
+
+int salt_db_pkg_deps(salt_db *db, const char *name, salt_strlist *out) {
+  sqlite3_stmt *st;
+  sqlite3_prepare_v2(db->h, "SELECT dep FROM deps WHERE name=? ORDER BY dep;", -1, &st, NULL);
+  sqlite3_bind_text(st, 1, name, -1, SQLITE_TRANSIENT);
+  while (sqlite3_step(st) == SQLITE_ROW)
+    salt_strlist_push(out, (const char *)sqlite3_column_text(st, 0));
+  sqlite3_finalize(st);
+  return SALT_OK;
+}
+
+int salt_db_snapshot_filenames(const char *path, salt_strlist *out) {
+  sqlite3 *h = NULL;
+  if (sqlite3_open_v2(path, &h, SQLITE_OPEN_READONLY, NULL) != SQLITE_OK) {
+    sqlite3_close(h);
+    return SALT_ERR_IO;
+  }
+  if (!table_has_column(h, "main", "packages", "filename")) {
+    sqlite3_close(h);
+    return SALT_OK;
+  }
+  sqlite3_stmt *st;
+  if (sqlite3_prepare_v2(h, "SELECT filename FROM packages WHERE filename<>'';", -1, &st, NULL) ==
+      SQLITE_OK) {
+    while (sqlite3_step(st) == SQLITE_ROW) {
+      const char *f = (const char *)sqlite3_column_text(st, 0);
+      if (f && f[0] && !salt_strlist_contains(out, f)) salt_strlist_push(out, f);
+    }
+    sqlite3_finalize(st);
+  }
+  sqlite3_close(h);
+  return SALT_OK;
+}
+
+int salt_db_conflicts_with(salt_db *db, const char *name, salt_strlist *out) {
+  sqlite3_stmt *st;
+  sqlite3_prepare_v2(db->h, "SELECT DISTINCT name FROM conflicts WHERE conflict=? ORDER BY name;",
+                     -1, &st, NULL);
   sqlite3_bind_text(st, 1, name, -1, SQLITE_TRANSIENT);
   while (sqlite3_step(st) == SQLITE_ROW)
     salt_strlist_push(out, (const char *)sqlite3_column_text(st, 0));
