@@ -157,6 +157,87 @@ static void test_tar(void) {
   salt_remove_recursive(d);
 }
 
+static void tar_build(salt_buf *out, const salt_tar_entry *entries, size_t n) {
+  salt_buf_init(out);
+  salt_tar_writer *w = salt_tar_writer_new(out);
+  for (size_t i = 0; i < n; i++) salt_tar_writer_add(w, &entries[i]);
+  salt_tar_writer_finish(w);
+  salt_tar_writer_free(w);
+}
+
+static void test_tar_confinement(void) {
+  CHECK(salt_path_is_confined("usr/bin/x"), "confined plain path");
+  CHECK(salt_path_is_confined("./usr/./bin"), "confined dot components");
+  CHECK(!salt_path_is_confined("/etc/passwd"), "reject absolute path");
+  CHECK(!salt_path_is_confined("../x"), "reject leading dotdot");
+  CHECK(!salt_path_is_confined("usr/../../x"), "reject inner dotdot");
+  CHECK(!salt_path_is_confined("usr/.."), "reject trailing dotdot");
+  CHECK(!salt_path_is_confined(""), "reject empty path");
+  CHECK(!salt_path_is_confined("."), "reject bare dot");
+
+  char tmp[] = "/tmp/salt_tarx_XXXXXX";
+  char *d = mkdtemp(tmp);
+  CHECK(d != NULL, "mkdtemp");
+  char *outside = salt_join_path(d, "outside");
+  char *dest = salt_join_path(d, "root");
+  salt_mkdirs(outside, 0755);
+  salt_mkdirs(dest, 0755);
+  char *victim = salt_join_path(outside, "pwned");
+
+  salt_buf a;
+  salt_tar_entry e1 = {"../outside/pwned", SALT_TAR_FILE, 0644, 3, NULL, "bad"};
+  tar_build(&a, &e1, 1);
+  CHECK(salt_tar_extract(a.data, a.len, dest, NULL) != SALT_OK, "tar rejects ../ entry");
+  CHECK(!salt_path_exists(victim), "tar ../ did not write outside root");
+  salt_buf_free(&a);
+
+  salt_tar_entry e2 = {"/tmp/salt_abs_pwned", SALT_TAR_FILE, 0644, 3, NULL, "bad"};
+  tar_build(&a, &e2, 1);
+  CHECK(salt_tar_extract(a.data, a.len, dest, NULL) != SALT_OK, "tar rejects absolute entry");
+  CHECK(!salt_path_exists("/tmp/salt_abs_pwned"), "tar absolute did not write");
+  salt_buf_free(&a);
+
+  salt_tar_entry e3[] = {
+      {"usr/lib/evil", SALT_TAR_SYMLINK, 0777, 0, outside, NULL},
+      {"usr/lib/evil/pwned", SALT_TAR_FILE, 0644, 3, NULL, "bad"},
+  };
+  tar_build(&a, e3, 2);
+  CHECK(salt_tar_extract(a.data, a.len, dest, NULL) != SALT_OK, "tar rejects write through planted symlink");
+  CHECK(!salt_path_exists(victim), "tar symlink hop did not write outside root");
+  salt_buf_free(&a);
+
+  salt_tar_entry e4[] = {
+      {"usr/share", SALT_TAR_DIR, 0755, 0, NULL, NULL},
+      {"usr/lib/inside", SALT_TAR_SYMLINK, 0777, 0, "../share", NULL},
+      {"usr/lib/inside/ok.txt", SALT_TAR_FILE, 0644, 2, NULL, "ok"},
+      {"bin", SALT_TAR_SYMLINK, 0777, 0, "usr/bin", NULL},
+      {"./usr/bin/tool", SALT_TAR_FILE, 0755, 2, NULL, "ok"},
+  };
+  tar_build(&a, e4, 5);
+  CHECK(salt_tar_extract(a.data, a.len, dest, NULL) == SALT_OK, "tar allows in-root relative symlink hop");
+  char *okp = salt_join_path(dest, "usr/share/ok.txt");
+  char *toolp = salt_join_path(dest, "bin/tool");
+  CHECK(salt_path_exists(okp), "in-root symlink hop wrote inside root");
+  CHECK(salt_path_exists(toolp), "./ prefixed entry extracted");
+  free(okp);
+  free(toolp);
+  salt_buf_free(&a);
+
+  char trunc[1024];
+  static char big[4096];
+  memset(trunc, 0, sizeof(trunc));
+  salt_tar_entry e5 = {"usr/big", SALT_TAR_FILE, 0644, sizeof(big), NULL, big};
+  tar_build(&a, &e5, 1);
+  memcpy(trunc, a.data, 512);
+  CHECK(salt_tar_extract(trunc, sizeof(trunc), dest, NULL) != SALT_OK, "tar rejects size past end of archive");
+  salt_buf_free(&a);
+
+  free(victim);
+  free(outside);
+  free(dest);
+  salt_remove_recursive(d);
+}
+
 static void test_archive_db(void) {
   char tmp[] = "/tmp/salt_arch_XXXXXX";
   char *d = mkdtemp(tmp);
@@ -329,6 +410,7 @@ int main(void) {
   test_toml();
   test_pkg_roundtrip();
   test_tar();
+  test_tar_confinement();
   test_archive_db();
   test_repo();
   test_trust();

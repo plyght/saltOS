@@ -160,6 +160,14 @@ int salt_tar_read(const void *data, size_t len, salt_tar_cb cb, void *ud) {
     p += TAR_BLOCK;
     uint64_t size = parse_octal(h + 124, 12);
     char typeflag = h[156];
+    bool has_data = typeflag == 'L' || typeflag == 'K' || typeflag == SALT_TAR_FILE ||
+                    typeflag == '0' || typeflag == '\0';
+    if (has_data && size > (uint64_t)(end - p)) {
+      free(longname);
+      free(longlink);
+      salt_set_error("tar: entry size exceeds archive");
+      return SALT_ERR_FORMAT;
+    }
     if (typeflag == 'L') {
       free(longname);
       longname = malloc(size + 1);
@@ -226,22 +234,83 @@ typedef struct {
   salt_strlist *installed;
 } extract_ctx;
 
+static const char *strip_dot_slash(const char *path) {
+  while (path[0] == '.' && path[1] == '/') {
+    path += 2;
+    while (*path == '/') path++;
+  }
+  return path;
+}
+
+static bool existing_ancestor_within(const char *dest, const char *path) {
+  char *dup = salt_strdup(path);
+  if (!dup) return false;
+  struct stat st;
+  while (lstat(dup, &st) != 0) {
+    char *slash = strrchr(dup, '/');
+    if (!slash || slash == dup) {
+      free(dup);
+      return salt_path_within_root(dest, ".");
+    }
+    *slash = '\0';
+  }
+  bool ok = salt_path_within_root(dest, dup);
+  free(dup);
+  return ok;
+}
+
+static int confine_parent(const char *dest, const char *full) {
+  char *dup = salt_strdup(full);
+  if (!dup) return SALT_ERR;
+  char *slash = strrchr(dup, '/');
+  const char *parent = dest;
+  if (slash && slash != dup) {
+    *slash = '\0';
+    if (!existing_ancestor_within(dest, dup)) {
+      salt_set_error("tar: %s escapes the install root", full);
+      free(dup);
+      return SALT_ERR_FORMAT;
+    }
+    if (salt_mkdirs(dup, 0755) != SALT_OK) {
+      free(dup);
+      return SALT_ERR_IO;
+    }
+    parent = dup;
+  }
+  bool ok = salt_path_within_root(dest, parent);
+  free(dup);
+  if (!ok) {
+    salt_set_error("tar: %s escapes the install root", full);
+    return SALT_ERR_FORMAT;
+  }
+  return SALT_OK;
+}
+
 static int extract_cb(const salt_tar_entry *e, void *ud) {
   extract_ctx *ctx = ud;
-  char *full = salt_join_path(ctx->dest, e->path);
-  int rc = SALT_OK;
+  const char *rel = strip_dot_slash(e->path);
   char tf = e->typeflag;
+  if (!salt_path_is_confined(rel)) {
+    if (tf == SALT_TAR_DIR && (strcmp(rel, "") == 0 || strcmp(rel, ".") == 0)) return SALT_OK;
+    salt_set_error("tar: refusing unsafe path '%s'", e->path);
+    return SALT_ERR_FORMAT;
+  }
+  char *full = salt_join_path(ctx->dest, rel);
+  int rc = confine_parent(ctx->dest, full);
+  if (rc != SALT_OK) {
+    free(full);
+    return rc;
+  }
+  struct stat st;
   if (tf == SALT_TAR_DIR) {
-    rc = salt_mkdirs(full, e->mode ? e->mode : 0755);
-  } else if (tf == SALT_TAR_SYMLINK) {
-    char *dup = salt_strdup(full);
-    char *slash = strrchr(dup, '/');
-    if (slash) {
-      *slash = '\0';
-      salt_mkdirs(dup, 0755);
+    if (lstat(full, &st) == 0 && S_ISLNK(st.st_mode) && !salt_path_within_root(ctx->dest, full)) {
+      salt_set_error("tar: %s escapes the install root", full);
+      rc = SALT_ERR_FORMAT;
+    } else {
+      rc = salt_mkdirs(full, e->mode ? e->mode : 0755);
     }
-    free(dup);
-    unlink(full);
+  } else if (tf == SALT_TAR_SYMLINK) {
+    if (lstat(full, &st) == 0 && !S_ISDIR(st.st_mode)) unlink(full);
     if (symlink(e->linkname, full) != 0) {
       salt_set_error("symlink %s: %s", full, strerror(errno));
       rc = SALT_ERR_IO;
@@ -249,7 +318,7 @@ static int extract_cb(const salt_tar_entry *e, void *ud) {
   } else if (tf == SALT_TAR_FILE || tf == '0' || tf == '\0') {
     rc = salt_write_file(full, e->data, e->size, e->mode ? e->mode : 0644);
   }
-  if (rc == SALT_OK && ctx->installed && tf != SALT_TAR_DIR) salt_strlist_push(ctx->installed, e->path);
+  if (rc == SALT_OK && ctx->installed && tf != SALT_TAR_DIR) salt_strlist_push(ctx->installed, rel);
   free(full);
   return rc;
 }

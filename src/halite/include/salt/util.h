@@ -39,6 +39,8 @@ char *salt_join_path(const char *a, const char *b);
 int salt_mkdirs(const char *path, unsigned mode);
 int salt_read_file(const char *path, salt_buf *out);
 int salt_write_file(const char *path, const void *data, size_t len, unsigned mode);
+bool salt_path_is_confined(const char *rel);
+bool salt_path_within_root(const char *root, const char *path);
 bool salt_path_exists(const char *path);
 bool salt_is_dir(const char *path);
 int salt_remove_recursive(const char *path);

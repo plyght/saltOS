@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <libgen.h>
+#include <limits.h>
 
 static char g_error[1024];
 
@@ -213,6 +214,30 @@ int salt_write_file(const char *path, const void *data, size_t len, unsigned mod
   }
   free(tmp);
   return SALT_OK;
+}
+
+bool salt_path_is_confined(const char *rel) {
+  if (!rel || !rel[0] || rel[0] == '/') return false;
+  const char *p = rel;
+  bool seen = false;
+  while (*p) {
+    const char *q = p;
+    while (*q && *q != '/') q++;
+    size_t n = (size_t)(q - p);
+    if (n == 2 && p[0] == '.' && p[1] == '.') return false;
+    if (n > 0 && !(n == 1 && p[0] == '.')) seen = true;
+    p = *q ? q + 1 : q;
+  }
+  return seen;
+}
+
+bool salt_path_within_root(const char *root, const char *path) {
+  char rr[PATH_MAX], rp[PATH_MAX];
+  if (!realpath(root, rr) || !realpath(path, rp)) return false;
+  size_t lr = strlen(rr);
+  if (lr == 1 && rr[0] == '/') return true;
+  if (strncmp(rp, rr, lr) != 0) return false;
+  return rp[lr] == '\0' || rp[lr] == '/';
 }
 
 bool salt_path_exists(const char *path) {

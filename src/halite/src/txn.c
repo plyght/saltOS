@@ -116,8 +116,20 @@ static bool manifest_has(const salt_manifest *m, const char *path) {
   return false;
 }
 
+static int manifest_check_confined(const salt_manifest *m) {
+  for (size_t i = 0; i < m->len; i++) {
+    if (!salt_path_is_confined(m->items[i].path)) {
+      salt_set_error("manifest: refusing unsafe path '%s'", m->items[i].path);
+      return SALT_ERR_FORMAT;
+    }
+  }
+  return SALT_OK;
+}
+
 int salt_install_archive(salt_ctx *ctx, salt_db *db, const salt_archive *ar, const char *repo,
                          const char *sig_status, int64_t txn_id) {
+  int mrc = manifest_check_confined(&ar->manifest);
+  if (mrc != SALT_OK) return mrc;
   char *sdir = txn_state_dir(ctx, txn_id);
   char *backup_dir = salt_join_path(sdir, "backup");
   char *added_path = salt_join_path(sdir, "added.list");
@@ -154,6 +166,7 @@ int salt_install_archive(salt_ctx *ctx, salt_db *db, const salt_archive *ar, con
       const salt_manifest_entry *e = &old.items[i];
       if (e->typeflag == SALT_TAR_DIR) continue;
       if (manifest_has(&ar->manifest, e->path)) continue;
+      if (!salt_path_is_confined(e->path)) continue;
       backup_file(ctx->root, backup_dir, e->path);
       char *full = salt_join_path(ctx->root, e->path);
       unlink(full);
@@ -187,6 +200,7 @@ int salt_remove_pkg(salt_ctx *ctx, salt_db *db, const char *name, int64_t txn_id
   salt_db_pkg_manifest(db, name, &man);
   for (size_t i = 0; i < man.len; i++) {
     const salt_manifest_entry *e = &man.items[i];
+    if (!salt_path_is_confined(e->path)) continue;
     char *full = salt_join_path(ctx->root, e->path);
     if (e->typeflag == SALT_TAR_DIR) {
       rmdir(full);
@@ -266,7 +280,7 @@ int salt_txn_revert_files(const salt_ctx *ctx, int64_t txn_id) {
     while (line && *line) {
       char *nl = strchr(line, '\n');
       if (nl) *nl = '\0';
-      if (line[0]) {
+      if (line[0] && salt_path_is_confined(line)) {
         char *full = salt_join_path(ctx->root, line);
         unlink(full);
         free(full);
