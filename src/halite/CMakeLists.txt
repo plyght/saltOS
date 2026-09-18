@@ -10,6 +10,7 @@ add_library(halite STATIC
   src/db.c
   src/repo.c
   src/txn.c
+  src/deploy.c
   src/trust.c
   src/stratum.c
   src/run.c

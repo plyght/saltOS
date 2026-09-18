@@ -159,8 +159,10 @@ static void usage() {
           "  install <pkg>...     install packages (use <stratum>/<pkg> for foreign)\n"
           "  remove <pkg>...      remove packages\n"
           "  update [stratum...]  upgrade the host, or named strata\n"
-          "  rollback             roll back the last transaction\n"
-          "  deployments          list transactions/deployments\n"
+          "  rollback [N]         undo the latest transaction (or N and everything after it)\n"
+          "  deployments          list deployments (date, kernel, package changes)\n"
+          "  pin [--unpin] <N>    keep deployment N's snapshot from being pruned\n"
+          "  boot [status|update|try|confirm]  manage the boot menu and kernel trial\n"
           "  verify [pkg]         verify installed files against the database\n"
           "  query <pkg>          show package details\n"
           "  files <pkg>          list files owned by a package\n"
@@ -204,6 +206,8 @@ static int dispatch(const Options &o, const std::string &cmd,
   if (cmd == "update") return cmd_update(o, args);
   if (cmd == "rollback") return cmd_rollback(o, args);
   if (cmd == "deployments") return cmd_deployments(o, args);
+  if (cmd == "pin") return cmd_pin(o, args);
+  if (cmd == "boot") return cmd_boot(o, args);
   if (cmd == "verify") return cmd_verify(o, args);
   if (cmd == "query") return cmd_query(o, args);
   if (cmd == "files") return cmd_files(o, args);
@@ -254,7 +258,7 @@ static bool cmd_needs_root(const std::string &cmd) {
   static const char *root_cmds[] = {
       "pkg",     "pm",       "stratum",  "expose",  "unexpose",
       "expose-desktop", "expose-all", "service", "install",
-      "remove", "update", "sync", "rollback", "lock", nullptr};
+      "remove", "update", "sync", "rollback", "pin", "boot", "lock", nullptr};
   for (int i = 0; root_cmds[i]; i++)
     if (cmd == root_cmds[i]) return true;
   return false;

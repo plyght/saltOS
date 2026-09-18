@@ -7,7 +7,16 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/vfs.h>
 #include <dirent.h>
+
+#define SALT_BTRFS_SUPER_MAGIC 0x9123683EUL
+
+static bool is_btrfs(const char *path) {
+  struct statfs st;
+  if (statfs(path, &st) != 0) return false;
+  return (unsigned long)st.f_type == SALT_BTRFS_SUPER_MAGIC;
+}
 
 int salt_ctx_init(salt_ctx *ctx, const char *root) {
   memset(ctx, 0, sizeof(*ctx));
@@ -17,7 +26,10 @@ int salt_ctx_init(salt_ctx *ctx, const char *root) {
   ctx->snapshot_dir = salt_join_path(ctx->root, ".snapshots");
   ctx->use_btrfs = false;
   const char *force = getenv("SALT_BTRFS");
-  if (force && force[0] == '1') ctx->use_btrfs = true;
+  if (force && force[0])
+    ctx->use_btrfs = force[0] == '1';
+  else
+    ctx->use_btrfs = is_btrfs(ctx->root) && salt_is_dir(ctx->snapshot_dir) && is_btrfs(ctx->snapshot_dir);
   return SALT_OK;
 }
 
@@ -66,17 +78,6 @@ int salt_snapshot_create(const salt_ctx *ctx, salt_db *db, int64_t txn_id, char 
   *snapshot_out = txn_state_dir(ctx, txn_id);
   free(sdir);
   return SALT_OK;
-}
-
-int salt_snapshot_restore(const salt_ctx *ctx, const char *snapshot) {
-  if (!ctx->use_btrfs) return SALT_OK;
-  salt_buf cmd;
-  salt_buf_init(&cmd);
-  salt_buf_printf(&cmd, "btrfs subvolume set-default '%s/%s' '%s' >/dev/null 2>&1", ctx->snapshot_dir,
-                  snapshot, ctx->root);
-  int rc = system(cmd.data);
-  salt_buf_free(&cmd);
-  return rc == 0 ? SALT_OK : SALT_ERR_IO;
 }
 
 static void backup_file(const char *root, const char *backup_dir, const char *relpath) {
@@ -294,32 +295,4 @@ int salt_txn_revert_files(const salt_ctx *ctx, int64_t txn_id) {
   free(backup_dir);
   free(added_path);
   return SALT_OK;
-}
-
-int salt_rollback_last(salt_ctx *ctx, salt_db *db) {
-  int64_t id = 0;
-  char *snapshot = NULL;
-  if (salt_db_last_ok_txn(db, &id, &snapshot) != SALT_OK) {
-    salt_set_error("no deployment to roll back to");
-    return SALT_ERR_NOTFOUND;
-  }
-  char *sdir = txn_state_dir(ctx, id);
-  char *before_db = salt_join_path(sdir, "db.before");
-
-  int rc = SALT_OK;
-  if (ctx->use_btrfs && snapshot && snapshot[0]) {
-    rc = salt_snapshot_restore(ctx, snapshot);
-  } else {
-    salt_txn_revert_files(ctx, id);
-    if (salt_path_exists(before_db)) salt_db_restore_state_from(db, before_db);
-  }
-
-  int64_t rb_txn;
-  if (salt_db_txn_new(db, "rollback", &rb_txn) == SALT_OK)
-    salt_db_txn_finish(db, rb_txn, "ok");
-
-  free(snapshot);
-  free(sdir);
-  free(before_db);
-  return rc;
 }

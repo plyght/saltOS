@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include "salt/txn.h"
+
 struct Options {
   std::string root = "/";
   std::string repo;
@@ -60,6 +62,9 @@ int cmd_remove(const Options &o, const std::vector<std::string> &args);
 int cmd_update(const Options &o, const std::vector<std::string> &args);
 int cmd_rollback(const Options &o, const std::vector<std::string> &args);
 int cmd_deployments(const Options &o, const std::vector<std::string> &args);
+int cmd_pin(const Options &o, const std::vector<std::string> &args);
+int cmd_boot(const Options &o, const std::vector<std::string> &args);
+int deploy_post_txn(const Options &o, salt_ctx *ctx, salt_db *db, int64_t txn_id);
 int cmd_verify(const Options &o, const std::vector<std::string> &args);
 
 int cmd_search(const Options &o, const std::vector<std::string> &args);

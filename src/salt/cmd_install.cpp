@@ -223,6 +223,7 @@ static int do_install(const Options &o, const std::vector<std::string> &names, b
   if (rc == SALT_OK) {
     salt_db_txn_finish(db, txn_id, "ok");
     salt_db_sql_commit(db);
+    deploy_post_txn(o, &ctx, db, txn_id);
     printf("transaction %lld complete\n", (long long)txn_id);
   } else {
     fprintf(stderr, "salt: transaction failed, rolling back\n");
@@ -359,6 +360,7 @@ static int native_remove(const Options &o, const std::vector<std::string> &args)
   if (rc == SALT_OK) {
     salt_db_txn_finish(db, txn_id, "ok");
     salt_db_sql_commit(db);
+    deploy_post_txn(o, &ctx, db, txn_id);
   } else {
     salt_db_sql_rollback(db);
     salt_txn_revert_files(&ctx, txn_id);
@@ -394,24 +396,4 @@ int cmd_remove(const Options &o, const std::vector<std::string> &args) {
     if (n) rc = n;
   }
   return rc;
-}
-
-int cmd_rollback(const Options &o, const std::vector<std::string> &args) {
-  (void)args;
-  salt_ctx ctx;
-  salt_ctx_init(&ctx, o.root.c_str());
-  salt_db *db = nullptr;
-  if (salt_db_open(ctx.db_path, &db) != SALT_OK) {
-    fprintf(stderr, "salt: %s\n", salt_last_error());
-    salt_ctx_free(&ctx);
-    return 1;
-  }
-  int rc = salt_rollback_last(&ctx, db);
-  if (rc == SALT_OK)
-    printf("rolled back to the previous deployment\n");
-  else
-    fprintf(stderr, "salt: %s\n", salt_last_error());
-  salt_db_close(db);
-  salt_ctx_free(&ctx);
-  return rc == SALT_OK ? 0 : 1;
 }

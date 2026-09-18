@@ -97,6 +97,10 @@ void salt_db_close(salt_db *db) {
   free(db);
 }
 
+sqlite3 *salt_db_handle(salt_db *db) {
+  return db->h;
+}
+
 static int exec(salt_db *db, const char *sql) {
   char *err = NULL;
   if (sqlite3_exec(db->h, sql, NULL, NULL, &err) != SQLITE_OK) {
@@ -387,14 +391,14 @@ int salt_db_restore_state_from(salt_db *db, const char *before_path) {
   salt_buf sql;
   salt_buf_init(&sql);
   salt_buf_printf(&sql,
+                  "ATTACH '%s' AS before;"
                   "BEGIN IMMEDIATE;"
                   "DELETE FROM packages;DELETE FROM files;DELETE FROM deps;"
-                  "ATTACH '%s' AS before;"
                   "INSERT INTO packages SELECT * FROM before.packages;"
                   "INSERT INTO files SELECT * FROM before.files;"
                   "INSERT INTO deps SELECT * FROM before.deps;"
-                  "DETACH before;"
-                  "COMMIT;",
+                  "COMMIT;"
+                  "DETACH before;",
                   before_path);
   int rc = exec(db, sql.data);
   salt_buf_free(&sql);

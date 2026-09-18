@@ -10,6 +10,8 @@ extern "C" {
 #endif
 
 typedef struct salt_db salt_db;
+struct sqlite3;
+struct sqlite3 *salt_db_handle(salt_db *db);
 
 typedef struct {
   char *name;

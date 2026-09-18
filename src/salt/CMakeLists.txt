@@ -3,6 +3,7 @@ add_executable(salt
   cli.cpp
   cmd_query.cpp
   cmd_install.cpp
+  cmd_deploy.cpp
   cmd_repo.cpp
   cmd_build.cpp
   cmd_trust.cpp
