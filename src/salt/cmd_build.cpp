@@ -151,7 +151,7 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
   if (local) {
     std::string srcpath = localpath;
     std::string copy = "cp -a '" + srcpath + "/.' '" + src + "/'";
-    if (::system(copy.c_str()) != 0) {
+    if (system(copy.c_str()) != 0) {
       fprintf(stderr, "salt: failed to copy local source %s\n", srcpath.c_str());
       salt_toml_free(t);
       return 1;
@@ -177,11 +177,11 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
               sha.empty() ? "missing" : "placeholder");
     }
     std::string ex = "tar -C '" + src + "' -xf '" + tarball + "' 2>/dev/null || true";
-    ::system(ex.c_str());
+    system(ex.c_str());
     std::string strip = "set -- '" + src +
                         "'/*; if [ $# -eq 1 ] && [ -d \"$1\" ]; then mv \"$1\"/* \"$1\"/.[!.]* '" +
                         src + "'/ 2>/dev/null; rmdir \"$1\" 2>/dev/null; fi";
-    ::system(strip.c_str());
+    system(strip.c_str());
   }
 
   std::string body = script.empty() ? default_build(system) : script;
