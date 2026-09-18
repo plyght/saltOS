@@ -131,7 +131,7 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
   int release = (int)salt_toml_int(t, "release", 1);
   std::string url = salt_toml_string(t, "source.url", "");
   std::string sha = salt_toml_string(t, "source.sha256", "");
-  std::string system = salt_toml_string(t, "build.system", "custom");
+  std::string build_system = salt_toml_string(t, "build.system", "custom");
   std::string script = salt_toml_string(t, "build.script", "");
 
   const char *workenv = getenv("SALT_WORK");
@@ -184,9 +184,9 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
     system(strip.c_str());
   }
 
-  std::string body = script.empty() ? default_build(system) : script;
+  std::string body = script.empty() ? default_build(build_system) : script;
   if (body.empty()) {
-    fprintf(stderr, "salt: no build.script and unknown build.system '%s'\n", system.c_str());
+    fprintf(stderr, "salt: no build.script and unknown build.system '%s'\n", build_system.c_str());
     salt_toml_free(t);
     return 1;
   }
@@ -205,7 +205,7 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
   env.push_back("SALT_ARCH='" + arch + "'");
   env.push_back("SALT_JOBS=" + std::string(getenv("SALT_JOBS") ? getenv("SALT_JOBS") : "4"));
   env.push_back("SALT_NO_NETWORK=1");
-  printf("==> running build (%s)\n", system.c_str());
+  printf("==> running build (%s)\n", build_system.c_str());
   if (run_shell(src, body, env) != SALT_OK) {
     fprintf(stderr, "salt: build failed\n");
     salt_toml_free(t);
