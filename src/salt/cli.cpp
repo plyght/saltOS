@@ -6,6 +6,8 @@ extern "C" {
 #include "salt/sign.h"
 }
 
+#include <cerrno>
+#include <climits>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -265,20 +267,43 @@ static bool cmd_needs_root(const std::string &cmd) {
 // guard. Requires a passwordless sudoers rule for /usr/bin/salt (the images
 // install one); if sudo is missing or denies, we fall through and the command's
 // own "needs root" error explains the situation.
-static void reexec_root_if_needed(const std::string &cmd, char **argv) {
+static bool root_is_writable(const std::string &root) {
+  std::string probe = root.empty() ? "." : root;
+  if (access(probe.c_str(), W_OK | X_OK) == 0) return true;
+  std::string parent = probe;
+  while (parent.size() > 1 && parent.back() == '/') parent.pop_back();
+  size_t slash = parent.rfind('/');
+  if (slash == std::string::npos) parent = ".";
+  else if (slash == 0) parent = "/";
+  else parent.resize(slash);
+  return errno == ENOENT && access(parent.c_str(), W_OK | X_OK) == 0;
+}
+
+static void reexec_root_if_needed(const Options &o, const std::string &cmd,
+                                  const std::vector<std::string> &rest, char **argv) {
 #if defined(__linux__)
   if (geteuid() == 0) return;
   if (!cmd_needs_root(cmd)) return;
+  if (cmd == "stratum" && !rest.empty() &&
+      (rest[0] == "lint" || rest[0] == "list" || rest[0] == "status"))
+    return;
+  if (o.root != "/" && root_is_writable(o.root)) return;
+  char self[PATH_MAX];
+  ssize_t n = readlink("/proc/self/exe", self, sizeof(self) - 1);
+  if (n <= 0) snprintf(self, sizeof(self), "%s", argv[0]);
+  else self[n] = '\0';
   std::vector<char *> a;
   a.push_back(const_cast<char *>("sudo"));
   a.push_back(const_cast<char *>("-n"));
-  a.push_back(const_cast<char *>("salt"));
+  a.push_back(self);
   for (int i = 1; argv[i] != nullptr; i++) a.push_back(argv[i]);
   a.push_back(nullptr);
   execvp("sudo", a.data());
   // execvp only returns on failure (e.g. sudo not installed); fall through.
 #else
+  (void)o;
   (void)cmd;
+  (void)rest;
   (void)argv;
 #endif
 }
@@ -372,6 +397,6 @@ int cli_main(int argc, char **argv) {
     usage();
     return 2;
   }
-  reexec_root_if_needed(cmd, argv);
+  reexec_root_if_needed(o, cmd, rest, argv);
   return dispatch(o, cmd, rest);
 }
