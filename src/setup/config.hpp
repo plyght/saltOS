@@ -22,6 +22,7 @@ struct Config {
   std::string passphrase_file;
   std::string swap = "none";
   std::string swap_size = "auto";
+  std::string swap_device;
   std::string root_size;
   std::string desktop = "auto";
 
@@ -33,6 +34,8 @@ struct Config {
   std::string username = "salt";
   std::string password;
   std::string password_hash;
+  std::string root_password;
+  std::string root_password_hash;
   std::string shell = "/bin/bash";
   bool sudo = true;
   bool autologin = false;

@@ -41,6 +41,7 @@ const std::vector<Field> &fields() {
       {"install.passphrase_file", Kind::Str, false, &Config::passphrase_file, nullptr},
       {"install.swap", Kind::Str, false, &Config::swap, nullptr},
       {"install.swap_size", Kind::Str, false, &Config::swap_size, nullptr},
+      {"install.swap_device", Kind::Str, false, &Config::swap_device, nullptr},
       {"install.root_size", Kind::Str, false, &Config::root_size, nullptr},
       {"install.desktop", Kind::Str, false, &Config::desktop, nullptr},
       {"boot.firmware", Kind::Str, false, &Config::firmware, nullptr},
@@ -50,6 +51,8 @@ const std::vector<Field> &fields() {
       {"user.name", Kind::Str, false, &Config::username, nullptr},
       {"user.password", Kind::Str, true, &Config::password, nullptr},
       {"user.password_hash", Kind::Str, true, &Config::password_hash, nullptr},
+      {"user.root_password", Kind::Str, true, &Config::root_password, nullptr},
+      {"user.root_password_hash", Kind::Str, true, &Config::root_password_hash, nullptr},
       {"user.shell", Kind::Str, false, &Config::shell, nullptr},
       {"user.sudo", Kind::Bool, false, nullptr, &Config::sudo},
       {"user.autologin", Kind::Bool, false, nullptr, &Config::autologin},
@@ -327,9 +330,19 @@ bool validate(const Config &cfg, bool interactive, std::string &err) {
     err = "install.disk must be a /dev path (got '" + cfg.disk + "')";
     return false;
   }
-  if (cfg.mode == "mounted" && cfg.swap == "partition") {
-    err = "install.swap = \"partition\" is not available with install.mode = \"mounted\" "
-          "(the partitioner owns swap there); use none, file or zram";
+  if (cfg.mode == "mounted" && cfg.swap == "partition" && cfg.swap_device.empty()) {
+    err = "install.swap_device is required for install.swap = \"partition\" with "
+          "install.mode = \"mounted\"";
+    return false;
+  }
+  if (!cfg.swap_device.empty() && (cfg.mode != "mounted" || cfg.swap != "partition")) {
+    err = "install.swap_device only applies to install.mode = \"mounted\" with "
+          "install.swap = \"partition\"";
+    return false;
+  }
+  if (!cfg.sudo && cfg.root_password.empty() && cfg.root_password_hash.empty()) {
+    err = "user.root_password (or user.root_password_hash) is required when user.sudo = false, "
+          "otherwise no account can administer the system";
     return false;
   }
   if (cfg.distro.empty()) {

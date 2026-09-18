@@ -587,6 +587,7 @@ struct Layout {
   std::string root_dev;
   std::string swap_part;
   std::string luks_uuid;
+  std::string luks_name = "saltos-root";
   std::string mopts;
   struct Mount {
     std::string dev;
@@ -818,8 +819,15 @@ void discover_mounted(const setup::Config &cfg, Layout &lay) {
     if (backing.empty()) fail("cannot resolve the device behind " + root);
     lay.root_part = backing;
     lay.luks_uuid = blkid_uuid(backing);
+    lay.luks_name = root.substr(root.find_last_of('/') + 1);
   }
   lay.disk = parent_disk(lay.root_part);
+  if (cfg.swap == "partition") {
+    lay.swap_part = cfg.swap_device;
+    if (!is_blockdev(lay.swap_part)) fail("install.swap_device " + lay.swap_part + " is not a block device");
+    if (!cfg.encrypt && blkid_value(lay.swap_part, "TYPE") != "swap")
+      must({"mkswap", "-L", "saltOS-swap", lay.swap_part}, "mkswap");
+  }
   for (const auto &m : found) {
     if (m.where == "/boot/efi") lay.esp = m.dev;
     if (m.where == "/boot") lay.boot = m.dev;
@@ -902,7 +910,7 @@ void write_fstab(const std::string &mnt, const setup::Config &cfg, const Layout 
   }
   std::string crypttab;
   if (!lay.luks_uuid.empty())
-    crypttab += "saltos-root UUID=" + lay.luks_uuid + " none luks,discard\n";
+    crypttab += lay.luks_name + " UUID=" + lay.luks_uuid + " none luks,discard\n";
   if (!lay.swap_part.empty()) {
     if (cfg.encrypt) {
       fstab += "/dev/mapper/saltos-swap none swap defaults 0 0\n";
@@ -984,6 +992,19 @@ void create_user(const std::string &mnt, const setup::Config &cfg) {
       chroot_run(mnt, {"usermod", "-aG", "wheel", cfg.username});
     write_file(mnt + "/etc/sudoers.d/10-" + cfg.username,
                cfg.username + " ALL=(ALL:ALL) ALL\n", 0440);
+  }
+}
+
+void configure_root(const std::string &mnt, const setup::Config &cfg) {
+  if (!cfg.root_password_hash.empty()) {
+    if (run_stdin({"chroot", mnt, "chpasswd", "-e"}, "root:" + cfg.root_password_hash + "\n") != 0)
+      fail("setting root password hash");
+  } else if (!cfg.root_password.empty()) {
+    if (run_stdin({"chroot", mnt, "chpasswd"}, "root:" + cfg.root_password + "\n") != 0)
+      fail("setting root password");
+  } else {
+    info("locking the root account (use sudo)");
+    chroot_must(mnt, {"passwd", "-l", "root"}, "lock root");
   }
 }
 
@@ -1270,7 +1291,7 @@ void install_boot(const std::string &mnt, const setup::Config &cfg, const Layout
   std::string cmdline = cfg.cmdline;
   if (!lay.luks_uuid.empty()) {
     if (!cmdline.empty()) cmdline += " ";
-    cmdline += "rd.luks.uuid=" + lay.luks_uuid + " rd.luks.name=" + lay.luks_uuid + "=saltos-root";
+    cmdline += "rd.luks.uuid=" + lay.luks_uuid + " rd.luks.name=" + lay.luks_uuid + "=" + lay.luks_name;
   }
   if (cfg.filesystem == "btrfs" || lay.mopts.find("subvol") != std::string::npos) {
     std::string rootflags = "rootflags=subvol=@";
@@ -1420,6 +1441,11 @@ void ask_interactive(setup::Config &cfg, const std::string &arch, bool booted_ef
   if (cfg.password.empty() && cfg.password_hash.empty())
     cfg.password = prompt_secret_twice("password for " + cfg.username);
   cfg.sudo = prompt_yesno("Grant " + cfg.username + " administrative (sudo) rights", cfg.sudo);
+  if (cfg.root_password.empty() && cfg.root_password_hash.empty()) {
+    bool want_root = prompt_yesno("Set a separate root password (no = root login disabled)",
+                                  !cfg.sudo);
+    if (want_root) cfg.root_password = prompt_secret_twice("root password");
+  }
   cfg.autologin = prompt_yesno("Log " + cfg.username + " in automatically", cfg.autologin);
   cfg.timezone = prompt("Timezone", cfg.timezone);
   cfg.locale = prompt("Locale", cfg.locale);
@@ -1554,6 +1580,7 @@ int main(int argc, char **argv) {
   write_fstab(mnt, cfg, lay);
   bind_pseudo(mnt, booted_efi);
   create_user(mnt, cfg);
+  configure_root(mnt, cfg);
   configure_locale(mnt, cfg);
   configure_network(mnt, cfg);
   setup_swap(mnt, cfg, lay);
@@ -1567,7 +1594,7 @@ int main(int argc, char **argv) {
   run({"sync"});
   if (cfg.mode != "mounted") {
     run_quiet({"umount", "-R", mnt});
-    if (!lay.luks_uuid.empty()) run_quiet({"cryptsetup", "close", "saltos-root"});
+    if (!lay.luks_uuid.empty()) run_quiet({"cryptsetup", "close", lay.luks_name});
     info("saltOS installed to " + cfg.disk + " with the " + cfg.distro + " stratum");
   } else {
     unmount_pseudo(mnt);

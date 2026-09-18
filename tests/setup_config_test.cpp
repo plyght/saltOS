@@ -61,6 +61,7 @@ static void test_full_toml(void) {
       "[user]\n"
       "name = \"alice\"\n"
       "password = \"pw\"\n"
+      "root_password_hash = \"$6$abc\"\n"
       "shell = \"/bin/sh\"\n"
       "sudo = false\n"
       "autologin = true\n"
@@ -104,6 +105,7 @@ static void test_full_toml(void) {
   CHECK(c.shim == "no", "shim");
   CHECK(c.username == "alice", "username");
   CHECK(c.password == "pw", "password");
+  CHECK(c.root_password_hash == "$6$abc", "root password hash");
   CHECK(c.shell == "/bin/sh", "shell");
   CHECK(!c.sudo, "sudo off");
   CHECK(c.autologin, "autologin");
@@ -170,9 +172,22 @@ static void test_set_and_validate(void) {
   c.mode = "mounted";
   CHECK(!setup::validate(c, false, err), "mounted needs target");
   c.target = "/tmp/root";
-  CHECK(!setup::validate(c, false, err), "mounted rejects swap partition");
-  c.swap = "file";
+  CHECK(!setup::validate(c, false, err), "mounted swap partition needs swap_device");
+  c.swap_device = "/dev/vda3";
   CHECK(setup::validate(c, false, err), err.c_str());
+  c.swap = "file";
+  CHECK(!setup::validate(c, false, err), "swap_device without swap partition rejected");
+  c.swap_device.clear();
+  CHECK(setup::validate(c, false, err), err.c_str());
+  c.sudo = false;
+  CHECK(!setup::validate(c, false, err), "no sudo and no root password rejected");
+  c.root_password = "toor";
+  CHECK(setup::validate(c, false, err), err.c_str());
+  CHECK(setup::to_toml(c, false).find("toor") == std::string::npos, "root password omitted");
+  CHECK(setup::to_toml(c, true).find("root_password = \"toor\"") != std::string::npos,
+        "root password kept with secrets");
+  c.sudo = true;
+  c.root_password.clear();
   c.mode = "erase";
   c.root_size = "10G";
   CHECK(!setup::validate(c, false, err), "root_size only for alongside");
