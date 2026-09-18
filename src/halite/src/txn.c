@@ -60,7 +60,7 @@ int salt_snapshot_create(const salt_ctx *ctx, salt_db *db, int64_t txn_id, char 
     salt_buf_printf(&name, "root-%lld", (long long)txn_id);
     salt_buf cmd;
     salt_buf_init(&cmd);
-    salt_buf_printf(&cmd, "btrfs subvolume snapshot -r '%s' '%s/%s' >/dev/null 2>&1", ctx->root,
+    salt_buf_printf(&cmd, "btrfs subvolume snapshot '%s' '%s/%s' >/dev/null 2>&1", ctx->root,
                     ctx->snapshot_dir, name.data);
     salt_mkdirs(ctx->snapshot_dir, 0755);
     int rc = system(cmd.data);

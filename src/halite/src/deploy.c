@@ -520,10 +520,14 @@ static int rollback_files(salt_ctx *ctx, salt_db *db, int64_t target, int64_t *r
 }
 
 static int rollback_btrfs(salt_ctx *ctx, salt_db *db, int64_t target, const char *snapshot,
-                          int64_t *rb_out, char **new_root_out) {
+                          const char *default_subvol, int64_t *rb_out, char **new_root_out) {
   salt_btrfs_layout lay;
   int rc = salt_btrfs_layout_detect(ctx, &lay);
   if (rc != SALT_OK) return rc;
+  if (default_subvol && default_subvol[0]) {
+    free(lay.root_subvol);
+    lay.root_subvol = salt_strdup(default_subvol);
+  }
   char *top = NULL;
   rc = salt_btrfs_mount_toplevel(&lay, &top);
   if (rc != SALT_OK) {
@@ -616,7 +620,7 @@ static int rollback_btrfs(salt_ctx *ctx, salt_db *db, int64_t target, const char
     }
     got = rb;
     mark_undone(ndb, target, got);
-    record_with_before(ctx, ndb, got, rb_before, ctx->root);
+    record_with_before(ctx, ndb, got, rb_before, next.data);
     free(rb_before);
     salt_buf_free(&rdir);
   }
@@ -634,8 +638,6 @@ static int rollback_btrfs(salt_ctx *ctx, salt_db *db, int64_t target, const char
     rc = SALT_ERR_IO;
     goto fail;
   }
-  run_cmd("btrfs property set -ts '%s' ro true >/dev/null 2>&1", saved.data);
-
   {
     int64_t cur_rb = 0;
     if (salt_db_txn_new(db, "rollback", &cur_rb) == SALT_OK) {
@@ -671,8 +673,9 @@ out:
   return rc;
 }
 
-int salt_rollback_to(salt_ctx *ctx, salt_db *db, int64_t txn_id, int64_t *rollback_txn_out,
-                     char **new_root_out, bool *reboot_required) {
+int salt_rollback_to(salt_ctx *ctx, salt_db *db, int64_t txn_id, const char *default_subvol,
+                     int64_t *target_out, int64_t *rollback_txn_out, char **new_root_out,
+                     bool *reboot_required) {
   *rollback_txn_out = 0;
   *new_root_out = NULL;
   *reboot_required = false;
@@ -680,6 +683,7 @@ int salt_rollback_to(salt_ctx *ctx, salt_db *db, int64_t txn_id, int64_t *rollba
     int rc = salt_deploy_pick_rollback(db, &txn_id);
     if (rc != SALT_OK) return rc;
   }
+  if (target_out) *target_out = txn_id;
   char *status = NULL, *snapshot = NULL;
   if (txn_status_snapshot(db, txn_id, &status, &snapshot) != SALT_OK) {
     salt_set_error("no deployment #%lld", (long long)txn_id);
@@ -687,7 +691,7 @@ int salt_rollback_to(salt_ctx *ctx, salt_db *db, int64_t txn_id, int64_t *rollba
   }
   int rc;
   if (ctx->use_btrfs && snapshot && strncmp(snapshot, "root-", 5) == 0) {
-    rc = rollback_btrfs(ctx, db, txn_id, snapshot, rollback_txn_out, new_root_out);
+    rc = rollback_btrfs(ctx, db, txn_id, snapshot, default_subvol, rollback_txn_out, new_root_out);
     if (rc == SALT_OK) *reboot_required = true;
   } else {
     char *sdir = txn_state_dir(ctx, txn_id);

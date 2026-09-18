@@ -141,7 +141,8 @@ static int install_one(const Options &o, const RepoConf &c, salt_ctx *ctx, salt_
   return rc;
 }
 
-static int do_install(const Options &o, const std::vector<std::string> &names, bool is_update) {
+static int do_install(const Options &o, const std::vector<std::string> &names, bool is_update,
+                      bool check_only = false) {
   RepoConf c = load_repo_conf(o);
   std::string idxp = index_path_for(o);
   salt_repo_index idx;
@@ -175,14 +176,17 @@ static int do_install(const Options &o, const std::vector<std::string> &names, b
       int vc = salt_vercmp(e->version, inst.items[i].version);
       bool newer = vc > 0 || (vc == 0 && e->release > inst.items[i].release);
       if (newer) order.push_back(inst.items[i].name);
+      if (newer && check_only)
+        printf("%s %s-%d -> %s-%d\n", inst.items[i].name, inst.items[i].version,
+               inst.items[i].release, e->version, e->release);
     }
     salt_db_pkglist_free(&inst);
-    if (order.empty()) {
-      printf("everything is up to date\n");
+    if (order.empty() || check_only) {
+      if (order.empty()) printf("everything is up to date\n");
       salt_db_close(db);
       salt_repo_index_free(&idx);
       salt_ctx_free(&ctx);
-      return 0;
+      return order.empty() ? 0 : 100;
     }
   } else {
     for (auto &n : names) {
@@ -287,6 +291,7 @@ int cmd_install(const Options &o, const std::vector<std::string> &args) {
 }
 
 int cmd_update(const Options &o, const std::vector<std::string> &args) {
+  if (args.size() == 1 && args[0] == "--check") return do_install(o, {}, true, true);
   if (!args.empty()) {
     int rc = 0;
     for (const auto &a : args) {

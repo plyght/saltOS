@@ -53,8 +53,9 @@ int salt_btrfs_layout_detect(const salt_ctx *ctx, salt_btrfs_layout *out);
 int salt_btrfs_mount_toplevel(const salt_btrfs_layout *l, char **mountpoint_out);
 int salt_btrfs_umount_toplevel(const char *mountpoint);
 
-int salt_rollback_to(salt_ctx *ctx, salt_db *db, int64_t txn_id, int64_t *rollback_txn_out,
-                     char **new_root_out, bool *reboot_required);
+int salt_rollback_to(salt_ctx *ctx, salt_db *db, int64_t txn_id, const char *default_subvol,
+                     int64_t *target_out, int64_t *rollback_txn_out, char **new_root_out,
+                     bool *reboot_required);
 
 #ifdef __cplusplus
 }

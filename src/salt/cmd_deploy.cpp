@@ -185,6 +185,7 @@ std::vector<SnapEntry> snapshot_entries(const std::string &snapdir, salt_db *db,
   for (size_t i = 0; i < l.len && (long long)out.size() < max; i++) {
     const salt_deployment &d = l.items[i];
     if (!d.snapshot || strncmp(d.snapshot, "root-", 5) != 0) continue;
+    if (d.status && strcmp(d.status, "failed") == 0) continue;
     std::string boot = path_join(path_join(snapdir, d.snapshot), "boot");
     char *k = salt_boot_newest_kernel(boot.c_str());
     if (!k) continue;
@@ -432,7 +433,7 @@ int boot_update_root(const Options &o, salt_db *db, const std::string &rootdir,
   return 0;
 }
 
-}  // namespace
+}
 
 int deploy_post_txn(const Options &o, salt_ctx *ctx, salt_db *db, int64_t txn_id) {
   salt_deploy_record(ctx, db, txn_id);
@@ -511,7 +512,8 @@ int cmd_rollback(const Options &o, const std::vector<std::string> &args) {
   int64_t rb = 0;
   char *new_root = nullptr;
   bool reboot = false;
-  int rc = salt_rollback_to(&ctx, db, target, &rb, &new_root, &reboot);
+  BootConf bc = load_boot_conf(o.root);
+  int rc = salt_rollback_to(&ctx, db, target, bc.root_subvol.c_str(), &target, &rb, &new_root, &reboot);
   if (rc != SALT_OK) {
     fprintf(stderr, "salt: %s\n", salt_last_error());
     salt_db_close(db);
@@ -529,12 +531,11 @@ int cmd_rollback(const Options &o, const std::vector<std::string> &args) {
     }
     salt_btrfs_umount_toplevel(top.c_str());
     free(new_root);
-    printf("rolled back to deployment %lld as deployment %lld; reboot to activate\n",
-           (long long)(target ? target : rb), (long long)rb);
+    printf("undid deployment %lld as deployment %lld; reboot to activate\n", (long long)target,
+           (long long)rb);
   } else {
     boot_update_root(o, db, o.root, ctx.snapshot_dir, true);
-    printf("rolled back to deployment %lld as deployment %lld\n", (long long)(target ? target : rb),
-           (long long)rb);
+    printf("undid deployment %lld as deployment %lld\n", (long long)target, (long long)rb);
   }
   salt_db_close(db);
   salt_ctx_free(&ctx);
