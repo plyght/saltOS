@@ -118,7 +118,7 @@ mkdir -p "$SRC/glibc-build"
 
 echo "===== bash (from source) ====="
 ( cd "$SRC/bash-${BASH_VER}"
-  ./configure --prefix=/usr --without-bash-malloc
+  bash_cv_termcap_lib=gnutermcap ./configure --prefix=/usr --without-bash-malloc
   make -j"$JOBS"
   make DESTDIR="$GNU" install )
 
@@ -189,6 +189,27 @@ if [ ! -e "$ROOTFS/lib/ld-linux-aarch64.so.1" ]; then
 fi
 [ -e "$ROOTFS/usr/bin/bash" ] && ln -sf /usr/bin/bash "$ROOTFS/bin/bash"
 ldconfig -r "$ROOTFS" 2>/dev/null || true
+
+echo "===== verify rootfs shared library closure ====="
+LIBIDX="$WORK/rootfs-libs.txt"
+find "$ROOTFS" -name '*.so' -o -name '*.so.*' 2>/dev/null \
+  | sed 's|.*/||' | sort -u > "$LIBIDX"
+deps_missing=0
+for b in usr/bin/bash usr/bin/ls usr/bin/cat usr/bin/env; do
+  bin="$ROOTFS/$b"
+  [ -f "$bin" ] || continue
+  for lib in $(readelf -d "$bin" 2>/dev/null | sed -n 's/.*NEEDED.*\[\(.*\)\]/\1/p'); do
+    if ! grep -qxF "$lib" "$LIBIDX"; then
+      echo "  MISSING $lib (needed by /$b)"
+      deps_missing=$((deps_missing + 1))
+    fi
+  done
+done
+if [ "$deps_missing" -gt 0 ]; then
+  echo "FATAL: $deps_missing shared library dependencies are absent from the rootfs"
+  exit 1
+fi
+echo "  all shared library dependencies resolve inside the rootfs"
 
 cat > "$ROOTFS/etc/profile" <<'EOF'
 export PATH=/usr/local/salt/shims:/usr/bin:/usr/sbin:/bin:/sbin
@@ -264,8 +285,9 @@ echo "----------------------------------------"
 cat /etc/os-release
 ok=1
 salt --version || ok=0
-bash --version | head -1 || ok=0
+bash -c 'echo "$BASH_VERSION"' || ok=0
 ls --version | head -1 || ok=0
+ls --version >/dev/null 2>&1 || ok=0
 if [ "$ok" = 1 ]; then
   echo "SALTOS_SELFHOST_OK kernel+glibc+bash+coreutils+runit+salt, all from source, no distro base"
 else
