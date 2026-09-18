@@ -175,7 +175,7 @@ cmd_run() {
 	done
 	with_lock
 	ota_enabled || { log "ota disabled in $CONF"; return "$E_NOTHING"; }
-	[ "$(id -u)" -eq 0 ] || die "run requires root"
+	[ "$(id -u)" -eq 0 ] || [ "$STATE_DIR" != /var/lib/salt ] || die "run requires root"
 	if ab_mode; then
 		run_ab_update
 	else

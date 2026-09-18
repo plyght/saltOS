@@ -11,3 +11,11 @@ add_test(
     -DWORKDIR=${CMAKE_CURRENT_BINARY_DIR}/cli_smoke
     -P ${CMAKE_CURRENT_SOURCE_DIR}/cli_smoke.cmake
 )
+
+add_test(
+  NAME ota_smoke
+  COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/ota_smoke.sh
+    $<TARGET_FILE:salt>
+    ${CMAKE_SOURCE_DIR}/os/ota/salt-ota.sh
+    ${CMAKE_CURRENT_BINARY_DIR}/ota_smoke
+)

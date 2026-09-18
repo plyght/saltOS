@@ -75,7 +75,10 @@ int salt_snapshot_create(const salt_ctx *ctx, salt_db *db, int64_t txn_id, char 
     free(sdir);
     return SALT_OK;
   }
-  *snapshot_out = txn_state_dir(ctx, txn_id);
+  salt_buf name;
+  salt_buf_init(&name);
+  salt_buf_printf(&name, "txn-%lld", (long long)txn_id);
+  *snapshot_out = name.data;
   free(sdir);
   return SALT_OK;
 }
