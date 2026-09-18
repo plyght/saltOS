@@ -19,3 +19,10 @@ add_test(
     ${CMAKE_SOURCE_DIR}/os/ota/salt-ota.sh
     ${CMAKE_CURRENT_BINARY_DIR}/ota_smoke
 )
+
+add_test(
+  NAME pi_tryboot
+  COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/pi_tryboot.sh
+    ${CMAKE_SOURCE_DIR}/os/pi/ab-update.sh
+    ${CMAKE_CURRENT_BINARY_DIR}/pi_tryboot
+)

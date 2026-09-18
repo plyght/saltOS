@@ -153,7 +153,21 @@ auto_service = true
 enabled = true
 interval = "86400"
 reboot_on_kernel = false
+ab = true
+
+[deploy]
+keep = 5
 EOF
+cat > "$ROOTFS/etc/salt/boot.conf" <<EOF
+[boot]
+loader = "tryboot"
+title = "saltOS $VERSION"
+root_label = "saltos-root"
+root_subvol = "@"
+snapshots_subvol = "@snapshots"
+tryboot_tool = "/usr/lib/saltos/ab-update.sh"
+EOF
+mkdir -p "$ROOTFS/etc/salt/health.d"
 
 chroot "$ROOTFS" useradd -m -s /bin/bash salt 2>/dev/null || true
 echo "salt:salt" | chroot "$ROOTFS" chpasswd || true
@@ -198,13 +212,19 @@ if [ -d "$ROOTFS/boot/firmware" ] && [ -n "$(ls -A "$ROOTFS/boot/firmware" 2>/de
   cp -a "$ROOTFS/boot/firmware/." "$BOOT_STAGE/"
 fi
 
-cp "$ROOTFS/boot/vmlinuz-$KVER" "$BOOT_STAGE/vmlinuz" 2>/dev/null || true
-cp "$ROOTFS/boot/initrd.img-$KVER" "$BOOT_STAGE/initramfs" 2>/dev/null || true
+cp "$ROOTFS/boot/vmlinuz-$KVER" "$BOOT_STAGE/vmlinuz_a"
+INITRAMFS_LINE=""
+if [ -f "$ROOTFS/boot/initrd.img-$KVER" ]; then
+  cp "$ROOTFS/boot/initrd.img-$KVER" "$BOOT_STAGE/initramfs_a"
+  INITRAMFS_LINE="initramfs initramfs_a followkernel"
+fi
+echo "$KVER" > "$BOOT_STAGE/kernel_a.release"
 
 cat > "$BOOT_STAGE/config.txt" <<EOF
 [all]
-kernel=vmlinuz
-initramfs initramfs followkernel
+kernel=vmlinuz_a
+$INITRAMFS_LINE
+cmdline=cmdline_a.txt
 arm_64bit=1
 arm_boost=1
 enable_uart=1
@@ -215,9 +235,10 @@ auto_initramfs=1
 EOF
 
 ROOT_LABEL=saltos-root
-cat > "$BOOT_STAGE/cmdline.txt" <<EOF
+cat > "$BOOT_STAGE/cmdline_a.txt" <<EOF
 console=serial0,115200 console=tty1 root=LABEL=$ROOT_LABEL rootfstype=btrfs rootflags=subvol=@ rootwait fsck.repair=yes net.ifnames=0
 EOF
+cp "$BOOT_STAGE/cmdline_a.txt" "$BOOT_STAGE/cmdline.txt"
 
 cat > "$ROOTFS/etc/fstab" <<EOF
 LABEL=$ROOT_LABEL  /              btrfs  defaults,subvol=@,compress=zstd:1  0 1
@@ -228,7 +249,6 @@ if [ -f "$ROOTFS/etc/default/raspi-firmware" ]; then
   sed -i 's|^#\?ROOTPART=.*|ROOTPART=LABEL='"$ROOT_LABEL"'|' "$ROOTFS/etc/default/raspi-firmware" || true
 fi
 
-rm -f "$ROOTFS"/boot/vmlinuz-* "$ROOTFS"/boot/initrd.img-* 2>/dev/null || true
 rm -rf "$ROOTFS/boot/firmware"
 mkdir -p "$ROOTFS/boot/firmware"
 

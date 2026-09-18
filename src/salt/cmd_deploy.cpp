@@ -276,10 +276,10 @@ int write_grub_cfg(const BootConf &c, salt_db *db, const std::string &rootdir,
   return 0;
 }
 
-int tryboot_tool(const BootConf &c, const Options &o, const char *verb, const std::string &arg) {
+int tryboot_tool(const BootConf &c, const std::string &root, const char *verb, const std::string &arg) {
   std::string cmd = "'" + c.tryboot_tool + "' " + verb;
   if (!arg.empty()) cmd += " '" + arg + "'";
-  if (o.root != "/") cmd = "SALTOS_STAGE_ROOT='" + o.root + "' " + cmd;
+  if (root != "/") cmd = "SALTOS_STAGE_ROOT='" + root + "' " + cmd;
   int rc = system(cmd.c_str());
   return rc == 0 ? 0 : 1;
 }
@@ -526,7 +526,7 @@ int boot_update_root(const Options &o, salt_db *db, const std::string &rootdir,
   BootConf c = load_boot_conf(rootdir);
   if (c.loader == "grub") return grub_update(o, c, db, rootdir, snapdir, after_rollback, boot_changed);
   if (c.loader == "tryboot" && boot_changed)
-    return tryboot_tool(c, o, "kernel-update", after_rollback ? "rollback" : "");
+    return tryboot_tool(c, rootdir, "kernel-update", after_rollback ? "rollback" : "");
   return 0;
 }
 
@@ -680,10 +680,10 @@ int cmd_boot(const Options &o, const std::vector<std::string> &args) {
     return 1;
   }
   if (c.loader == "tryboot") {
-    if (sub == "update") return tryboot_tool(c, o, "kernel-update", "");
-    if (sub == "try") return tryboot_tool(c, o, "kernel-try", "");
-    if (sub == "confirm") return tryboot_tool(c, o, "kernel-confirm", "");
-    if (sub == "status") return tryboot_tool(c, o, "kernel-status", "");
+    if (sub == "update") return tryboot_tool(c, o.root, "kernel-update", "");
+    if (sub == "try") return tryboot_tool(c, o.root, "kernel-try", "");
+    if (sub == "confirm") return tryboot_tool(c, o.root, "kernel-confirm", "");
+    if (sub == "status") return tryboot_tool(c, o.root, "kernel-status", "");
     fprintf(stderr, "usage: salt boot [status|update|try|confirm]\n");
     return 2;
   }
