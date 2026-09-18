@@ -18,12 +18,14 @@ string(REGEX MATCH "\\(([a-z0-9_]+)\\)" _m "${VER}")
 set(ARCH "${CMAKE_MATCH_1}")
 message(STATUS "smoke: arch=${ARCH}")
 
-file(WRITE "${RECIPE}/recipe.toml"
-"name = \"hello\"
-version = \"1.0\"
+function(write_recipe dir name version deps conflicts)
+  file(MAKE_DIRECTORY "${dir}")
+  file(WRITE "${dir}/recipe.toml"
+"name = \"${name}\"
+version = \"${version}\"
 release = 1
 arch = [\"x86_64\", \"aarch64\"]
-summary = \"smoke test package\"
+summary = \"smoke test package ${name}\"
 license = \"MIT\"
 
 [source]
@@ -34,30 +36,82 @@ sha256 = \"TODO-sha256\"
 system = \"custom\"
 script = \"\"\"
 mkdir -p \"$SALT_DEST/usr/bin\"
-printf '#!/bin/sh\\necho hi\\n' > \"$SALT_DEST/usr/bin/hello\"
-chmod +x \"$SALT_DEST/usr/bin/hello\"
+printf '#!/bin/sh\\necho ${name} ${version}\\n' > \"$SALT_DEST/usr/bin/${name}\"
+chmod +x \"$SALT_DEST/usr/bin/${name}\"
 \"\"\"
 
 [package]
-deps = []
+deps = [${deps}]
+conflicts = [${conflicts}]
 
 [reproducibility]
 status = \"verified\"
 ")
+endfunction()
 
-execute_process(
-  COMMAND ${CMAKE_COMMAND} -E env SALT_OUT=${OUT} SALT_WORK=${WORKDIR}/work
-          "${SALT_BIN}" build "${RECIPE}"
-  COMMAND_ERROR_IS_FATAL ANY)
+function(build_recipe dir)
+  execute_process(
+    COMMAND ${CMAKE_COMMAND} -E env SALT_OUT=${OUT} SALT_WORK=${WORKDIR}/work
+            "${SALT_BIN}" build "${dir}"
+    COMMAND_ERROR_IS_FATAL ANY)
+endfunction()
+
+function(expect_fail what)
+  execute_process(COMMAND ${ARGN} RESULT_VARIABLE rc OUTPUT_QUIET ERROR_VARIABLE err)
+  if(rc EQUAL 0)
+    message(FATAL_ERROR "${what}: expected a non-zero exit, got 0")
+  endif()
+  message(STATUS "smoke: ${what} -> exit ${rc} (expected)")
+endfunction()
+
+function(expect_fail_output what needle)
+  execute_process(COMMAND ${ARGN} OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
+  if(rc EQUAL 0)
+    message(FATAL_ERROR "${what}: expected a non-zero exit, got 0")
+  endif()
+  if(NOT "${out}${err}" MATCHES "${needle}")
+    message(FATAL_ERROR "${what}: output lacks '${needle}':\n${out}${err}")
+  endif()
+endfunction()
+
+function(expect_output what needle)
+  execute_process(COMMAND ${ARGN} OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
+  if(NOT rc EQUAL 0)
+    message(FATAL_ERROR "${what}: exit ${rc}\n${out}${err}")
+  endif()
+  if(NOT "${out}${err}" MATCHES "${needle}")
+    message(FATAL_ERROR "${what}: output lacks '${needle}':\n${out}${err}")
+  endif()
+endfunction()
+
+function(publish)
+  execute_process(
+    COMMAND "${SALT_BIN}" --key "${KEYS}/repo.sec" repo publish "${OUT}/${ARCH}"
+    COMMAND_ERROR_IS_FATAL ANY)
+endfunction()
+
+function(resign_index)
+  execute_process(COMMAND "${SALT_BIN}" --key "${KEYS}/repo.sec" sign "${OUT}/${ARCH}/index.toml"
+                  COMMAND_ERROR_IS_FATAL ANY)
+endfunction()
+
+write_recipe("${RECIPE}" hello 1.0 "" "")
+write_recipe("${WORKDIR}/recipes/libgreet" libgreet 1.0 "" "")
+write_recipe("${WORKDIR}/recipes/greeter" greeter 1.0 "\"libgreet\"" "")
+write_recipe("${WORKDIR}/recipes/rival" rival 1.0 "" "\"hello\"")
+write_recipe("${WORKDIR}/recipes/orphan" orphan 1.0 "\"nowhere\"" "")
+build_recipe("${RECIPE}")
+build_recipe("${WORKDIR}/recipes/libgreet")
+build_recipe("${WORKDIR}/recipes/greeter")
+build_recipe("${WORKDIR}/recipes/rival")
+build_recipe("${WORKDIR}/recipes/orphan")
 
 if(NOT EXISTS "${OUT}/${ARCH}/packages/hello-1.0-1-${ARCH}.grain")
   message(FATAL_ERROR "build did not produce the expected .grain")
 endif()
 
 execute_process(COMMAND "${SALT_BIN}" keygen "${KEYS}" repo COMMAND_ERROR_IS_FATAL ANY)
-execute_process(
-  COMMAND "${SALT_BIN}" --key "${KEYS}/repo.sec" repo publish "${OUT}/${ARCH}"
-  COMMAND_ERROR_IS_FATAL ANY)
+publish()
 
 if(NOT EXISTS "${OUT}/${ARCH}/index.toml.sig")
   message(FATAL_ERROR "publish did not sign the index")
@@ -99,4 +153,198 @@ if(NOT EXISTS "${ROOT}/usr/bin/hello")
 endif()
 
 execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" deployments COMMAND_ERROR_IS_FATAL ANY)
+expect_output("history" "install" "${SALT_BIN}" --root "${ROOT}" history)
+
+expect_output("info shows sha256" "sha256      : [0-9a-f]+" "${SALT_BIN}" --root "${ROOT}" info hello)
+expect_output("info for available package" "available" "${SALT_BIN}" --root "${ROOT}" info greeter)
+expect_fail("info for unknown package" "${SALT_BIN}" --root "${ROOT}" info no-such-package)
+expect_output("search by description" "greeter" "${SALT_BIN}" --root "${ROOT}" search "package greeter")
+expect_fail("search with no match" "${SALT_BIN}" --root "${ROOT}" search zzz-no-such-thing)
+expect_output("list --installed" "hello" "${SALT_BIN}" --root "${ROOT}" list --installed)
+expect_output("list --upgradable" "0 packages upgradable" "${SALT_BIN}" --root "${ROOT}" list --upgradable)
+expect_output("list --available" "rival" "${SALT_BIN}" --root "${ROOT}" list --available)
+expect_fail("list with bad flag" "${SALT_BIN}" --root "${ROOT}" list --bogus)
+expect_fail("unknown option" "${SALT_BIN}" --root "${ROOT}" install --frobnicate hello)
+expect_fail("install of unknown package" "${SALT_BIN}" --root "${ROOT}" --yes install no-such-package)
+expect_fail("install with missing dependency" "${SALT_BIN}" --root "${ROOT}" --yes install orphan)
+expect_fail("install of a conflicting package" "${SALT_BIN}" --root "${ROOT}" --yes install rival)
+if(EXISTS "${ROOT}/usr/bin/rival")
+  message(FATAL_ERROR "conflicting package was installed")
+endif()
+
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes install greeter COMMAND_ERROR_IS_FATAL ANY)
+if(NOT EXISTS "${ROOT}/usr/bin/libgreet" OR NOT EXISTS "${ROOT}/usr/bin/greeter")
+  message(FATAL_ERROR "install did not pull in the dependency")
+endif()
+expect_fail("remove of a required package" "${SALT_BIN}" --root "${ROOT}" --yes remove libgreet)
+if(NOT EXISTS "${ROOT}/usr/bin/libgreet")
+  message(FATAL_ERROR "refused remove still deleted the file")
+endif()
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes remove --cascade libgreet COMMAND_ERROR_IS_FATAL ANY)
+if(EXISTS "${ROOT}/usr/bin/libgreet" OR EXISTS "${ROOT}/usr/bin/greeter")
+  message(FATAL_ERROR "cascade remove left files behind")
+endif()
+expect_fail("query of cascaded package" "${SALT_BIN}" --root "${ROOT}" files greeter)
+
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" lock COMMAND_ERROR_IS_FATAL ANY)
+if(NOT EXISTS "${ROOT}/etc/salt/system.lock.toml")
+  message(FATAL_ERROR "lock did not write the lockfile")
+endif()
+file(READ "${ROOT}/etc/salt/system.lock.toml" LOCK)
+if(NOT LOCK MATCHES "name = \"hello\"" OR NOT LOCK MATCHES "grain_sha256 = \"sha256:[0-9a-f]+\"")
+  message(FATAL_ERROR "lockfile does not pin hello with a sha256:\n${LOCK}")
+endif()
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" lock diff COMMAND_ERROR_IS_FATAL ANY)
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes install greeter COMMAND_ERROR_IS_FATAL ANY)
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes remove hello COMMAND_ERROR_IS_FATAL ANY)
+expect_fail("lock diff after drift" "${SALT_BIN}" --root "${ROOT}" lock diff)
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" lock diff OUTPUT_VARIABLE DIFF RESULT_VARIABLE rc)
+if(NOT DIFF MATCHES "\\+ hello" OR NOT DIFF MATCHES "- greeter" OR NOT DIFF MATCHES "- libgreet")
+  message(FATAL_ERROR "lock diff did not report the drift:\n${DIFF}")
+endif()
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes lock apply --dry-run COMMAND_ERROR_IS_FATAL ANY)
+if(EXISTS "${ROOT}/usr/bin/hello")
+  message(FATAL_ERROR "lock apply --dry-run changed the system")
+endif()
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes lock apply COMMAND_ERROR_IS_FATAL ANY)
+if(NOT EXISTS "${ROOT}/usr/bin/hello" OR EXISTS "${ROOT}/usr/bin/greeter" OR EXISTS "${ROOT}/usr/bin/libgreet")
+  message(FATAL_ERROR "lock apply did not converge to the locked set")
+endif()
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" lock diff COMMAND_ERROR_IS_FATAL ANY)
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" config diff COMMAND_ERROR_IS_FATAL ANY)
+
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes remove hello COMMAND_ERROR_IS_FATAL ANY)
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes install --locked COMMAND_ERROR_IS_FATAL ANY)
+if(NOT EXISTS "${ROOT}/usr/bin/hello")
+  message(FATAL_ERROR "install --locked did not restore the locked set")
+endif()
+
+file(READ "${ROOT}/etc/salt/system.lock.toml" LOCK)
+string(REGEX REPLACE "grain_sha256 = \"sha256:[0-9a-f]+\""
+       "grain_sha256 = \"sha256:0000000000000000000000000000000000000000000000000000000000000000\""
+       BADLOCK "${LOCK}")
+file(WRITE "${WORKDIR}/bad.lock.toml" "${BADLOCK}")
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes remove hello COMMAND_ERROR_IS_FATAL ANY)
+expect_fail("lock apply with mismatched hash" "${SALT_BIN}" --root "${ROOT}" --yes lock apply "${WORKDIR}/bad.lock.toml")
+if(EXISTS "${ROOT}/usr/bin/hello")
+  message(FATAL_ERROR "lock apply installed a package whose hash did not match the lock")
+endif()
+string(REGEX REPLACE "grain_sha256 = \"sha256:[0-9a-f]+\"\n" "" NOHASHLOCK "${LOCK}")
+file(WRITE "${WORKDIR}/nohash.lock.toml" "${NOHASHLOCK}")
+expect_fail("lock apply with hashless lock" "${SALT_BIN}" --root "${ROOT}" --yes lock apply "${WORKDIR}/nohash.lock.toml")
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes install hello COMMAND_ERROR_IS_FATAL ANY)
+
+file(READ "${OUT}/${ARCH}/index.toml" INDEX)
+string(REGEX REPLACE "(name = \"hello\"[^[]*sha256 = )\"[0-9a-f]+\"" "\\1\"TODO-sha256\"" BADINDEX "${INDEX}")
+file(WRITE "${OUT}/${ARCH}/index.toml" "${BADINDEX}")
+resign_index()
+expect_fail("sync rejects a placeholder sha256" "${SALT_BIN}" --root "${ROOT}" sync)
+string(REGEX REPLACE "(name = \"hello\"[^[]*)sha256 = \"[0-9a-f]+\"\n" "\\1" NOHASHINDEX "${INDEX}")
+file(WRITE "${OUT}/${ARCH}/index.toml" "${NOHASHINDEX}")
+resign_index()
+expect_fail("sync rejects a missing sha256" "${SALT_BIN}" --root "${ROOT}" sync)
+file(WRITE "${OUT}/${ARCH}/index.toml" "${INDEX}")
+resign_index()
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" sync COMMAND_ERROR_IS_FATAL ANY)
+file(READ "${ROOT}/var/lib/salt/repo/${ARCH}/index.toml" SYNCED)
+if(NOT SYNCED MATCHES "name = \"hello\"")
+  message(FATAL_ERROR "a rejected sync clobbered the local index")
+endif()
+
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes remove hello COMMAND_ERROR_IS_FATAL ANY)
+file(WRITE "${ROOT}/var/lib/salt/repo/${ARCH}/index.toml" "${NOHASHINDEX}")
+expect_fail("install refuses an unverifiable package" "${SALT_BIN}" --root "${ROOT}" --yes install hello)
+if(EXISTS "${ROOT}/usr/bin/hello")
+  message(FATAL_ERROR "unverifiable package was installed without --allow-unverified")
+endif()
+expect_output("install --allow-unverified warns" "WARNING" "${SALT_BIN}" --root "${ROOT}" --yes install --allow-unverified hello)
+if(NOT EXISTS "${ROOT}/usr/bin/hello")
+  message(FATAL_ERROR "--allow-unverified did not install the package")
+endif()
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" sync COMMAND_ERROR_IS_FATAL ANY)
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes remove hello COMMAND_ERROR_IS_FATAL ANY)
+string(REGEX REPLACE "(name = \"hello\"[^[]*sha256 = )\"[0-9a-f]+\""
+       "\\1\"0000000000000000000000000000000000000000000000000000000000000000\"" WRONGINDEX "${INDEX}")
+file(WRITE "${ROOT}/var/lib/salt/repo/${ARCH}/index.toml" "${WRONGINDEX}")
+expect_fail("install refuses an artifact whose sha256 differs from the index" "${SALT_BIN}" --root "${ROOT}" --yes install hello)
+if(EXISTS "${ROOT}/usr/bin/hello")
+  message(FATAL_ERROR "artifact with wrong sha256 was installed")
+endif()
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" sync COMMAND_ERROR_IS_FATAL ANY)
+
+file(REMOVE "${ROOT}/usr/bin")
+file(REMOVE_RECURSE "${ROOT}/usr/bin")
+file(WRITE "${ROOT}/usr/bin" "not a directory")
+expect_fail("install fails when extraction is impossible" "${SALT_BIN}" --root "${ROOT}" --yes install hello)
+expect_fail("failed install left no db record" "${SALT_BIN}" --root "${ROOT}" files hello)
+expect_output("failed transaction is recorded" "failed" "${SALT_BIN}" --root "${ROOT}" history)
+file(REMOVE "${ROOT}/usr/bin")
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes install hello COMMAND_ERROR_IS_FATAL ANY)
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" verify hello COMMAND_ERROR_IS_FATAL ANY)
+file(APPEND "${ROOT}/usr/bin/hello" "tampered")
+expect_fail_output("verify detects modification" "MODIFIED" "${SALT_BIN}" --root "${ROOT}" verify hello)
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes remove hello COMMAND_ERROR_IS_FATAL ANY)
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes install hello COMMAND_ERROR_IS_FATAL ANY)
+
+write_recipe("${WORKDIR}/recipes/hello2" hello 2.0 "" "")
+build_recipe("${WORKDIR}/recipes/hello2")
+publish()
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" sync COMMAND_ERROR_IS_FATAL ANY)
+expect_output("list --upgradable sees the new version" "hello +1.0-1 -> 2.0-1" "${SALT_BIN}" --root "${ROOT}" list --upgradable)
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes update --download-only COMMAND_ERROR_IS_FATAL ANY)
+if(NOT EXISTS "${ROOT}/var/lib/salt/cache/${ARCH}/hello-2.0-1-${ARCH}.grain")
+  message(FATAL_ERROR "update --download-only did not fetch the artifact")
+endif()
+expect_output("download-only leaves the old version installed" "version     : 1.0-1" "${SALT_BIN}" --root "${ROOT}" info hello)
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes update COMMAND_ERROR_IS_FATAL ANY)
+expect_output("update installed the new version" "version     : 2.0-1" "${SALT_BIN}" --root "${ROOT}" info hello)
+expect_output("hello 2.0 runs" "hello 2.0" sh "${ROOT}/usr/bin/hello")
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" rollback COMMAND_ERROR_IS_FATAL ANY)
+expect_output("rollback restored 1.0" "version     : 1.0-1" "${SALT_BIN}" --root "${ROOT}" info hello)
+expect_output("hello 1.0 runs after rollback" "hello 1.0" sh "${ROOT}/usr/bin/hello")
+
+file(GLOB TXN_DIRS "${ROOT}/var/lib/salt/state/txn-*")
+list(LENGTH TXN_DIRS NTXN_BEFORE)
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" config gc --keep 2 --dry-run OUTPUT_VARIABLE GCDRY COMMAND_ERROR_IS_FATAL ANY)
+file(GLOB TXN_DIRS "${ROOT}/var/lib/salt/state/txn-*")
+list(LENGTH TXN_DIRS NTXN_DRY)
+if(NOT NTXN_DRY EQUAL NTXN_BEFORE)
+  message(FATAL_ERROR "gc --dry-run removed generations")
+endif()
+if(NOT GCDRY MATCHES "would prune generation")
+  message(FATAL_ERROR "gc --dry-run did not report what it would prune:\n${GCDRY}")
+endif()
+expect_fail("gc rejects a bad keep count" "${SALT_BIN}" --root "${ROOT}" config gc --keep 0)
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" config gc --keep 2 OUTPUT_VARIABLE GCOUT COMMAND_ERROR_IS_FATAL ANY)
+file(GLOB TXN_DIRS "${ROOT}/var/lib/salt/state/txn-*")
+list(LENGTH TXN_DIRS NTXN_AFTER)
+if(NOT NTXN_AFTER LESS NTXN_BEFORE)
+  message(FATAL_ERROR "gc did not prune any generation (${NTXN_BEFORE} -> ${NTXN_AFTER})")
+endif()
+if(NOT GCOUT MATCHES "freed: [0-9]+ generations")
+  message(FATAL_ERROR "gc did not report what it freed:\n${GCOUT}")
+endif()
+if(NOT EXISTS "${ROOT}/var/lib/salt/cache/${ARCH}/hello-1.0-1-${ARCH}.grain")
+  message(FATAL_ERROR "gc removed the artifact of the installed package")
+endif()
+expect_output("gc preserved the installed package" "version     : 1.0-1" "${SALT_BIN}" --root "${ROOT}" info hello)
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" rollback COMMAND_ERROR_IS_FATAL ANY)
+expect_output("rollback still works after gc" "version     : 2.0-1" "${SALT_BIN}" --root "${ROOT}" info hello)
+
+file(GLOB CACHED_BEFORE "${ROOT}/var/lib/salt/cache/${ARCH}/*.grain")
+if(NOT CACHED_BEFORE)
+  message(FATAL_ERROR "expected cached artifacts before clean")
+endif()
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" clean --dry-run COMMAND_ERROR_IS_FATAL ANY)
+file(GLOB CACHED_DRY "${ROOT}/var/lib/salt/cache/${ARCH}/*.grain")
+if(NOT CACHED_DRY STREQUAL CACHED_BEFORE)
+  message(FATAL_ERROR "clean --dry-run removed cached artifacts")
+endif()
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" clean COMMAND_ERROR_IS_FATAL ANY)
+file(GLOB CACHED "${ROOT}/var/lib/salt/cache/${ARCH}/*.grain")
+if(CACHED)
+  message(FATAL_ERROR "clean left artifacts in the cache: ${CACHED}")
+endif()
+expect_output("help lists lock apply" "lock apply" "${SALT_BIN}" --help)
+expect_fail("unknown command" "${SALT_BIN}" --root "${ROOT}" frobnicate)
 message(STATUS "smoke: all steps passed")

@@ -310,7 +310,8 @@ int cmd_deployments(const Options &o, const std::vector<std::string> &args) {
     time_t t = (time_t)l.items[i].time;
     strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", localtime(&t));
     printf("#%-5lld %-10s %-9s %s%s%s\n", (long long)l.items[i].id, l.items[i].op,
-           l.items[i].status, ts, l.items[i].snapshot ? "  snapshot=" : "",
+           l.items[i].status, ts,
+           l.items[i].snapshot && l.items[i].snapshot[0] ? "  snapshot=" : "",
            l.items[i].snapshot ? l.items[i].snapshot : "");
   }
   salt_deployment_list_free(&l);

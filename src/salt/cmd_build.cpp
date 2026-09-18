@@ -220,6 +220,7 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
   const char *reason = salt_toml_string(t, "reproducibility.reason", nullptr);
   meta.repro_reason = reason ? salt_strdup(reason) : nullptr;
   salt_toml_string_array(t, "package.deps", &meta.deps);
+  salt_toml_string_array(t, "package.conflicts", &meta.conflicts);
 
   std::string scripts_dir = path_join(rdir, "scripts");
   salt_archive ar;
