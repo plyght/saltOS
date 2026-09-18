@@ -920,16 +920,15 @@ int salt_stratum_snapshot_create(const salt_strata_ctx *c, salt_strata_db *db, c
     salt_buf_printf(&nm, "%s-%s", label, ts);
     path = salt_join_path(snapdir, nm.data);
     salt_buf_free(&nm);
-    kind = "link";
-    /* No CoW on this filesystem (e.g. ext4): make a hardlink tree instead of a
-       full tar copy. The snapshot then costs only its directory structure --
-       package managers replace files (a new inode) rather than editing them in
-       place, so the snapshot keeps the old inodes and only files that actually
-       change ever consume new space. */
+    kind = "copy";
+    /* No btrfs here: copy the tree, reflinking where the filesystem supports
+       it (xfs, bcachefs) and falling back to a full copy otherwise. A hardlink
+       tree would be cheaper, but any in-place write to the live stratum (tee,
+       an editor, a log append) would silently rewrite the snapshot too. */
     salt_mkdirs(path, 0755);
     salt_buf cmd;
     salt_buf_init(&cmd);
-    salt_buf_printf(&cmd, "cp -al '%s/.' '%s/'", target, path);
+    salt_buf_printf(&cmd, "cp -ax --reflink=auto '%s/.' '%s/'", target, path);
     rc = run_system(cmd.data);
     salt_buf_free(&cmd);
   }
@@ -1067,9 +1066,9 @@ int salt_stratum_rollback(const salt_strata_ctx *c, salt_strata_db *db, const ch
     if (strcmp(snap.kind, "tar") == 0) {
       salt_buf_printf(&ext, "tar -xpf '%s' -C '%s'", snap.path, target);
     } else {
-      /* hardlink-tree snapshot: copy back for real (no -l) so the restored tree
+      /* copied snapshot: copy back for real (no -l) so the restored tree
          is not aliased to the snapshot and the snapshot stays reusable. */
-      salt_buf_printf(&ext, "cp -a '%s/.' '%s/'", snap.path, target);
+      salt_buf_printf(&ext, "cp -a --reflink=auto '%s/.' '%s/'", snap.path, target);
     }
     rc = run_system(ext.data);
     salt_buf_free(&ext);
