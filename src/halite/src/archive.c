@@ -73,7 +73,8 @@ int salt_archive_build_from_dir(const char *staging_dir, const salt_pkg_meta *me
   out->meta.license = salt_strdup(meta->license ? meta->license : "");
   out->meta.repro_status = salt_strdup(meta->repro_status ? meta->repro_status : "unverified");
   out->meta.repro_reason = meta->repro_reason ? salt_strdup(meta->repro_reason) : NULL;
-  for (size_t i = 0; i < meta->deps.len; i++) salt_strlist_push(&out->meta.deps, meta->deps.items[i]);
+  for (size_t i = 0; i < meta->deps.len; i++)
+    salt_strlist_push(&out->meta.deps, meta->deps.items[i]);
   for (size_t i = 0; i < meta->conflicts.len; i++)
     salt_strlist_push(&out->meta.conflicts, meta->conflicts.items[i]);
 
@@ -100,12 +101,12 @@ int salt_archive_build_from_dir(const char *staging_dir, const salt_pkg_meta *me
     memset(&me, 0, sizeof(me));
     me.path = paths.items[i];
     me.mode = st.st_mode & 07777;
+    char target[1024];
     if (S_ISDIR(st.st_mode)) {
       me.typeflag = SALT_TAR_DIR;
       salt_tar_entry te = {paths.items[i], SALT_TAR_DIR, me.mode, 0, NULL, NULL};
       salt_tar_writer_add(w, &te);
     } else if (S_ISLNK(st.st_mode)) {
-      char target[1024];
       ssize_t n = readlink(full, target, sizeof(target) - 1);
       if (n < 0) {
         free(full);
@@ -227,7 +228,8 @@ int salt_archive_open(const char *path, salt_archive *out) {
   return SALT_OK;
 }
 
-int salt_archive_extract_payload(const salt_archive *a, const char *dest_dir, salt_strlist *installed_paths) {
+int salt_archive_extract_payload(const salt_archive *a, const char *dest_dir,
+                                 salt_strlist *installed_paths) {
   salt_buf inner;
   int rc = salt_zst_decompress(a->payload.data, a->payload.len, &inner);
   if (rc != SALT_OK) return rc;

@@ -48,8 +48,7 @@ static int config_apply(const Options &o, const std::vector<std::string> &in_arg
   std::vector<std::string> args = in_args;
   bool relock = false;
   TxnFlags f;
-  static const char *usage =
-      "usage: salt config apply [--relock] [--dry-run] [--download-only]\n";
+  static const char *usage = "usage: salt config apply [--relock] [--dry-run] [--download-only]\n";
   std::vector<std::string> rest;
   for (const auto &a : args) {
     if (a == "--relock")

@@ -32,8 +32,7 @@ int salt_sha256_file(const char *path, char hex_out[SALT_SHA256_HEXLEN + 1]) {
   crypto_hash_sha256_init(&st);
   unsigned char chunk[65536];
   size_t n;
-  while ((n = fread(chunk, 1, sizeof(chunk), f)) > 0)
-    crypto_hash_sha256_update(&st, chunk, n);
+  while ((n = fread(chunk, 1, sizeof(chunk), f)) > 0) crypto_hash_sha256_update(&st, chunk, n);
   int err = ferror(f);
   fclose(f);
   if (err) {

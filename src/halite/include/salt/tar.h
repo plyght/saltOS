@@ -31,7 +31,8 @@ void salt_tar_writer_free(salt_tar_writer *w);
 
 typedef int (*salt_tar_cb)(const salt_tar_entry *e, void *ud);
 int salt_tar_read(const void *data, size_t len, salt_tar_cb cb, void *ud);
-int salt_tar_extract(const void *data, size_t len, const char *dest_dir, salt_strlist *installed_paths);
+int salt_tar_extract(const void *data, size_t len, const char *dest_dir,
+                     salt_strlist *installed_paths);
 
 #ifdef __cplusplus
 }

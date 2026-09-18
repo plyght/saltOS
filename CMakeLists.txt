@@ -13,6 +13,13 @@ endif()
 
 add_compile_options(-Wall -Wextra -Wno-unused-parameter)
 
+option(SALT_SANITIZE "Build with AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+if(SALT_SANITIZE)
+  add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined)
+  add_link_options(-fsanitize=address,undefined)
+  message(STATUS "saltOS: sanitizers enabled (address, undefined)")
+endif()
+
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(ZSTD REQUIRED libzstd)
 pkg_check_modules(SODIUM REQUIRED libsodium)

@@ -157,13 +157,27 @@ static int parse_escape(parser *ps, salt_buf *out) {
   if (ps->p >= ps->end) return SALT_ERR_FORMAT;
   char c = *ps->p++;
   switch (c) {
-    case 'b': salt_buf_append(out, "\b", 1); break;
-    case 't': salt_buf_append(out, "\t", 1); break;
-    case 'n': salt_buf_append(out, "\n", 1); break;
-    case 'f': salt_buf_append(out, "\f", 1); break;
-    case 'r': salt_buf_append(out, "\r", 1); break;
-    case '"': salt_buf_append(out, "\"", 1); break;
-    case '\\': salt_buf_append(out, "\\", 1); break;
+    case 'b':
+      salt_buf_append(out, "\b", 1);
+      break;
+    case 't':
+      salt_buf_append(out, "\t", 1);
+      break;
+    case 'n':
+      salt_buf_append(out, "\n", 1);
+      break;
+    case 'f':
+      salt_buf_append(out, "\f", 1);
+      break;
+    case 'r':
+      salt_buf_append(out, "\r", 1);
+      break;
+    case '"':
+      salt_buf_append(out, "\"", 1);
+      break;
+    case '\\':
+      salt_buf_append(out, "\\", 1);
+      break;
     case 'u':
     case 'U': {
       int n = (c == 'u') ? 4 : 8;
@@ -248,7 +262,8 @@ static salt_toml *parse_multiline_basic(parser *ps) {
           ps->line++;
           ps->p++;
         }
-        while (ps->p < ps->end && (*ps->p == ' ' || *ps->p == '\t' || *ps->p == '\r' || *ps->p == '\n')) {
+        while (ps->p < ps->end &&
+               (*ps->p == ' ' || *ps->p == '\t' || *ps->p == '\r' || *ps->p == '\n')) {
           if (*ps->p == '\n') ps->line++;
           ps->p++;
         }
@@ -528,7 +543,14 @@ static int parse_dotted_path(parser *ps, char ***out_keys, size_t *out_n) {
     }
     if (n == cap) {
       cap = cap ? cap * 2 : 4;
-      keys = realloc(keys, cap * sizeof(char *));
+      char **grown = realloc(keys, cap * sizeof(char *));
+      if (!grown) {
+        free(k);
+        for (size_t i = 0; i < n; i++) free(keys[i]);
+        free(keys);
+        return SALT_ERR_IO;
+      }
+      keys = grown;
     }
     keys[n++] = k;
     skip_ws_inline(ps);

@@ -109,8 +109,8 @@ int cmd_expose(const Options &o, const std::vector<std::string> &args) {
     fprintf(stderr, "salt: %s\n", salt_last_error());
     return 1;
   }
-  int rc = salt_expose_add(db, o.root.c_str(), stratum.c_str(), command.c_str(), alias.c_str(),
-                           "cli");
+  int rc =
+      salt_expose_add(db, o.root.c_str(), stratum.c_str(), command.c_str(), alias.c_str(), "cli");
   if (rc != SALT_OK)
     fprintf(stderr, "salt: %s\n", salt_last_error());
   else

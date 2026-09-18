@@ -20,7 +20,7 @@ extern "C" {
 static int open_stratum(const Options &o, const std::string &name, salt_strata_db **db,
                         salt_strata_ctx *c, salt_stratum *s);
 
-static const char *kBinDirs[] = {"usr/bin", "bin", "usr/local/bin",
+static const char *kBinDirs[] = {"usr/bin",  "bin",  "usr/local/bin",
                                  "usr/sbin", "sbin", "usr/local/sbin"};
 
 static void scan_bins(const std::string &root, std::set<std::string> &out) {
@@ -149,8 +149,7 @@ std::string choose_stratum_for(const Options &o, const std::string &name) {
     return names[0];
   }
   fprintf(stderr, "salt: '%s' is not in the native repository. choose a stratum:\n", name.c_str());
-  for (size_t i = 0; i < names.size(); i++)
-    fprintf(stderr, "  %zu) %s\n", i + 1, names[i].c_str());
+  for (size_t i = 0; i < names.size(); i++) fprintf(stderr, "  %zu) %s\n", i + 1, names[i].c_str());
   if (o.yes) {
     fprintf(stderr, "  (--yes) using %s\n", names[0].c_str());
     return names[0];
@@ -200,19 +199,20 @@ static bool pm_is_mutating(const std::string &kind, const std::string &binary,
           return false;
         return true;
       }
-      if (first.find('T') != std::string::npos || first.find('V') != std::string::npos) return false;
+      if (first.find('T') != std::string::npos || first.find('V') != std::string::npos)
+        return false;
     }
     return true;
   }
   static const std::set<std::string> ro = {
-      "search",   "se",     "info",    "if",   "show",  "list",  "ls",
-      "policy",   "depends", "rdepends", "provides", "what-provides", "wp",
-      "repoquery", "version", "stats",  "help", "--help", "--version", "-V",
-      "-l",       "-L",     "-s"};
+      "search",    "se",        "info",    "if",       "show",     "list",
+      "ls",        "policy",    "depends", "rdepends", "provides", "what-provides",
+      "wp",        "repoquery", "version", "stats",    "help",     "--help",
+      "--version", "-V",        "-l",      "-L",       "-s"};
   static const std::set<std::string> mut = {
-      "install",      "in",    "add",    "remove", "rm",   "del",   "erase",
-      "purge",        "upgrade", "up",   "update", "dist-upgrade", "dup",
-      "downgrade",    "autoremove", "fix", "reinstall"};
+      "install", "in",        "add",        "remove", "rm",       "del",
+      "erase",   "purge",     "upgrade",    "up",     "update",   "dist-upgrade",
+      "dup",     "downgrade", "autoremove", "fix",    "reinstall"};
   if (ro.count(first)) return false;
   if (mut.count(first)) return true;
   return true;
@@ -293,8 +293,7 @@ int cmd_pm(const Options &o, const std::vector<std::string> &args) {
   // and `npm`'s verbs are not the package manager's own verbs. expose_all is
   // idempotent and cheap, so an occasional no-op refresh is fine.
   (void)mutating;
-  if (rc == SALT_OK && st == 0 && expose_all_enabled(o))
-    expose_all_for(o, stratum);
+  if (rc == SALT_OK && st == 0 && expose_all_enabled(o)) expose_all_for(o, stratum);
   return rc != SALT_OK ? 1 : st;
 }
 

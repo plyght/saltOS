@@ -19,14 +19,22 @@ static int hex_decode(const char *hex, unsigned char *out, size_t out_len) {
     int hi, lo;
     char c = hex[i * 2];
     char d = hex[i * 2 + 1];
-    if (c >= '0' && c <= '9') hi = c - '0';
-    else if (c >= 'a' && c <= 'f') hi = c - 'a' + 10;
-    else if (c >= 'A' && c <= 'F') hi = c - 'A' + 10;
-    else return SALT_ERR_FORMAT;
-    if (d >= '0' && d <= '9') lo = d - '0';
-    else if (d >= 'a' && d <= 'f') lo = d - 'a' + 10;
-    else if (d >= 'A' && d <= 'F') lo = d - 'A' + 10;
-    else return SALT_ERR_FORMAT;
+    if (c >= '0' && c <= '9')
+      hi = c - '0';
+    else if (c >= 'a' && c <= 'f')
+      hi = c - 'a' + 10;
+    else if (c >= 'A' && c <= 'F')
+      hi = c - 'A' + 10;
+    else
+      return SALT_ERR_FORMAT;
+    if (d >= '0' && d <= '9')
+      lo = d - '0';
+    else if (d >= 'a' && d <= 'f')
+      lo = d - 'a' + 10;
+    else if (d >= 'A' && d <= 'F')
+      lo = d - 'A' + 10;
+    else
+      return SALT_ERR_FORMAT;
     out[i] = (unsigned char)((hi << 4) | lo);
   }
   return SALT_OK;
@@ -40,7 +48,8 @@ int salt_sign_init(void) {
   return SALT_OK;
 }
 
-int salt_keypair_generate(char pub_hex[SALT_PUBKEY_HEXLEN + 1], char sec_hex[SALT_SECKEY_HEXLEN + 1]) {
+int salt_keypair_generate(char pub_hex[SALT_PUBKEY_HEXLEN + 1],
+                          char sec_hex[SALT_SECKEY_HEXLEN + 1]) {
   if (salt_sign_init() != SALT_OK) return SALT_ERR;
   unsigned char pk[crypto_sign_PUBLICKEYBYTES];
   unsigned char sk[crypto_sign_SECRETKEYBYTES];
@@ -68,7 +77,8 @@ int salt_keypair_write(const char *dir, const char *name) {
   return r;
 }
 
-int salt_sign_buf(const void *data, size_t len, const char *sec_hex, char sig_hex[SALT_SIG_HEXLEN + 1]) {
+int salt_sign_buf(const void *data, size_t len, const char *sec_hex,
+                  char sig_hex[SALT_SIG_HEXLEN + 1]) {
   if (salt_sign_init() != SALT_OK) return SALT_ERR;
   unsigned char sk[crypto_sign_SECRETKEYBYTES];
   if (hex_decode(sec_hex, sk, sizeof(sk)) != SALT_OK) {

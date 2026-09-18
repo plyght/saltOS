@@ -123,8 +123,8 @@ int cmd_sync(const Options &o, const std::vector<std::string> &args) {
   salt_strlist_init(&problems);
   int vrc = salt_repo_index_verify(&idx, &problems);
   if (vrc != SALT_OK) {
-    fprintf(stderr, "salt: sync failed: repository index rejected (%zu problem%s):\n",
-            problems.len, problems.len == 1 ? "" : "s");
+    fprintf(stderr, "salt: sync failed: repository index rejected (%zu problem%s):\n", problems.len,
+            problems.len == 1 ? "" : "s");
     for (size_t i = 0; i < problems.len; i++) fprintf(stderr, "  %s\n", problems.items[i]);
     salt_strlist_free(&problems);
     salt_repo_index_free(&idx);
@@ -222,8 +222,8 @@ static bool check_conflicts(salt_db *db, const NativePlan &plan) {
                 c.c_str());
         ok = false;
       } else if (salt_db_is_installed(db, c.c_str()) && !leaving.count(c)) {
-        fprintf(stderr, "salt: %s conflicts with installed package %s (remove it first)\n",
-                e->name, c.c_str());
+        fprintf(stderr, "salt: %s conflicts with installed package %s (remove it first)\n", e->name,
+                c.c_str());
         ok = false;
       }
     }

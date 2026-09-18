@@ -20,7 +20,7 @@ extern "C" {
 
 static std::string iso_now() {
   time_t t = time(nullptr);
-  struct tm g{};
+  struct tm g {};
   gmtime_r(&t, &g);
   char buf[32];
   strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &g);

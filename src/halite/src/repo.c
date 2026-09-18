@@ -209,8 +209,7 @@ const salt_repo_entry *salt_repo_index_find(const salt_repo_index *idx, const ch
       continue;
     }
     int vc = salt_vercmp(idx->items[i].version, best->version);
-    if (vc > 0 || (vc == 0 && idx->items[i].release > best->release))
-      best = &idx->items[i];
+    if (vc > 0 || (vc == 0 && idx->items[i].release > best->release)) best = &idx->items[i];
   }
   return best;
 }

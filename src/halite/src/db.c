@@ -169,8 +169,9 @@ int salt_db_sql_rollback(salt_db *db) {
 
 int salt_db_txn_new(salt_db *db, const char *op, int64_t *txn_id_out) {
   sqlite3_stmt *st;
-  if (sqlite3_prepare_v2(db->h, "INSERT INTO transactions(op,status,time,snapshot) VALUES(?,?,?,?);",
-                         -1, &st, NULL) != SQLITE_OK)
+  if (sqlite3_prepare_v2(db->h,
+                         "INSERT INTO transactions(op,status,time,snapshot) VALUES(?,?,?,?);", -1,
+                         &st, NULL) != SQLITE_OK)
     return SALT_ERR;
   sqlite3_bind_text(st, 1, op, -1, SQLITE_TRANSIENT);
   sqlite3_bind_text(st, 2, "started", -1, SQLITE_STATIC);
@@ -290,8 +291,7 @@ int salt_db_record_install(salt_db *db, const salt_pkg_meta *meta, const salt_ma
     rc = sqlite3_step(st);
     sqlite3_finalize(st);
     if (rc != SQLITE_DONE) {
-      salt_set_error("db install conflict %s: %s", meta->conflicts.items[i],
-                     sqlite3_errmsg(db->h));
+      salt_set_error("db install conflict %s: %s", meta->conflicts.items[i], sqlite3_errmsg(db->h));
       return SALT_ERR;
     }
   }
@@ -427,7 +427,8 @@ int salt_db_owner(salt_db *db, const char *path, char **owner_out) {
   const char *q = path;
   while (*q == '/') q++;
   sqlite3_stmt *st;
-  sqlite3_prepare_v2(db->h, "SELECT name FROM files WHERE path=? OR path=? LIMIT 1;", -1, &st, NULL);
+  sqlite3_prepare_v2(db->h, "SELECT name FROM files WHERE path=? OR path=? LIMIT 1;", -1, &st,
+                     NULL);
   sqlite3_bind_text(st, 1, path, -1, SQLITE_TRANSIENT);
   sqlite3_bind_text(st, 2, q, -1, SQLITE_TRANSIENT);
   int rc = sqlite3_step(st);
@@ -496,7 +497,8 @@ int salt_db_restore_state_from(salt_db *db, const char *before_path) {
   }
   bool full = table_has_column(db->h, "before", "packages", "sha256");
   bool has_conflicts = table_has_column(db->h, "before", "conflicts", "conflict");
-  const char *cols = full ? PKG_COLUMNS : "name,version,release,arch,repo,sig_status,install_time,txn_id";
+  const char *cols =
+      full ? PKG_COLUMNS : "name,version,release,arch,repo,sig_status,install_time,txn_id";
   salt_buf sql;
   salt_buf_init(&sql);
   salt_buf_printf(&sql,

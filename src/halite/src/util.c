@@ -48,7 +48,7 @@ static int salt_buf_reserve(salt_buf *b, size_t extra) {
 
 int salt_buf_append(salt_buf *b, const void *p, size_t n) {
   if (salt_buf_reserve(b, n) != SALT_OK) return SALT_ERR;
-  memcpy(b->data + b->len, p, n);
+  if (n) memcpy(b->data + b->len, p, n);
   b->len += n;
   b->data[b->len] = '\0';
   return SALT_OK;

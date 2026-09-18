@@ -19,9 +19,12 @@ extern "C" {
 
 static const char *sev_name(salt_risk_severity s) {
   switch (s) {
-    case SALT_RISK_BLOCK: return "BLOCK";
-    case SALT_RISK_WARN: return "WARN";
-    default: return "INFO";
+    case SALT_RISK_BLOCK:
+      return "BLOCK";
+    case SALT_RISK_WARN:
+      return "WARN";
+    default:
+      return "INFO";
   }
 }
 
@@ -91,7 +94,8 @@ static std::string default_build(const std::string &system) {
     return "cmake -B build -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release\ncmake --build "
            "build -j\"$SALT_JOBS\"\nDESTDIR=\"$SALT_DEST\" cmake --install build";
   if (system == "meson")
-    return "meson setup build --prefix=/usr\nninja -C build -j\"$SALT_JOBS\"\nDESTDIR=\"$SALT_DEST\" "
+    return "meson setup build --prefix=/usr\nninja -C build "
+           "-j\"$SALT_JOBS\"\nDESTDIR=\"$SALT_DEST\" "
            "ninja -C build install";
   return "";
 }
@@ -224,10 +228,8 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
 
   std::string scripts_dir = path_join(rdir, "scripts");
   salt_archive ar;
-  int rc = salt_archive_build_from_dir(dest.c_str(), &meta,
-                                       salt_is_dir(scripts_dir.c_str()) ? scripts_dir.c_str()
-                                                                        : nullptr,
-                                       &ar);
+  int rc = salt_archive_build_from_dir(
+      dest.c_str(), &meta, salt_is_dir(scripts_dir.c_str()) ? scripts_dir.c_str() : nullptr, &ar);
   if (rc != SALT_OK) {
     fprintf(stderr, "salt: packaging failed: %s\n", salt_last_error());
     salt_pkg_meta_free(&meta);

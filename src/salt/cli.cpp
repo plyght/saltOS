@@ -238,7 +238,7 @@ static int dispatch(const Options &o, const std::string &cmd,
   if (cmd == "service") return cmd_service(o, args);
   if (cmd == "config") return cmd_config(o, args);
   if (cmd == "lock") return cmd_lock(o, args);
-  if (cmd.find('/') != std::string::npos && cmd.find('/') != 0) {
+  if (cmd.find('/') != std::string::npos && !cmd.starts_with('/')) {
     PkgRef r = parse_pkgref(cmd);
     std::vector<std::string> ra = {r.stratum, r.pkg};
     ra.insert(ra.end(), args.begin(), args.end());
@@ -261,9 +261,9 @@ static bool cmd_needs_root(const std::string &cmd) {
   // here genuinely needs real root (writes the stratum rootfs / system db /
   // services).
   static const char *root_cmds[] = {
-      "pkg",     "pm",       "stratum",  "expose",  "unexpose",
-      "expose-desktop", "expose-all", "service", "install",
-      "remove", "update", "sync", "rollback", "lock", "clean", "gc", nullptr};
+      "pkg",        "pm",      "stratum", "expose", "unexpose", "expose-desktop",
+      "expose-all", "service", "install", "remove", "update",   "sync",
+      "rollback",   "lock",    "clean",   "gc",     nullptr};
   for (int i = 0; root_cmds[i]; i++)
     if (cmd == root_cmds[i]) return true;
   return false;
@@ -282,9 +282,12 @@ static bool root_is_writable(const std::string &root) {
   std::string parent = probe;
   while (parent.size() > 1 && parent.back() == '/') parent.pop_back();
   size_t slash = parent.rfind('/');
-  if (slash == std::string::npos) parent = ".";
-  else if (slash == 0) parent = "/";
-  else parent.resize(slash);
+  if (slash == std::string::npos)
+    parent = ".";
+  else if (slash == 0)
+    parent = "/";
+  else
+    parent.resize(slash);
   return errno == ENOENT && access(parent.c_str(), W_OK | X_OK) == 0;
 }
 
@@ -299,8 +302,10 @@ static void reexec_root_if_needed(const Options &o, const std::string &cmd,
   if (o.root != "/" && root_is_writable(o.root)) return;
   char self[PATH_MAX];
   ssize_t n = readlink("/proc/self/exe", self, sizeof(self) - 1);
-  if (n <= 0) snprintf(self, sizeof(self), "%s", argv[0]);
-  else self[n] = '\0';
+  if (n <= 0)
+    snprintf(self, sizeof(self), "%s", argv[0]);
+  else
+    self[n] = '\0';
   std::vector<char *> a;
   a.push_back(const_cast<char *>("sudo"));
   a.push_back(const_cast<char *>("-n"));

@@ -9,10 +9,14 @@
 
 const char *salt_trust_level_name(salt_trust_level lvl) {
   switch (lvl) {
-    case SALT_TRUST_MAINTAINER: return "maintainer";
-    case SALT_TRUST_VOUCHED: return "vouched";
-    case SALT_TRUST_DENOUNCED: return "denounced";
-    default: return "unknown";
+    case SALT_TRUST_MAINTAINER:
+      return "maintainer";
+    case SALT_TRUST_VOUCHED:
+      return "vouched";
+    case SALT_TRUST_DENOUNCED:
+      return "denounced";
+    default:
+      return "unknown";
   }
 }
 
@@ -30,7 +34,8 @@ void salt_findings_init(salt_findings *f) {
   f->cap = 0;
 }
 
-int salt_findings_push(salt_findings *f, salt_risk_severity sev, const char *code, const char *msg) {
+int salt_findings_push(salt_findings *f, salt_risk_severity sev, const char *code,
+                       const char *msg) {
   if (f->len == f->cap) {
     size_t nc = f->cap ? f->cap * 2 : 8;
     salt_finding *ni = realloc(f->items, nc * sizeof(*ni));
@@ -101,8 +106,7 @@ static int lint_common(const char *recipe_path, salt_findings *out, bool strict)
   salt_strlist arch;
   salt_strlist_init(&arch);
   salt_toml_string_array(t, "arch", &arch);
-  if (arch.len == 0)
-    salt_findings_push(out, SALT_RISK_BLOCK, "arch", "no arch declared");
+  if (arch.len == 0) salt_findings_push(out, SALT_RISK_BLOCK, "arch", "no arch declared");
   for (size_t i = 0; i < arch.len; i++)
     if (strcmp(arch.items[i], "x86_64") != 0 && strcmp(arch.items[i], "aarch64") != 0)
       salt_findings_push(out, SALT_RISK_WARN, "arch-unknown", arch.items[i]);
@@ -113,8 +117,7 @@ static int lint_common(const char *recipe_path, salt_findings *out, bool strict)
     salt_findings_push(out, SALT_RISK_BLOCK, "license", "missing license");
 
   const char *url = salt_toml_string(t, "source.url", NULL);
-  if (!url || !url[0])
-    salt_findings_push(out, SALT_RISK_BLOCK, "source-url", "missing source.url");
+  if (!url || !url[0]) salt_findings_push(out, SALT_RISK_BLOCK, "source-url", "missing source.url");
 
   const char *sha = salt_toml_string(t, "source.sha256", NULL);
   if (!sha || !sha[0]) {
@@ -127,8 +130,7 @@ static int lint_common(const char *recipe_path, salt_findings *out, bool strict)
   }
 
   const salt_toml *bdeps = salt_toml_path(t, "build.deps");
-  if (!bdeps)
-    salt_findings_push(out, SALT_RISK_WARN, "build-deps", "no build deps declared");
+  if (!bdeps) salt_findings_push(out, SALT_RISK_WARN, "build-deps", "no build deps declared");
 
   const char *repro = salt_toml_string(t, "reproducibility.status", NULL);
   if (!repro) {
@@ -192,11 +194,11 @@ int salt_supplychain_scan(const salt_scan_input *in, salt_findings *out) {
   }
   const char *scan = masked ? masked : body;
   if (regex_search("0x[0-9a-fA-F]{40}([^0-9a-fA-F]|$)", body) ||
-      regex_search("(^|[^1-9A-HJ-NP-Za-km-z])[13][1-9A-HJ-NP-Za-km-z]{25,34}([^1-9A-HJ-NP-Za-km-z]|$)",
-                   scan) ||
+      regex_search(
+          "(^|[^1-9A-HJ-NP-Za-km-z])[13][1-9A-HJ-NP-Za-km-z]{25,34}([^1-9A-HJ-NP-Za-km-z]|$)",
+          scan) ||
       regex_search("bc1[ac-hj-np-z02-9]{11,71}", scan))
-    salt_findings_push(out, SALT_RISK_BLOCK, "wallet",
-                       "possible crypto wallet address in recipe");
+    salt_findings_push(out, SALT_RISK_BLOCK, "wallet", "possible crypto wallet address in recipe");
   free(masked);
 
   if (strstr(body, "base64 -d") || strstr(body, "base64 --decode") || strstr(body, "eval ") ||
@@ -206,9 +208,8 @@ int salt_supplychain_scan(const salt_scan_input *in, salt_findings *out) {
 
   salt_toml *t = salt_toml_parse(body, text.len);
   const char *script = t ? salt_toml_string(t, "build.script", NULL) : NULL;
-  if (script &&
-      (strstr(script, "curl") || strstr(script, "wget") || strstr(script, "git clone") ||
-       strstr(script, "http://") || strstr(script, "https://")))
+  if (script && (strstr(script, "curl") || strstr(script, "wget") || strstr(script, "git clone") ||
+                 strstr(script, "http://") || strstr(script, "https://")))
     salt_findings_push(out, SALT_RISK_WARN, "build-network",
                        "build script appears to access the network after fetch");
 

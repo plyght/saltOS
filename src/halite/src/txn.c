@@ -72,8 +72,8 @@ int salt_snapshot_restore(const salt_ctx *ctx, const char *snapshot) {
   if (!ctx->use_btrfs) return SALT_OK;
   salt_buf cmd;
   salt_buf_init(&cmd);
-  salt_buf_printf(&cmd, "btrfs subvolume set-default '%s/%s' '%s' >/dev/null 2>&1", ctx->snapshot_dir,
-                  snapshot, ctx->root);
+  salt_buf_printf(&cmd, "btrfs subvolume set-default '%s/%s' '%s' >/dev/null 2>&1",
+                  ctx->snapshot_dir, snapshot, ctx->root);
   int rc = system(cmd.data);
   salt_buf_free(&cmd);
   return rc == 0 ? SALT_OK : SALT_ERR_IO;
@@ -351,8 +351,7 @@ int salt_rollback_last(salt_ctx *ctx, salt_db *db) {
   if (rc == SALT_OK) {
     salt_db_txn_finish(db, id, "rolled-back");
     int64_t rb_txn;
-    if (salt_db_txn_new(db, "rollback", &rb_txn) == SALT_OK)
-      salt_db_txn_finish(db, rb_txn, "ok");
+    if (salt_db_txn_new(db, "rollback", &rb_txn) == SALT_OK) salt_db_txn_finish(db, rb_txn, "ok");
   }
 
   free(snapshot);

@@ -51,7 +51,8 @@ struct salt_strata_db {
 
 static const char *STRATA_SCHEMA =
     "CREATE TABLE IF NOT EXISTS strata(name TEXT PRIMARY KEY, family TEXT, arch TEXT, root TEXT, "
-    "package_manager TEXT, bootstrap TEXT, trust TEXT, state TEXT, graphics INTEGER, audio INTEGER, "
+    "package_manager TEXT, bootstrap TEXT, trust TEXT, state TEXT, graphics INTEGER, audio "
+    "INTEGER, "
     "dbus INTEGER, created INTEGER);"
     "CREATE TABLE IF NOT EXISTS stratum_repos(stratum TEXT, name TEXT, url TEXT);"
     "CREATE TABLE IF NOT EXISTS stratum_snapshots(id INTEGER PRIMARY KEY AUTOINCREMENT, stratum "
@@ -379,8 +380,8 @@ int salt_strata_db_open_ro(const char *root, salt_strata_db **out) {
   size_t ulen = strlen(dbpath) + 32;
   char *uri = malloc(ulen);
   if (uri) snprintf(uri, ulen, "file:%s?immutable=1", dbpath);
-  int rc = sqlite3_open_v2(uri ? uri : dbpath, &db->h,
-                           SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, NULL);
+  int rc =
+      sqlite3_open_v2(uri ? uri : dbpath, &db->h, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, NULL);
   free(uri);
   free(dbpath);
   if (rc != SQLITE_OK) {
@@ -633,15 +634,18 @@ static void ensure_ca_certificates(salt_strata_db *db, const salt_stratum_recipe
   int st = 0;
   const char *pm = r->package_manager;
   if (strcmp(pm, "apk") == 0) {
-    char *v[] = {(char *)"apk", (char *)"add", (char *)"--no-cache", (char *)"ca-certificates", NULL};
+    char *v[] = {(char *)"apk", (char *)"add", (char *)"--no-cache", (char *)"ca-certificates",
+                 NULL};
     salt_stratum_run(&s, &opts, v, &st);
   } else if (strcmp(pm, "apt") == 0) {
     char *u[] = {(char *)"apt-get", (char *)"update", NULL};
     salt_stratum_run(&s, &opts, u, &st);
-    char *v[] = {(char *)"apt-get", (char *)"install", (char *)"-y", (char *)"ca-certificates", NULL};
+    char *v[] = {(char *)"apt-get", (char *)"install", (char *)"-y", (char *)"ca-certificates",
+                 NULL};
     salt_stratum_run(&s, &opts, v, &st);
   } else if (strcmp(pm, "pacman") == 0) {
-    char *v[] = {(char *)"pacman", (char *)"-Sy", (char *)"--noconfirm", (char *)"ca-certificates", NULL};
+    char *v[] = {(char *)"pacman", (char *)"-Sy", (char *)"--noconfirm", (char *)"ca-certificates",
+                 NULL};
     salt_stratum_run(&s, &opts, v, &st);
   } else if (strcmp(pm, "xbps") == 0) {
     char *v[] = {(char *)"xbps-install", (char *)"-Sy", (char *)"ca-certificates", NULL};
@@ -650,7 +654,8 @@ static void ensure_ca_certificates(salt_strata_db *db, const salt_stratum_recipe
     char *v[] = {(char *)"dnf", (char *)"-y", (char *)"install", (char *)"ca-certificates", NULL};
     salt_stratum_run(&s, &opts, v, &st);
   } else if (strcmp(pm, "zypper") == 0) {
-    char *v[] = {(char *)"zypper", (char *)"--non-interactive", (char *)"install", (char *)"ca-certificates", NULL};
+    char *v[] = {(char *)"zypper", (char *)"--non-interactive", (char *)"install",
+                 (char *)"ca-certificates", NULL};
     salt_stratum_run(&s, &opts, v, &st);
   }
   /* Rebuild the trust store (apk/debian provide this; harmless elsewhere). */
@@ -675,7 +680,8 @@ static void write_repo_config(const salt_stratum_recipe *r, const char *target) 
     salt_buf_free(&b);
     salt_buf cmd;
     salt_buf_init(&cmd);
-    salt_buf_printf(&cmd, "sed -i 's/^CheckSpace/#CheckSpace/' '%s/etc/pacman.conf' 2>/dev/null || true",
+    salt_buf_printf(&cmd,
+                    "sed -i 's/^CheckSpace/#CheckSpace/' '%s/etc/pacman.conf' 2>/dev/null || true",
                     target);
     run_system(cmd.data);
     salt_buf_free(&cmd);
@@ -717,8 +723,8 @@ static bool salt_stratum_name_ok(const char *name) {
   if (name[0] == '-' || name[0] == '.') return false;
   for (const char *p = name; *p; p++) {
     char ch = *p;
-    bool ok = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
-              (ch >= '0' && ch <= '9') || ch == '.' || ch == '_' || ch == '-';
+    bool ok = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') ||
+              ch == '.' || ch == '_' || ch == '-';
     if (!ok) return false;
   }
   return true;
@@ -727,7 +733,8 @@ static bool salt_stratum_name_ok(const char *name) {
 int salt_stratum_bootstrap(const salt_strata_ctx *c, salt_strata_db *db,
                            const salt_stratum_recipe *r) {
   if (!salt_stratum_name_ok(r->name)) {
-    salt_set_error("invalid stratum name '%s' (allowed: letters, digits, . _ -)", r->name ? r->name : "");
+    salt_set_error("invalid stratum name '%s' (allowed: letters, digits, . _ -)",
+                   r->name ? r->name : "");
     return SALT_ERR;
   }
   char *target = stratum_target(c, r->root);
@@ -758,7 +765,7 @@ int salt_stratum_bootstrap(const salt_strata_ctx *c, salt_strata_db *db,
       free(target);
       return SALT_ERR;
     }
-    const char *runtime = command_exists("docker") ? "docker"
+    const char *runtime = command_exists("docker")   ? "docker"
                           : command_exists("podman") ? "podman"
                                                      : NULL;
     if (!runtime) {
@@ -829,8 +836,10 @@ int salt_stratum_bootstrap(const salt_strata_ctx *c, salt_strata_db *db,
     const char *suite = r->repo_names.len > 0 ? r->repo_names.items[0] : "stable";
     const char *mirror = r->repo_urls.len > 0 ? r->repo_urls.items[0] : "";
     const char *deb_arch = "amd64";
-    if (r->arch && strcmp(r->arch, "aarch64") == 0) deb_arch = "arm64";
-    else if (r->arch && strcmp(r->arch, "x86_64") != 0 && r->arch[0]) deb_arch = r->arch;
+    if (r->arch && strcmp(r->arch, "aarch64") == 0)
+      deb_arch = "arm64";
+    else if (r->arch && strcmp(r->arch, "x86_64") != 0 && r->arch[0])
+      deb_arch = r->arch;
     salt_buf b;
     salt_buf_init(&b);
     salt_buf_printf(&b, "debootstrap --arch='%s' '%s' '%s' '%s'", deb_arch, suite, target, mirror);
@@ -1227,8 +1236,7 @@ int salt_expose_pm(salt_strata_db *db, const char *root, const char *stratum, co
 /* True if `name` already resolves to a command on the host (any standard bin
  * dir under `root`), so we never shadow host tools like ls/bash/cp. */
 static bool host_has_command(const char *root, const char *name) {
-  static const char *bindirs[] = {"usr/bin", "bin", "usr/local/bin",
-                                   "usr/sbin", "sbin", NULL};
+  static const char *bindirs[] = {"usr/bin", "bin", "usr/local/bin", "usr/sbin", "sbin", NULL};
   for (int i = 0; bindirs[i]; i++) {
     char *d = salt_join_path(root, bindirs[i]);
     char *p = salt_join_path(d, name);
@@ -1246,8 +1254,8 @@ static bool host_has_command(const char *root, const char *name) {
  * first-exposed binary winning across strata rather than last-one-wins. */
 static bool exposed_alias_exists(salt_strata_db *db, const char *alias) {
   sqlite3_stmt *st;
-  if (sqlite3_prepare_v2(db->h, "SELECT 1 FROM exposed WHERE alias=? LIMIT 1;", -1, &st,
-                         NULL) != SQLITE_OK)
+  if (sqlite3_prepare_v2(db->h, "SELECT 1 FROM exposed WHERE alias=? LIMIT 1;", -1, &st, NULL) !=
+      SQLITE_OK)
     return false;
   sqlite3_bind_text(st, 1, alias, -1, SQLITE_TRANSIENT);
   bool found = sqlite3_step(st) == SQLITE_ROW;
@@ -1281,16 +1289,14 @@ int salt_expose_all(salt_strata_db *db, const char *root, const salt_stratum *s,
       if (de->d_name[0] == '.') continue;
       char *full = salt_join_path(dir, de->d_name);
       struct stat stt;
-      bool runnable = (stat(full, &stt) == 0) && S_ISREG(stt.st_mode) &&
-                      (stt.st_mode & 0111);
+      bool runnable = (stat(full, &stt) == 0) && S_ISREG(stt.st_mode) && (stt.st_mode & 0111);
       free(full);
       if (!runnable) continue;
       /* Don't shadow host commands, and don't clobber an existing exposure
        * (notably the root-escalating `pm` shims for apk/pacman/etc.). */
       if (host_has_command(root, de->d_name)) continue;
       if (exposed_alias_exists(db, de->d_name)) continue;
-      if (salt_expose_add(db, root, s->name, de->d_name, de->d_name, "cli") == SALT_OK)
-        n++;
+      if (salt_expose_add(db, root, s->name, de->d_name, de->d_name, "cli") == SALT_OK) n++;
     }
     closedir(dp);
     free(dir);

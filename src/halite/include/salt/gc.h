@@ -29,8 +29,7 @@ void salt_gc_report_free(salt_gc_report *r);
 int64_t salt_gc_booted_generation(const salt_ctx *ctx);
 
 int salt_gc_run(salt_ctx *ctx, salt_db *db, const salt_gc_opts *opts, salt_gc_report *out);
-int salt_cache_clean(const salt_ctx *ctx, const char *cache_dir, bool dry_run,
-                     salt_gc_report *out);
+int salt_cache_clean(const salt_ctx *ctx, const char *cache_dir, bool dry_run, salt_gc_report *out);
 
 #ifdef __cplusplus
 }

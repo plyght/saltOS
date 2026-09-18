@@ -199,7 +199,9 @@ static pid_t salt_run_read_holder(const char *pidpath) {
   return p > 0 ? (pid_t)p : -1;
 }
 
-static bool salt_run_holder_alive(pid_t p) { return p > 0 && kill(p, 0) == 0; }
+static bool salt_run_holder_alive(pid_t p) {
+  return p > 0 && kill(p, 0) == 0;
+}
 
 /* Body of the detached holder: create the stratum's mount namespace, lay down
  * all the binds ONCE, publish the pid file (atomically, so a poller never sees a
@@ -334,8 +336,7 @@ static int salt_run_enter_userns(void) {
   return 0;
 }
 
-static void salt_run_child(const salt_stratum *s, const salt_run_opts *opts,
-                           char *const argv[]) {
+static void salt_run_child(const salt_stratum *s, const salt_run_opts *opts, char *const argv[]) {
   g_root = s->root;
 
   /* Root path: JOIN the stratum's ONE persistent mount namespace instead of
@@ -349,8 +350,7 @@ static void salt_run_child(const salt_stratum *s, const salt_run_opts *opts,
   if (geteuid() == 0) {
     pid_t holder = salt_run_ensure_holder(s);
     if (holder <= 0) {
-      fprintf(stderr,
-              "salt run: could not set up the stratum mount namespace holder\n");
+      fprintf(stderr, "salt run: could not set up the stratum mount namespace holder\n");
       _exit(125);
     }
     char nspath[64];
@@ -361,8 +361,7 @@ static void salt_run_child(const salt_stratum *s, const salt_run_opts *opts,
       _exit(125);
     }
     if (setns(nsfd, CLONE_NEWNS) != 0) {
-      fprintf(stderr, "salt run: could not join the stratum namespace: %s\n",
-              strerror(errno));
+      fprintf(stderr, "salt run: could not join the stratum namespace: %s\n", strerror(errno));
       close(nsfd);
       _exit(125);
     }
@@ -382,8 +381,7 @@ static void salt_run_child(const salt_stratum *s, const salt_run_opts *opts,
     }
     in_userns = true;
     if (unshare(CLONE_NEWNS) != 0) {
-      fprintf(stderr,
-              "salt run: could not set up the stratum mount namespace: %s\n",
+      fprintf(stderr, "salt run: could not set up the stratum mount namespace: %s\n",
               strerror(errno));
       _exit(125);
     }
@@ -478,9 +476,12 @@ static void salt_run_child(const salt_stratum *s, const salt_run_opts *opts,
   gid_t run_gid = drop ? (gid_t)gid : getgid();
   char xdg_runtime[64];
   snprintf(xdg_runtime, sizeof(xdg_runtime), "/run/user/%u", (unsigned)run_uid);
-  if (mkdir("/run/user", 0755) != 0 && errno != EEXIST) { /* non-fatal */ }
-  if (mkdir(xdg_runtime, 0700) != 0 && errno != EEXIST) { /* non-fatal */ }
-  if (chown(xdg_runtime, run_uid, run_gid) != 0) { /* non-fatal */ }
+  if (mkdir("/run/user", 0755) != 0 && errno != EEXIST) { /* non-fatal */
+  }
+  if (mkdir(xdg_runtime, 0700) != 0 && errno != EEXIST) { /* non-fatal */
+  }
+  if (chown(xdg_runtime, run_uid, run_gid) != 0) { /* non-fatal */
+  }
 
   const char *workdir = NULL;
   if (opts->workdir && opts->workdir[0] != '\0') {
@@ -512,8 +513,7 @@ static void salt_run_child(const salt_stratum *s, const salt_run_opts *opts,
    * to whichever stratum provides them. /usr/local/bin is first so the bound
    * host `salt` is found. */
   setenv("PATH",
-         "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:/usr/local/salt/shims",
-         1);
+         "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:/usr/local/salt/shims", 1);
   setenv("XDG_RUNTIME_DIR", xdg_runtime, 1);
 
   if (home && home[0] != '\0')
@@ -644,8 +644,8 @@ static const char *salt_pkg_kind(const salt_stratum *s) {
     const char *v = candidates[i];
     if (!v || v[0] == '\0') continue;
     if (strcmp(v, "pacman") == 0 || strcmp(v, "arch") == 0) return "pacman";
-    if (strcmp(v, "apt") == 0 || strcmp(v, "apt-get") == 0 ||
-        strcmp(v, "debian") == 0 || strcmp(v, "ubuntu") == 0)
+    if (strcmp(v, "apt") == 0 || strcmp(v, "apt-get") == 0 || strcmp(v, "debian") == 0 ||
+        strcmp(v, "ubuntu") == 0)
       return "apt";
     if (strcmp(v, "xbps") == 0 || strcmp(v, "void") == 0) return "xbps";
     if (strcmp(v, "apk") == 0 || strcmp(v, "alpine") == 0) return "apk";
@@ -675,8 +675,7 @@ int salt_stratum_pkg(const salt_stratum *s, const char *op, char *const pkgs[], 
 
   const char *kind = salt_pkg_kind(s);
   if (!kind) {
-    salt_set_error("unknown package manager for stratum '%s'",
-                   s->name ? s->name : "?");
+    salt_set_error("unknown package manager for stratum '%s'", s->name ? s->name : "?");
     return SALT_ERR;
   }
 

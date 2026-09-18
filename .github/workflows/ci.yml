@@ -11,16 +11,27 @@ concurrency:
 
 jobs:
   build:
-    name: build (${{ matrix.arch }})
+    name: build (${{ matrix.arch }}${{ matrix.sanitize == 'ON' && ', asan+ubsan' || '' }})
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: x86_64
             runner: ubuntu-latest
+            build_type: Release
+            sanitize: "OFF"
           - arch: aarch64
             runner: ubuntu-24.04-arm
+            build_type: Release
+            sanitize: "OFF"
+          - arch: x86_64
+            runner: ubuntu-latest
+            build_type: Debug
+            sanitize: "ON"
     runs-on: ${{ matrix.runner }}
+    env:
+      ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
     steps:
       - uses: actions/checkout@v4
 
@@ -36,12 +47,16 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build
-          key: cmake-${{ matrix.arch }}-${{ hashFiles('CMakeLists.txt', 'src/**/CMakeLists.txt', 'src/**/*.c', 'src/**/*.cpp', 'src/**/*.h') }}
+          key: cmake-${{ matrix.arch }}-${{ matrix.build_type }}-san${{ matrix.sanitize }}-${{ hashFiles('CMakeLists.txt', 'src/**/CMakeLists.txt', 'src/**/*.c', 'src/**/*.cpp', 'src/**/*.h') }}
           restore-keys: |
-            cmake-${{ matrix.arch }}-
+            cmake-${{ matrix.arch }}-${{ matrix.build_type }}-san${{ matrix.sanitize }}-
+
+      - name: Lower ASLR entropy for AddressSanitizer
+        if: matrix.sanitize == 'ON'
+        run: sudo sysctl -w vm.mmap_rnd_bits=28
 
       - name: Configure
-        run: cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DSALT_SANITIZE=${{ matrix.sanitize }}
 
       - name: Build
         run: cmake --build build

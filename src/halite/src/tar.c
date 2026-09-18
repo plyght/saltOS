@@ -25,8 +25,8 @@ static void write_block(salt_buf *out, const char *block) {
   salt_buf_append(out, block, TAR_BLOCK);
 }
 
-static void fill_header(char *h, const char *name, char typeflag, unsigned mode,
-                        uint64_t size, const char *linkname) {
+static void fill_header(char *h, const char *name, char typeflag, unsigned mode, uint64_t size,
+                        const char *linkname) {
   memset(h, 0, TAR_BLOCK);
   strncpy(h, name, 100);
   octal(h + 100, 8, mode & 07777);
@@ -160,8 +160,8 @@ int salt_tar_read(const void *data, size_t len, salt_tar_cb cb, void *ud) {
     p += TAR_BLOCK;
     uint64_t size = parse_octal(h + 124, 12);
     char typeflag = h[156];
-    bool has_data = typeflag == 'L' || typeflag == 'K' || typeflag == SALT_TAR_FILE ||
-                    typeflag == '0' || typeflag == '\0';
+    bool has_data =
+        typeflag == 'L' || typeflag == 'K' || typeflag == SALT_TAR_FILE || typeflag == '\0';
     if (has_data && size > (uint64_t)(end - p)) {
       free(longname);
       free(longlink);
@@ -187,11 +187,11 @@ int salt_tar_read(const void *data, size_t len, salt_tar_cb cb, void *ud) {
     salt_tar_entry e;
     memset(&e, 0, sizeof(e));
     char namebuf[256];
+    char name[101];
     if (longname) {
       e.path = longname;
     } else {
       char prefix[156];
-      char name[101];
       memcpy(name, h, 100);
       name[100] = '\0';
       memcpy(prefix, h + 345, 155);
@@ -214,14 +214,14 @@ int salt_tar_read(const void *data, size_t len, salt_tar_cb cb, void *ud) {
     e.typeflag = typeflag;
     e.mode = (unsigned)parse_octal(h + 100, 8);
     e.size = size;
-    e.data = (typeflag == SALT_TAR_FILE || typeflag == '0' || typeflag == '\0') ? p : NULL;
+    e.data = (typeflag == SALT_TAR_FILE || typeflag == '\0') ? p : NULL;
     int r = cb(&e, ud);
     free(longname);
     longname = NULL;
     free(longlink);
     longlink = NULL;
     if (r != SALT_OK) return r;
-    if (typeflag == SALT_TAR_FILE || typeflag == '0' || typeflag == '\0')
+    if (typeflag == SALT_TAR_FILE || typeflag == '\0')
       p += ((size + TAR_BLOCK - 1) / TAR_BLOCK) * TAR_BLOCK;
   }
   free(longname);
@@ -323,7 +323,8 @@ static int extract_cb(const salt_tar_entry *e, void *ud) {
   return rc;
 }
 
-int salt_tar_extract(const void *data, size_t len, const char *dest_dir, salt_strlist *installed_paths) {
+int salt_tar_extract(const void *data, size_t len, const char *dest_dir,
+                     salt_strlist *installed_paths) {
   extract_ctx ctx = {dest_dir, installed_paths};
   if (salt_mkdirs(dest_dir, 0755) != SALT_OK) return SALT_ERR_IO;
   return salt_tar_read(data, len, extract_cb, &ctx);

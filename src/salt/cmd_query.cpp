@@ -198,8 +198,7 @@ int cmd_owner(const Options &o, const std::vector<std::string> &args) {
 int cmd_list(const Options &o, const std::vector<std::string> &args) {
   bool upgradable = false, available = false;
   for (const auto &a : args) {
-    if (a == "--installed")
-      continue;
+    if (a == "--installed") continue;
     if (a == "--upgradable" || a == "--upgradeable")
       upgradable = true;
     else if (a == "--available")

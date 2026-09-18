@@ -75,8 +75,7 @@ int cmd_provider(const Options &o, const std::vector<std::string> &args) {
       else
         trust = source == "native" ? "native" : "foreign";
       if (provider != "native")
-        fprintf(stderr,
-                "warning: adopting a foreign provider (%s) crosses a trust boundary\n",
+        fprintf(stderr, "warning: adopting a foreign provider (%s) crosses a trust boundary\n",
                 provider.c_str());
       if (!confirm(o, "adopt this provider?")) {
         ret = 1;
