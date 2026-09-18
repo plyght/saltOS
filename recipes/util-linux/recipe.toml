@@ -7,7 +7,7 @@ arch = ["x86_64", "aarch64"]
 
 [source]
 url = "https://www.kernel.org/pub/linux/utils/util-linux/v2.40/util-linux-2.40.1.tar.xz"
-sha256 = "f9cb409d3eede4d8d4a78ed99c8d4e35a82e90cda5e2657a4f51a4b6e3771d36"
+sha256 = "59e676aa53ccb44b6c39f0ffe01a8fa274891c91bef1474752fad92461def24f"
 
 [build]
 system = "autotools"

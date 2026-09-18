@@ -7,7 +7,7 @@ arch = ["x86_64", "aarch64"]
 
 [source]
 url = "https://www.sqlite.org/2024/sqlite-autoconf-3460000.tar.gz"
-sha256 = "6f8e6a7b335273748816f9b3b62bbdc7a3534671f19b91fb52733133f8f79de9"
+sha256 = "6f8e6a7b335273748816f9b3b62bbdc372a889de8782d7f048c653a447417a7d"
 
 [build]
 system = "autotools"
