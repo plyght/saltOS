@@ -385,6 +385,9 @@ Options:
   hash, with a loud warning. Never needed for a healthy repository.
 - `--locked [--lockfile FILE]` — ignore the package arguments and converge the
   system to the lockfile instead (same as `salt lock apply`).
+- `--nodeps` — install only the named packages without pulling in or checking
+  their dependencies. Used by the bootstrap while the sysroot is being built
+  up package by package; never needed on an installed system.
 
 ```sh
 salt install helium

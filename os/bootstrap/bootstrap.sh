@@ -46,20 +46,22 @@ build_one() {
     echo "missing recipe: $name" >&2
     return 1
   fi
-  grain=$(ls -1t "$PKGDIR/$name"-*-"$ARCH".grain 2>/dev/null | head -n1)
-  if [ -n "$grain" ]; then
+  version=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$recipe/recipe.toml" | head -n1)
+  release=$(sed -n 's/^release = \([0-9][0-9]*\)$/\1/p' "$recipe/recipe.toml" | head -n1)
+  grain="$PKGDIR/$name-$version-${release:-1}-$ARCH.grain"
+  if [ -f "$grain" ]; then
     log "reusing $name ($grain)"
   else
     log "building $name"
+    rm -f "$PKGDIR/$name"-*-"$ARCH".grain
     if ! SALT_ARCH="$ARCH" SALT_JOBS="$JOBS" SALT_OUT="$OUT" \
         "$SALT" build "$recipe" >"$LOGDIR/$name.log" 2>&1; then
       echo "build failed for $name; log follows:" >&2
       cat "$LOGDIR/$name.log" >&2 || true
       return 1
     fi
-    grain=$(ls -1t "$PKGDIR/$name"-*-"$ARCH".grain 2>/dev/null | head -n1)
   fi
-  if [ -z "$grain" ]; then
+  if [ ! -f "$grain" ]; then
     echo "no grain produced for $name; build log follows:" >&2
     cat "$LOGDIR/$name.log" >&2 2>/dev/null || true
     return 1
@@ -76,7 +78,7 @@ build_one() {
     return 1
   fi
   log "installing $name into sysroot"
-  if ! "$SALT" --root "$SYSROOT" --repo "$OUT" --yes install "$name" >>"$LOGDIR/$name.log" 2>&1; then
+  if ! "$SALT" --root "$SYSROOT" --repo "$OUT" --yes install --nodeps "$name" >>"$LOGDIR/$name.log" 2>&1; then
     echo "install failed for $name; log follows:" >&2
     cat "$LOGDIR/$name.log" >&2 || true
     return 1

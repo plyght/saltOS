@@ -157,7 +157,7 @@ static void usage() {
           "  sync                 refresh and verify the repository index\n"
           "  search <term>        search package names and descriptions\n"
           "  install <pkg>...     install packages (use <stratum>/<pkg> for foreign)\n"
-          "      [--allow-unverified] [--download-only] [--dry-run] [--locked [--lockfile F]]\n"
+          "      [--allow-unverified] [--download-only] [--dry-run] [--nodeps] [--locked [--lockfile F]]\n"
           "  remove <pkg>...      remove packages ([--cascade] removes dependents too)\n"
           "  update [stratum...]  upgrade the host, or named strata\n"
           "      [--download-only] [--allow-unverified] [--dry-run]\n"

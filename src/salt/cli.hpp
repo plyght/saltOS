@@ -36,6 +36,7 @@ struct TxnFlags {
   bool download_only = false;
   bool locked = false;
   bool cascade = false;
+  bool nodeps = false;
   bool dry_run = false;
   std::string lockfile;
 };

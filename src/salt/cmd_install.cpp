@@ -54,6 +54,8 @@ bool parse_txn_flags(std::vector<std::string> &args, TxnFlags &f, const char *us
       f.lockfile = args[++i];
     } else if (a == "--cascade") {
       f.cascade = true;
+    } else if (a == "--nodeps") {
+      f.nodeps = true;
     } else if (a == "--dry-run" || a == "-n") {
       f.dry_run = true;
     } else if (!a.empty() && a[0] == '-') {
@@ -166,7 +168,7 @@ bool index_signed_ok(const Options &o, const RepoConf &c) {
 static void resolve(const salt_repo_index &idx, salt_db *db, const std::string &name,
                     const std::string &wanted_by, const std::set<std::string> &targets,
                     std::set<std::string> &seen, std::vector<const salt_repo_entry *> &order,
-                    std::vector<std::string> &problems) {
+                    std::vector<std::string> &problems, bool nodeps) {
   if (seen.count(name)) return;
   seen.insert(name);
   const salt_repo_entry *e = salt_repo_index_find(&idx, name.c_str());
@@ -178,10 +180,10 @@ static void resolve(const salt_repo_index &idx, salt_db *db, const std::string &
                          " is not available in the repository");
     return;
   }
-  for (size_t i = 0; i < e->deps.len; i++) {
+  for (size_t i = 0; !nodeps && i < e->deps.len; i++) {
     std::string dep = e->deps.items[i];
     if (targets.count(dep) || !salt_db_is_installed(db, dep.c_str()))
-      resolve(idx, db, dep, name, targets, seen, order, problems);
+      resolve(idx, db, dep, name, targets, seen, order, problems, nodeps);
   }
   if (targets.count(name) || !salt_db_is_installed(db, name.c_str())) order.push_back(e);
 }
@@ -484,7 +486,7 @@ static int do_install(const Options &o, const std::vector<std::string> &names, b
   NativePlan plan;
   std::set<std::string> seen;
   std::vector<std::string> problems;
-  for (auto &n : targets) resolve(idx, db, n, "", targets, seen, plan.install, problems);
+  for (auto &n : targets) resolve(idx, db, n, "", targets, seen, plan.install, problems, f.nodeps);
   if (!problems.empty()) {
     for (auto &p : problems) fprintf(stderr, "salt: %s\n", p.c_str());
     fprintf(stderr, "salt: cannot resolve transaction\n");
@@ -511,7 +513,7 @@ bool native_index_has(const Options &o, const std::string &name) {
 }
 
 static const char *INSTALL_USAGE =
-    "usage: salt install [--allow-unverified] [--download-only] [--dry-run]\n"
+    "usage: salt install [--allow-unverified] [--download-only] [--dry-run] [--nodeps]\n"
     "                    <pkg>... | <stratum>/<pkg>...\n"
     "       salt install --locked [--lockfile FILE] [--allow-unverified] [--dry-run]\n";
 
