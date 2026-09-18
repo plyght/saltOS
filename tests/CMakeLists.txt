@@ -4,6 +4,12 @@ add_executable(salt_tests
 target_link_libraries(salt_tests PRIVATE halite)
 add_test(NAME salt_tests COMMAND salt_tests)
 
+add_executable(setup_config_test
+  setup_config_test.cpp
+)
+target_link_libraries(setup_config_test PRIVATE saltsetup)
+add_test(NAME setup_config COMMAND setup_config_test)
+
 add_test(
   NAME cli_smoke
   COMMAND ${CMAKE_COMMAND}
