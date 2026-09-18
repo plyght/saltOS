@@ -151,6 +151,10 @@ The initial security baseline (DISTRO §12) is:
 
 - signed repository metadata;
 - source hashes required;
+- artifact hashes required: `salt sync` rejects an index whose entries lack a
+  well-formed `sha256`, and `salt install` refuses a package it cannot verify
+  unless `--allow-unverified` is passed explicitly (see
+  [repository.md](repository.md));
 - build sandboxing required for official builds;
 - no arbitrary install scripts by default;
 - a package contents manifest required;

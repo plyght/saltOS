@@ -83,6 +83,7 @@ typedef struct {
   char *repro_status;   /* "verified" | "unverified" */
   char *repro_reason;   /* set when unverified */
   salt_strlist deps;    /* runtime dependencies */
+  salt_strlist conflicts;
 } salt_pkg_meta;
 ```
 
@@ -129,8 +130,22 @@ CREATE TABLE packages (
   arch        TEXT NOT NULL,
   repo        TEXT,          -- repository source the package came from
   sig_status  TEXT,          -- signature verification result at install time
+  summary     TEXT,
+  license     TEXT,
+  filename    TEXT,          -- .grain artifact this row was installed from
+  sha256      TEXT,          -- verified sha256 of that artifact
   install_time INTEGER NOT NULL,
   txn_id      INTEGER NOT NULL REFERENCES transactions(id)
+);
+
+CREATE TABLE deps (
+  pkg_name TEXT NOT NULL REFERENCES packages(name),
+  dep      TEXT NOT NULL
+);
+
+CREATE TABLE conflicts (
+  pkg_name TEXT NOT NULL REFERENCES packages(name),
+  conflict TEXT NOT NULL
 );
 
 CREATE TABLE files (
@@ -170,6 +185,10 @@ typedef struct {
   char *arch;
   char *repo;
   char *sig_status;
+  char *summary;
+  char *license;
+  char *filename;
+  char *sha256;
   int64_t install_time;
   int64_t txn_id;
 } salt_db_pkg;
@@ -190,8 +209,10 @@ typedef struct {
 The query side of the database is exposed through functions such as
 `salt_db_get_pkg()`, `salt_db_is_installed()`, `salt_db_list_installed()`,
 `salt_db_search()`, `salt_db_pkg_files()`, `salt_db_owner()`,
-`salt_db_pkg_manifest()`, and `salt_db_revdeps()` (reverse dependencies, used to
-keep removals safe).
+`salt_db_pkg_manifest()`, `salt_db_pkg_deps()`, `salt_db_revdeps()` (reverse
+dependencies, used to keep removals safe), and `salt_db_conflicts_with()`
+(installed packages that declare a conflict with a name, or that a name declares
+a conflict with).
 
 ## Transactions
 
@@ -228,10 +249,12 @@ The flow for a mutating operation is **snapshot-before-mutate**:
    package; `salt_remove_pkg()` removes one.
 4. On success, the SQLite transaction commits and `salt_db_txn_finish()` marks
    it committed.
-5. On **any** failure, the system automatically rolls back:
-   `salt_snapshot_restore()` restores the pre-transaction state, the SQLite
-   transaction is rolled back, and the transaction is finished with a failed
-   status.
+5. On **any** failure — a file that cannot be backed up, a payload that fails
+   to extract, or a database write that is rejected — the system automatically
+   rolls back: `salt_snapshot_restore()` restores the pre-transaction state, the
+   SQLite transaction is rolled back, and the transaction is finished with a
+   failed status. A package whose extraction failed is never recorded as
+   installed.
 
 `salt rollback` reuses this machinery via `salt_rollback_last()` to return to the
 previous deployment on demand. See [rollback.md](rollback.md) for the full model.
@@ -243,8 +266,13 @@ Under the active `--root`:
 ```
 /var/lib/salt/db.sqlite     package database + transaction log + deployments
 /var/lib/salt/state/        per-transaction saved file state (non-btrfs fallback)
+/var/lib/salt/cache/<arch>/ downloaded .grain artifacts
+/var/lib/salt/repo/<arch>/  synced index.toml + index.toml.sig
 /.snapshots or /@snapshots  btrfs snapshots
 /etc/salt/repo.conf         repo source + trusted key
+/etc/salt/salt.conf         gc.keep / gc.pinned retention policy
+/etc/salt/system.toml       declarative config (see reproducibility.md)
+/etc/salt/system.lock.toml  lockfile written by salt lock
 ```
 
 ## Verification and trust order
@@ -256,8 +284,15 @@ Under the active `--root`:
 2. **Verify `index.toml.sig` against the trusted public key** before reading any
    package list. The trusted key comes from `--key`, or from
    `/etc/salt/repo.conf`.
-3. For each package to be installed, **verify its `sha256` against the entry in
-   the signed index** before unpacking it.
+3. **Reject the index** if any entry lacks a `sha256`, or carries a malformed
+   or placeholder value (for example `TODO-sha256`); `salt sync` fails and the
+   previous index stays in place.
+4. For each package to be installed, **verify its `sha256` against the entry in
+   the signed index** before unpacking it. A package whose index entry has no
+   usable hash is refused unless `--allow-unverified` is passed explicitly, in
+   which case a loud warning is printed and the install proceeds unverified.
+   A cached or downloaded artifact whose content hash differs from the index is
+   refused and deleted from the cache.
 
 This means the signed index is the root of trust, and package integrity is
 chained from it. The result of these checks is recorded as the `sig_status` of
@@ -277,14 +312,20 @@ These flags apply to all subcommands:
 - `--key <pubkey-hex-or-file>` — the trusted public key for verifying the
   repository index signature, either as hex on the command line or a file path.
 - `--yes` — assume "yes" for confirmation prompts (non-interactive use).
+- `--expose` / `--no-expose` — control whether foreign installs offer host shims.
+
+Every command exits 0 on success, 1 on an operational failure (refused
+transaction, verification failure, missing package), and 2 on a usage error.
+Errors go to stderr; `salt <unknown>` exits 2.
 
 ## CLI subcommands
 
 ### `salt sync`
 
 Refresh the repository index from the configured source. This downloads
-`index.toml` and `index.toml.sig` and verifies the signature against the trusted
-key.
+`index.toml` and `index.toml.sig`, verifies the signature against the trusted
+key, and verifies every entry has a well-formed `sha256` before replacing the
+previous index.
 
 ```sh
 salt sync
@@ -294,43 +335,66 @@ salt sync --repo https://repo.saltos.example/current --key /etc/salt/repo.pub
 ### `salt search <term>`
 
 Search the synced repository (and the local database) for packages whose name or
-summary matches the term.
+summary matches the term, case-insensitively. Installed packages are marked.
 
 ```sh
 salt search helium
+salt search "terminal emulator"
 ```
 
 ### `salt install <pkg>...`
 
-Install one or more packages. This is a transaction: a snapshot is taken, each
-package's `sha256` is verified against the signed index, the payload is
-extracted, and the database is updated. On failure, the whole transaction is
-rolled back.
+Install one or more packages. Runtime dependencies are resolved from the signed
+index and installed first, in dependency order; a missing dependency or a
+conflict (declared by the new package, or by an installed package against it)
+fails the command before anything is touched. This is a transaction: a snapshot
+is taken, each package's `sha256` is verified against the signed index, the
+payload is extracted, and the database is updated. On failure, the whole
+transaction is rolled back.
+
+Options:
+
+- `--dry-run` — print the resolved plan and exit without changing anything.
+- `--download-only` — fetch and verify the artifacts into the cache, install
+  nothing.
+- `--allow-unverified` — install a package whose index entry has no usable
+  hash, with a loud warning. Never needed for a healthy repository.
+- `--locked [--lockfile FILE]` — ignore the package arguments and converge the
+  system to the lockfile instead (same as `salt lock apply`).
 
 ```sh
 salt install helium
 salt install mpv qterminal pcmanfm-qt --yes
+salt install --locked
 ```
 
 ### `salt remove <pkg>...`
 
 Remove one or more installed packages. Reverse dependencies are checked
-(`salt_db_revdeps`) so a removal does not silently break dependents. Like
-install, it is a snapshotted, auto-rolling-back transaction.
+(`salt_db_revdeps`): a package that other installed packages depend on is
+refused unless `--cascade` is passed, in which case the dependents are removed
+too and listed in the plan. Like install, it is a snapshotted,
+auto-rolling-back transaction. `--dry-run` prints the plan only.
 
 ```sh
 salt remove qview
+salt remove zlib --cascade
 ```
 
 ### `salt update`
 
-Upgrade the system to the current repository state. This is the canonical
+Upgrade the system to the current repository state. Upgrades are ordered so
+that dependencies are replaced before their dependents. This is the canonical
 rollback-protected operation: it snapshots `@`, records a deployment, applies all
 package changes as one transaction, and rolls back automatically if anything
-fails.
+fails. `--download-only` fetches and verifies the new artifacts without
+installing; `--dry-run` lists what would change; `--allow-unverified` behaves
+as for `install`. Naming strata (`salt update alpine`) upgrades those strata
+instead.
 
 ```sh
 salt update
+salt update --download-only
 ```
 
 ### `salt rollback`
@@ -346,33 +410,49 @@ salt rollback
 reboot
 ```
 
-### `salt deployments`
+### `salt history`
 
-List the recorded deployments (rollback points) with their id, operation,
-status, time, and backing snapshot.
+List the recorded transactions and deployments (rollback points) with their id,
+operation, status, time, and backing snapshot. `salt deployments` and
+`salt config history` are aliases.
 
 ```sh
-salt deployments
+salt history
 ```
 
-### `salt verify`
+### `salt verify [pkg]`
 
 Verify installed files against the hashes recorded in the database. This
-re-hashes the on-disk files and compares them to the stored `sha256` manifest
-values, reporting any drift or corruption.
+re-hashes the on-disk regular files, checks symlink targets, and compares them
+to the stored manifest values, reporting any drift or corruption. With a
+package name only that package is checked. Exits 1 when any file differs.
 
 ```sh
 salt verify
+salt verify zlib
 salt verify --root /mnt/target
 ```
 
-### `salt query <pkg>`
+### `salt info <pkg>`
 
-Show details about a package: version, release, arch, repository source,
-signature status, and install time.
+Show details about a package: version, release, arch, summary, license,
+repository source, signature status, artifact filename and hash, install time,
+file count, dependencies and reverse dependencies. Packages that are not installed but available in the synced
+index are shown from the index. `salt query` and `salt show` are aliases.
 
 ```sh
-salt query helium
+salt info helium
+```
+
+### `salt list`
+
+List packages. `--installed` (default) lists the local database,
+`--upgradable` lists installed packages the index offers a newer version of,
+and `--available` lists every package in the index.
+
+```sh
+salt list
+salt list --upgradable
 ```
 
 ### `salt files <pkg>`
@@ -389,6 +469,49 @@ Show which installed package owns a given path on disk.
 
 ```sh
 salt owner /usr/bin/mpv
+```
+
+### `salt clean`
+
+Delete downloaded `.grain` artifacts from `var/lib/salt/cache/<arch>` for the
+running architecture; `--all` sweeps every architecture's cache; `--dry-run`
+lists what would be removed and frees nothing. Installed packages do not need
+their artifact after installation, so this is always safe; `salt gc` is the
+reference-aware alternative that keeps artifacts still pinned by a kept
+generation or lockfile.
+
+```sh
+salt clean
+salt clean --all --dry-run
+```
+
+### `salt gc`
+
+Prune old generations and the artifacts they referenced. Keeps the `N` most
+recent generations (`--keep N`, default `gc.keep` from `etc/salt/salt.conf`,
+default 3) and never removes the current, booted, or pinned generation
+(`--pin ID` or `gc.pinned` in `salt.conf`). `--dry-run` reports without
+deleting. `salt config gc` is an alias. See
+[reproducibility.md](reproducibility.md).
+
+```sh
+salt gc --keep 5 --dry-run
+salt config gc
+```
+
+### `salt lock`, `salt lock apply`, `salt lock diff`
+
+Write, apply and compare `etc/salt/system.lock.toml`, which pins every installed
+native package by name, version, release, arch, sha256 and repository.
+`lock apply` fails closed on any hash mismatch. `salt config apply`,
+`salt config diff` and `salt config rollback` operate on the default lock path.
+See [reproducibility.md](reproducibility.md) for the format and the exact
+semantics.
+
+```sh
+salt lock
+salt lock diff
+salt lock apply /srv/locks/lab.lock.toml --dry-run
 ```
 
 ### `salt build <recipe-dir>`
