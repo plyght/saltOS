@@ -100,6 +100,11 @@ jobs:
             echo "BOOT FAILED: marker not found"
             exit 1
           fi
+          if grep -q "error while loading shared libraries" qemu-aarch64.log; then
+            echo "BOOT FAILED: a binary in the image links a library that is not in the rootfs"
+            grep "error while loading shared libraries" qemu-aarch64.log
+            exit 1
+          fi
 
       - name: Installer test (blank disk -> installed UEFI boot)
         run: |
@@ -134,6 +139,7 @@ jobs:
 
           tail -n 180 qemu-aarch64-install.log || true
           grep -q "SALTOS_INSTALL_EXIT=0" qemu-aarch64-install.log
+          ! grep "error while loading shared libraries" qemu-aarch64-install.log
 
           timeout "$QEMU_UEFI_TIMEOUT" qemu-system-aarch64 \
             -machine virt $QEMU_ACCEL -m "$QEMU_MEM" -smp "$QEMU_SMP" \
@@ -153,6 +159,8 @@ jobs:
 
           tail -n 200 qemu-aarch64-installed-uefi.log || true
           grep -q "Run /sbin/runit-init as init process" qemu-aarch64-installed-uefi.log
+          grep -q "SALTOS_SELFHOST_OK" qemu-aarch64-installed-uefi.log
+          ! grep "error while loading shared libraries" qemu-aarch64-installed-uefi.log
 
       - name: Installed image diagnostics
         if: failure()
