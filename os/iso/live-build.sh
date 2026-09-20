@@ -13,8 +13,8 @@ SUITE="${SUITE:-bookworm}"
 MIRROR="${MIRROR:-http://deb.debian.org/debian}"
 
 case "$ARCH" in
-  x86_64) DARCH=amd64; SERIAL=ttyS0; GRUB_PKGS="grub-pc-bin,grub-efi-amd64-bin" ;;
-  aarch64) DARCH=arm64; SERIAL=ttyAMA0; GRUB_PKGS="grub-efi-arm64-bin" ;;
+  x86_64) DARCH=amd64; SERIAL=ttyS0; GRUB_PKGS="grub-pc-bin,grub-efi-amd64-bin,grub-efi-amd64-signed,shim-signed,intel-microcode,amd64-microcode" ;;
+  aarch64) DARCH=arm64; SERIAL=ttyAMA0; GRUB_PKGS="grub-efi-arm64-bin,grub-efi-arm64-signed,shim-signed" ;;
   *) echo "unsupported arch: $ARCH" >&2; exit 1 ;;
 esac
 
@@ -25,10 +25,11 @@ mkdir -p "$ROOTFS" "$ISODIR/live" "$ISODIR/boot/grub" "$OUT"
 
 BASE_PKGS="linux-image-$DARCH,live-boot,runit-init,btrfs-progs,dosfstools,e2fsprogs,\
 util-linux,kmod,pciutils,usbutils,file,less,nano,bash,coreutils,procps,\
-iproute2,iputils-ping,isc-dhcp-client,ca-certificates,\
+iproute2,iputils-ping,isc-dhcp-client,ca-certificates,tzdata,\
 curl,tar,xz-utils,debootstrap,sudo,\
 firmware-linux,firmware-linux-nonfree,firmware-misc-nonfree,firmware-iwlwifi,\
-firmware-realtek,firmware-atheros,firmware-brcm80211,firmware-sof-signed,\
+firmware-realtek,firmware-atheros,firmware-brcm80211,\
+firmware-amd-graphics,firmware-sof-signed,wpasupplicant,wireless-regdb,\
 libzstd1,libsodium23,libsqlite3-0,zstd"
 
 DESKTOP_PKGS="xserver-xorg-core,xserver-xorg-legacy,xserver-xorg-input-libinput,\
@@ -41,20 +42,19 @@ libqt5svg5,xdg-user-dirs,xdg-utils,desktop-base,mesa-utils,libgl1-mesa-dri,\
 firefox-esr,network-manager,nm-tray,\
 pipewire,pipewire-pulse,wireplumber,pavucontrol-qt,\
 elogind,libpam-elogind,policykit-1,\
-dbus,dbus-x11,udev,calamares,calamares-settings-debian,parted,gdisk,\
+dbus,dbus-x11,udev,calamares,parted,gdisk,fdisk,\
+qml-module-qtquick2,qml-module-qtquick-window2,\
 fonts-dejavu,fonts-liberation2,sudo"
 
-INSTALLER_PKGS="rsync,squashfs-tools,$GRUB_PKGS,\
-grub-common,grub2-common,efibootmgr,cryptsetup,lvm2,mtools,\
-locales,console-setup,keyboard-configuration,kbd,chromium,\
-sddm,calamares-settings-debian"
+INSTALLER_PKGS="lvm2,keyboard-configuration,xdotool,x11-utils,x11-apps"
 
 SETUP_PKGS="rsync,squashfs-tools,$GRUB_PKGS,\
-grub-common,grub2-common,efibootmgr,mtools,gdisk,parted,dosfstools,\
-debootstrap,locales,console-setup,kbd,network-manager,dbus"
+grub-common,grub2-common,efibootmgr,os-prober,cryptsetup,cryptsetup-initramfs,\
+mtools,gdisk,fdisk,parted,dosfstools,debootstrap,locales,console-setup,kbd,\
+network-manager,dbus"
 
 PKGS="$BASE_PKGS"
-if [ "$EDITION" = "base" ]; then
+if [ "$EDITION" != "console" ]; then
   PKGS="$PKGS,$SETUP_PKGS"
 fi
 if [ "$EDITION" = "desktop" ] || [ "$EDITION" = "installer" ]; then
@@ -63,6 +63,7 @@ fi
 if [ "$EDITION" = "installer" ]; then
   PKGS="$PKGS,$INSTALLER_PKGS"
 fi
+PKGS="$(printf '%s' "$PKGS" | tr ',' '\n' | awk 'NF && !seen[$0]++' | paste -sd, -)"
 
 mmdebstrap \
   --variant=apt \
@@ -72,7 +73,7 @@ mmdebstrap \
   "$SUITE" "$ROOTFS" "$MIRROR"
 
 install -Dm755 "$SALT_BIN" "$ROOTFS/usr/bin/salt"
-if [ "$EDITION" = "base" ]; then
+if [ "$EDITION" != "console" ]; then
   [ -f "$SALTSETUP_BIN" ] || { echo "salt-setup binary not found at $SALTSETUP_BIN" >&2; exit 1; }
 fi
 [ -f "$SALTSETUP_BIN" ] && install -Dm755 "$SALTSETUP_BIN" "$ROOTFS/usr/bin/salt-setup"
@@ -397,14 +398,6 @@ EOF
   mkdir -p "$ROOTFS/etc/modules-load.d"
   printf 'virtio_gpu\nvirtio_pci\n' > "$ROOTFS/etc/modules-load.d/saltos-virtio-gpu.conf"
 
-  install -Dm755 "$REPO/os/iso/live/Install-saltOS.desktop" \
-    "$ROOTFS/home/salt/Desktop/Install-saltOS.desktop" 2>/dev/null || true
-
-  for d in /etc/xdg/autostart; do
-    [ -f "$ROOTFS$d/add-calamares-desktop-icon.desktop" ] && rm -f "$ROOTFS$d/add-calamares-desktop-icon.desktop"
-  done
-  rm -f "$ROOTFS/usr/bin/add-calamares-desktop-icon" 2>/dev/null || true
-
   mkdir -p "$ROOTFS/etc/xdg/lxqt"
   cat > "$ROOTFS/etc/xdg/lxqt/session.conf" <<'EOF'
 [General]
@@ -467,38 +460,92 @@ EOF
   chroot "$ROOTFS" chown -R salt:salt /home/salt 2>/dev/null || true
 }
 
-if [ "$EDITION" = "desktop" ]; then
-  setup_desktop_session
+if [ "$EDITION" != "console" ]; then
+  mkdir -p "$ROOTFS/usr/lib/saltos"
+  install -Dm755 "$REPO/os/iso/live/autoinstall.sh" "$ROOTFS/usr/lib/saltos/autoinstall.sh"
+  mkdir -p "$ROOTFS/etc/runit/sv/saltos-autoinstall"
+  cat > "$ROOTFS/etc/runit/sv/saltos-autoinstall/run" <<'EOF'
+#!/bin/sh
+exec 2>&1
+exec /usr/lib/saltos/autoinstall.sh
+EOF
+  chmod +x "$ROOTFS/etc/runit/sv/saltos-autoinstall/run"
+  enable_sv saltos-autoinstall
 fi
 
-if [ "$EDITION" = "installer" ]; then
-  setup_desktop_session
-
-  mkdir -p "$ROOTFS/etc/calamares" "$ROOTFS/usr/lib/calamares/modules" \
-    "$ROOTFS/usr/share/calamares/branding/saltos"
+setup_calamares() {
+  mkdir -p "$ROOTFS/etc/calamares/modules" "$ROOTFS/etc/calamares/branding/saltos" \
+    "$ROOTFS/usr/lib/calamares/modules"
 
   install -Dm644 "$REPO/os/installer/settings-live.conf" \
     "$ROOTFS/etc/calamares/settings.conf"
 
-  for c in "$REPO"/os/installer/modules-live/*; do
-    [ -f "$c" ] && install -Dm644 "$c" "$ROOTFS/etc/calamares/$(basename "$c")"
+  for c in "$REPO"/os/installer/modules-live/*.conf; do
+    install -Dm644 "$c" "$ROOTFS/etc/calamares/modules/$(basename "$c")"
   done
 
-  cp -a "$REPO/os/installer/branding/saltos/." \
-    "$ROOTFS/usr/share/calamares/branding/saltos/"
+  cp -a "$REPO/os/installer/branding/saltos/." "$ROOTFS/etc/calamares/branding/saltos/"
 
   for m in "$REPO"/os/installer/modules/*/; do
     name="$(basename "$m")"
     mkdir -p "$ROOTFS/usr/lib/calamares/modules/$name"
     cp -a "$m". "$ROOTFS/usr/lib/calamares/modules/$name/"
+    [ -f "$m/$name.conf" ] && install -Dm644 "$m/$name.conf" "$ROOTFS/etc/calamares/modules/$name.conf"
   done
 
   cat > "$ROOTFS/usr/local/bin/saltos-installer" <<'EOF'
 #!/bin/sh
 export XDG_CURRENT_DESKTOP=LXQt
-exec pkexec calamares -c /etc/calamares 2>&1
+exec sudo -E calamares -D6 2>&1
 EOF
   chmod +x "$ROOTFS/usr/local/bin/saltos-installer"
+
+  cat > "$ROOTFS/usr/local/bin/saltos-setup-terminal" <<'EOF'
+#!/bin/sh
+exec qterminal -e sudo salt-setup
+EOF
+  chmod +x "$ROOTFS/usr/local/bin/saltos-setup-terminal"
+
+  install -Dm755 "$REPO/os/iso/live/Install-saltOS.desktop" \
+    "$ROOTFS/usr/share/applications/saltos-installer.desktop"
+  install -Dm755 "$REPO/os/iso/live/Install-saltOS.desktop" \
+    "$ROOTFS/home/salt/Desktop/Install-saltOS.desktop"
+  cat > "$ROOTFS/usr/share/applications/saltos-setup.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Install saltOS (text installer)
+GenericName=System Installer
+Comment=Run the salt-setup text installer in a terminal
+Icon=utilities-terminal
+Exec=/usr/local/bin/saltos-setup-terminal
+Terminal=false
+Categories=System;
+Keywords=salt-setup;install;installer;
+EOF
+
+  for d in /etc/xdg/autostart; do
+    [ -f "$ROOTFS$d/add-calamares-desktop-icon.desktop" ] && rm -f "$ROOTFS$d/add-calamares-desktop-icon.desktop"
+  done
+  rm -f "$ROOTFS/usr/bin/add-calamares-desktop-icon" 2>/dev/null || true
+
+  mkdir -p "$ROOTFS/etc/sudoers.d"
+  echo "salt ALL=(ALL) NOPASSWD: /usr/bin/calamares" > "$ROOTFS/etc/sudoers.d/calamares"
+  chmod 0440 "$ROOTFS/etc/sudoers.d/calamares"
+
+  chroot "$ROOTFS" chown -R salt:salt /home/salt 2>/dev/null || true
+}
+
+if [ "$EDITION" = "desktop" ]; then
+  setup_desktop_session
+  setup_calamares
+fi
+
+if [ "$EDITION" = "installer" ]; then
+  setup_desktop_session
+  setup_calamares
+
+  install -Dm755 "$REPO/os/iso/live/autoinstall-calamares.sh" \
+    "$ROOTFS/usr/lib/saltos/autoinstall-calamares.sh"
 
   mkdir -p "$ROOTFS/etc/xdg/autostart"
   cat > "$ROOTFS/etc/xdg/autostart/saltos-installer.desktop" <<'EOF'
@@ -506,15 +553,11 @@ EOF
 Type=Application
 Name=Install saltOS
 Comment=Launch the saltOS guided installer
-Exec=sh -c 'sleep 4; exec sudo -E calamares -c /etc/calamares'
+Exec=sh -c 'n=0; while [ "$n" -lt 30 ] && [ ! -f /run/saltos-autoinstall/mode ]; do sleep 1; n=$((n + 1)); done; if [ "$(cat /run/saltos-autoinstall/mode 2>/dev/null)" = calamares ]; then exec /usr/lib/saltos/autoinstall-calamares.sh; fi; sleep 4; exec /usr/local/bin/saltos-installer'
 Terminal=false
 OnlyShowIn=LXQt;
 X-LXQt-Need-Tray=false
 EOF
-
-  mkdir -p "$ROOTFS/etc/sudoers.d"
-  echo "salt ALL=(ALL) NOPASSWD: /usr/bin/calamares" > "$ROOTFS/etc/sudoers.d/calamares"
-  chmod 0440 "$ROOTFS/etc/sudoers.d/calamares"
 
   chroot "$ROOTFS" chown -R salt:salt /home/salt 2>/dev/null || true
 fi
@@ -524,11 +567,11 @@ KVER="${KVER#vmlinuz-}"
 cp "$ROOTFS/boot/vmlinuz-$KVER" "$ISODIR/live/vmlinuz"
 cp "$ROOTFS/boot/initrd.img-$KVER" "$ISODIR/live/initrd"
 
-if [ "$EDITION" != "base" ]; then
+if [ "$EDITION" = "console" ]; then
   rm -f "$ROOTFS"/boot/vmlinuz-* "$ROOTFS"/boot/initrd.img-* 2>/dev/null || true
 fi
 mksquashfs "$ROOTFS" "$ISODIR/live/filesystem.squashfs" \
-  -comp zstd -Xcompression-level 19 -noappend -e boot
+  -comp zstd -Xcompression-level 19 -noappend -wildcards -e 'boot/initrd.img-*'
 
 cat > "$ISODIR/boot/grub/grub.cfg" <<EOF
 set default=0
