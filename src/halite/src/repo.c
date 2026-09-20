@@ -21,7 +21,9 @@ static void entry_free(salt_repo_entry *e) {
   free(e->filename);
   free(e->url);
   free(e->sha256);
+  free(e->summary);
   salt_strlist_free(&e->deps);
+  salt_strlist_free(&e->conflicts);
 }
 
 void salt_repo_index_free(salt_repo_index *idx) {
@@ -60,6 +62,7 @@ int salt_repo_index_load(const char *path, salt_repo_index *out) {
     salt_repo_entry e;
     memset(&e, 0, sizeof(e));
     salt_strlist_init(&e.deps);
+    salt_strlist_init(&e.conflicts);
     e.name = salt_strdup(salt_toml_string(p, "name", ""));
     e.version = salt_strdup(salt_toml_string(p, "version", ""));
     e.release = (int)salt_toml_int(p, "release", 1);
@@ -69,11 +72,37 @@ int salt_repo_index_load(const char *path, salt_repo_index *out) {
     e.url = url[0] ? salt_strdup(url) : NULL;
     e.sha256 = salt_strdup(salt_toml_string(p, "sha256", ""));
     e.size = (uint64_t)salt_toml_int(p, "size", 0);
+    e.summary = salt_strdup(salt_toml_string(p, "summary", ""));
     salt_toml_string_array(p, "deps", &e.deps);
+    salt_toml_string_array(p, "conflicts", &e.conflicts);
     index_push(out, &e);
   }
   salt_toml_free(t);
   return SALT_OK;
+}
+
+static void toml_quote(salt_buf *b, const char *s) {
+  salt_buf_append_str(b, "\"");
+  for (const char *p = s ? s : ""; *p; p++) {
+    if (*p == '"' || *p == '\\') {
+      char e[2] = {'\\', *p};
+      salt_buf_append(b, e, 2);
+    } else if (*p == '\n') {
+      salt_buf_append_str(b, "\\n");
+    } else {
+      salt_buf_append(b, p, 1);
+    }
+  }
+  salt_buf_append_str(b, "\"");
+}
+
+static void emit_list(salt_buf *out, const char *key, const salt_strlist *l) {
+  salt_buf_printf(out, "%s = [", key);
+  for (size_t j = 0; j < l->len; j++) {
+    if (j) salt_buf_append_str(out, ", ");
+    toml_quote(out, l->items[j]);
+  }
+  salt_buf_append_str(out, "]\n");
 }
 
 int salt_repo_index_to_toml(const salt_repo_index *idx, salt_buf *out) {
@@ -91,14 +120,54 @@ int salt_repo_index_to_toml(const salt_repo_index *idx, salt_buf *out) {
     if (e->url && e->url[0]) salt_buf_printf(out, "url = \"%s\"\n", e->url);
     salt_buf_printf(out, "sha256 = \"%s\"\n", e->sha256);
     salt_buf_printf(out, "size = %llu\n", (unsigned long long)e->size);
-    salt_buf_append_str(out, "deps = [");
-    for (size_t j = 0; j < e->deps.len; j++) {
-      if (j) salt_buf_append_str(out, ", ");
-      salt_buf_printf(out, "\"%s\"", e->deps.items[j]);
-    }
-    salt_buf_append_str(out, "]\n");
+    salt_buf_append_str(out, "summary = ");
+    toml_quote(out, e->summary);
+    salt_buf_append_str(out, "\n");
+    emit_list(out, "deps", &e->deps);
+    if (e->conflicts.len) emit_list(out, "conflicts", &e->conflicts);
   }
   return SALT_OK;
+}
+
+bool salt_sha256_hex_valid(const char *hex) {
+  if (!hex) return false;
+  size_t n = 0;
+  for (; hex[n]; n++)
+    if (!isxdigit((unsigned char)hex[n]) || isupper((unsigned char)hex[n])) return false;
+  return n == SALT_SHA256_HEXLEN;
+}
+
+bool salt_repo_entry_hash_ok(const salt_repo_entry *e) {
+  return e && salt_sha256_hex_valid(e->sha256);
+}
+
+int salt_repo_index_verify(const salt_repo_index *idx, salt_strlist *problems_out) {
+  int rc = SALT_OK;
+  for (size_t i = 0; i < idx->len; i++) {
+    const salt_repo_entry *e = &idx->items[i];
+    salt_buf msg;
+    salt_buf_init(&msg);
+    const char *nm = e->name && e->name[0] ? e->name : "(unnamed)";
+    if (!e->name || !e->name[0])
+      salt_buf_printf(&msg, "entry %zu: missing name", i);
+    else if (!e->version || !e->version[0])
+      salt_buf_printf(&msg, "%s: missing version", nm);
+    else if (!e->filename || !e->filename[0])
+      salt_buf_printf(&msg, "%s: missing filename", nm);
+    else if (!e->sha256 || !e->sha256[0])
+      salt_buf_printf(&msg, "%s: missing sha256", nm);
+    else if (!salt_sha256_hex_valid(e->sha256))
+      salt_buf_printf(&msg, "%s: sha256 is not a 64-char lowercase hex digest (%s)", nm, e->sha256);
+    else if (strchr(e->filename, '/') || strcmp(e->filename, "..") == 0)
+      salt_buf_printf(&msg, "%s: filename must be a bare file name (%s)", nm, e->filename);
+    if (msg.len) {
+      rc = SALT_ERR_VERIFY;
+      if (problems_out) salt_strlist_push(problems_out, msg.data);
+    }
+    salt_buf_free(&msg);
+  }
+  if (rc != SALT_OK) salt_set_error("repository index failed verification");
+  return rc;
 }
 
 /* Natural version compare: split into numeric and non-numeric runs and compare
@@ -144,10 +213,20 @@ const salt_repo_entry *salt_repo_index_find(const salt_repo_index *idx, const ch
       continue;
     }
     int vc = salt_vercmp(idx->items[i].version, best->version);
-    if (vc > 0 || (vc == 0 && idx->items[i].release > best->release))
-      best = &idx->items[i];
+    if (vc > 0 || (vc == 0 && idx->items[i].release > best->release)) best = &idx->items[i];
   }
   return best;
+}
+
+const salt_repo_entry *salt_repo_index_find_exact(const salt_repo_index *idx, const char *name,
+                                                  const char *version, int release) {
+  for (size_t i = 0; i < idx->len; i++) {
+    const salt_repo_entry *e = &idx->items[i];
+    if (strcmp(e->name, name) == 0 && strcmp(e->version, version ? version : "") == 0 &&
+        e->release == release)
+      return e;
+  }
+  return NULL;
 }
 
 int salt_repo_build_index(const char *packages_dir, const char *repo_name, const char *arch,
@@ -185,6 +264,7 @@ int salt_repo_build_index(const char *packages_dir, const char *repo_name, const
     salt_repo_entry e;
     memset(&e, 0, sizeof(e));
     salt_strlist_init(&e.deps);
+    salt_strlist_init(&e.conflicts);
     e.name = salt_strdup(ar.meta.name);
     e.version = salt_strdup(ar.meta.version);
     e.release = ar.meta.release;
@@ -198,7 +278,10 @@ int salt_repo_build_index(const char *packages_dir, const char *repo_name, const
       e.size = fb.len;
       salt_buf_free(&fb);
     }
+    e.summary = salt_strdup(ar.meta.summary ? ar.meta.summary : "");
     for (size_t j = 0; j < ar.meta.deps.len; j++) salt_strlist_push(&e.deps, ar.meta.deps.items[j]);
+    for (size_t j = 0; j < ar.meta.conflicts.len; j++)
+      salt_strlist_push(&e.conflicts, ar.meta.conflicts.items[j]);
     index_push(out, &e);
     salt_archive_free(&ar);
     free(full);

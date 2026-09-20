@@ -1,0 +1,15 @@
+BasedOnStyle: Google
+ColumnLimit: 100
+IndentWidth: 2
+DerivePointerAlignment: false
+PointerAlignment: Right
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: true
+SortIncludes: false
+IncludeBlocks: Preserve
+BinPackParameters: true
+BinPackArguments: true
+AlignAfterOpenBracket: Align
+SpacesBeforeTrailingComments: 2
+ReflowComments: false

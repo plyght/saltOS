@@ -139,6 +139,7 @@ S --yes install asset >/dev/null || fail "install via index url failed"
 rm "$WORK/assets/$(G asset 1.0)"
 cp "$SALT_OUT/$ARCH/packages/$(G asset 1.0)" "$REPO/$ARCH/packages/"
 S --yes remove asset >/dev/null 2>&1 || true
+rm -f "$ROOT/var/lib/salt/cache/$ARCH/$(G asset 1.0)"
 S --yes install asset >/dev/null 2>&1 && fail "install must not fall back to packages/ when the url is set"
 publish "$WORK/keys/repo.sec" "$(G asset 1.0)" "$(G hello 1.1)" "$(G salt 0.1.1)"
 S sync >/dev/null
@@ -156,7 +157,8 @@ set +e
 set -e
 [ "$(cat "$WORK/locked.rc")" = 1 ] || fail "overlapping salt-ota run should exit 1 (got $(cat "$WORK/locked.rc"))"
 
-step "bad hash: salt-ota run exits 4, hello stays 1.1, failed txn recorded"
+step "bad hash: salt-ota run exits 4, hello stays 1.1, no deployment created"
+before_n=$(S deployments | grep -c '^[* ][P ] [0-9]')
 publish "$WORK/keys/repo.sec" "$(G hello 1.2)" "$(G salt 0.1.1)"
 python3 - "$REPO/$ARCH/packages/$(G hello 1.2)" <<'EOF'
 import sys
@@ -171,7 +173,7 @@ set -e
 [ "$rc" -eq 4 ] || { cat "$WORK/badhash.log"; fail "bad hash should exit 4 (got $rc)"; }
 grep -q 'HASH MISMATCH' "$WORK/badhash.log" || fail "bad hash was not reported"
 [ "$(sh "$ROOT/usr/bin/hello")" = "hi 1.1" ] || fail "bad hash changed the system"
-S deployments | grep -q 'failed' || fail "failed transaction not recorded"
+[ "$(S deployments | grep -c '^[* ][P ] [0-9]')" -eq "$before_n" ] || fail "bad hash created a deployment"
 
 step "bad signature: salt-ota run exits 1, system unchanged"
 publish "$WORK/keys/other.sec" "$(G hello 1.2)" "$(G salt 0.1.1)"

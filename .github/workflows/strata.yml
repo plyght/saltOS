@@ -96,6 +96,26 @@ jobs:
           sudo "$salt" pkg ${{ matrix.id }} install nano
           sudo "$salt" run ${{ matrix.id }} /bin/sh -c 'command -v nano'
 
+      - name: Prove exact foreign lock (lock / diff / apply)
+        run: |
+          salt=build/src/salt/salt
+          sudo "$salt" lock --output /tmp/system.lock.toml
+          grep -A1 'name = "nano"' /tmp/system.lock.toml
+          sudo "$salt" lock diff /tmp/system.lock.toml
+          sudo "$salt" pkg ${{ matrix.id }} remove nano
+          if sudo "$salt" lock diff /tmp/system.lock.toml; then
+            echo "lock diff did not notice the removed package"; exit 1
+          fi
+          sudo "$salt" --yes lock apply /tmp/system.lock.toml
+          sudo "$salt" run ${{ matrix.id }} /bin/sh -c 'command -v nano'
+          sudo "$salt" lock diff /tmp/system.lock.toml
+          awk '/^name = "nano"$/ {print; getline; print "version = \"0.0-saltos0\""; next} {print}' \
+            /tmp/system.lock.toml > /tmp/bad.lock.toml
+          if sudo "$salt" --yes lock apply /tmp/bad.lock.toml; then
+            echo "lock apply accepted a version the manager cannot provide"; exit 1
+          fi
+          sudo "$salt" lock diff /tmp/system.lock.toml
+
       - name: Prove per-stratum snapshot + rollback
         run: |
           salt=build/src/salt/salt

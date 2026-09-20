@@ -69,8 +69,7 @@ int cmd_repo(const Options &o, const std::vector<std::string> &args) {
   std::string url_base = args.size() > 2 ? args[2] : "";
   RepoConf c = load_repo_conf(o);
   std::string sec = read_secret(o.key);
-  if (sec.empty())
-    fprintf(stderr, "warning: no secret key; index will not be signed\n");
+  if (sec.empty()) fprintf(stderr, "warning: no secret key; index will not be signed\n");
   if (salt_repo_publish(dir.c_str(), c.name.c_str(), arch_detect().c_str(), url_base.c_str(),
                         sec.c_str()) != SALT_OK) {
     fprintf(stderr, "salt: %s\n", salt_last_error());

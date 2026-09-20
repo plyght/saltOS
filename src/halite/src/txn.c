@@ -83,12 +83,23 @@ int salt_snapshot_create(const salt_ctx *ctx, salt_db *db, int64_t txn_id, char 
   return SALT_OK;
 }
 
-static void backup_file(const char *root, const char *backup_dir, const char *relpath) {
+int salt_snapshot_restore(const salt_ctx *ctx, const char *snapshot) {
+  if (!ctx->use_btrfs) return SALT_OK;
+  salt_buf cmd;
+  salt_buf_init(&cmd);
+  salt_buf_printf(&cmd, "btrfs subvolume set-default '%s/%s' '%s' >/dev/null 2>&1",
+                  ctx->snapshot_dir, snapshot, ctx->root);
+  int rc = system(cmd.data);
+  salt_buf_free(&cmd);
+  return rc == 0 ? SALT_OK : SALT_ERR_IO;
+}
+
+static int backup_file(const char *root, const char *backup_dir, const char *relpath) {
   char *src = salt_join_path(root, relpath);
   struct stat st;
   if (lstat(src, &st) != 0) {
     free(src);
-    return;
+    return SALT_OK;
   }
   char *dst = salt_join_path(backup_dir, relpath);
   char *dup = salt_strdup(dst);
@@ -98,20 +109,34 @@ static void backup_file(const char *root, const char *backup_dir, const char *re
     salt_mkdirs(dup, 0755);
   }
   free(dup);
+  int rc = SALT_OK;
   if (S_ISLNK(st.st_mode)) {
     char target[1024];
     ssize_t n = readlink(src, target, sizeof(target) - 1);
-    if (n >= 0) {
+    if (n < 0) {
+      rc = SALT_ERR_IO;
+    } else {
       target[n] = '\0';
       unlink(dst);
-      int sr = symlink(target, dst);
-      (void)sr;
+      if (symlink(target, dst) != 0) rc = SALT_ERR_IO;
     }
   } else if (S_ISREG(st.st_mode)) {
-    salt_copy_file(src, dst);
+    rc = salt_copy_file(src, dst);
   }
+  if (rc != SALT_OK) salt_set_error("backup of %s failed", relpath);
   free(src);
   free(dst);
+  return rc;
+}
+
+static int append_added(const char *added_path, const salt_buf *added) {
+  if (!added->len) return SALT_OK;
+  salt_buf all;
+  if (salt_read_file(added_path, &all) != SALT_OK) salt_buf_init(&all);
+  salt_buf_append(&all, added->data, added->len);
+  int rc = salt_write_file(added_path, all.data ? all.data : "", all.len, 0644);
+  salt_buf_free(&all);
+  return rc;
 }
 
 static bool manifest_has(const salt_manifest *m, const char *path) {
@@ -144,24 +169,38 @@ int salt_install_archive(salt_ctx *ctx, salt_db *db, const salt_archive *ar, con
   bool upgrade = salt_db_is_installed(db, ar->meta.name);
   if (upgrade) salt_db_pkg_manifest(db, ar->meta.name, &old);
 
+  int rc = SALT_OK;
   salt_buf added;
   salt_buf_init(&added);
-  for (size_t i = 0; i < ar->manifest.len; i++) {
+  for (size_t i = 0; i < ar->manifest.len && rc == SALT_OK; i++) {
     const salt_manifest_entry *e = &ar->manifest.items[i];
     if (e->typeflag == SALT_TAR_DIR) continue;
+    char *owner = NULL;
+    if (salt_db_owner(db, e->path, &owner) == SALT_OK) {
+      if (strcmp(owner, ar->meta.name) != 0) {
+        salt_set_error("file conflict: %s is owned by %s", e->path, owner);
+        rc = SALT_ERR_EXISTS;
+      }
+      free(owner);
+      if (rc != SALT_OK) break;
+    }
     char *full = salt_join_path(ctx->root, e->path);
-    bool exists = salt_path_exists(full);
+    struct stat st;
+    bool exists = lstat(full, &st) == 0;
     free(full);
     if (exists) {
-      backup_file(ctx->root, backup_dir, e->path);
+      rc = backup_file(ctx->root, backup_dir, e->path);
     } else {
       salt_buf_printf(&added, "%s\n", e->path);
     }
   }
+  if (rc != SALT_OK) goto done;
+  rc = append_added(added_path, &added);
+  if (rc != SALT_OK) goto done;
 
   salt_strlist installed;
   salt_strlist_init(&installed);
-  int rc = salt_archive_extract_payload(ar, ctx->root, &installed);
+  rc = salt_archive_extract_payload(ar, ctx->root, &installed);
   salt_strlist_free(&installed);
   if (rc != SALT_OK) goto done;
 
@@ -171,14 +210,14 @@ int salt_install_archive(salt_ctx *ctx, salt_db *db, const salt_archive *ar, con
       if (e->typeflag == SALT_TAR_DIR) continue;
       if (manifest_has(&ar->manifest, e->path)) continue;
       if (!salt_path_is_confined(e->path)) continue;
-      backup_file(ctx->root, backup_dir, e->path);
+      rc = backup_file(ctx->root, backup_dir, e->path);
+      if (rc != SALT_OK) goto done;
       char *full = salt_join_path(ctx->root, e->path);
       unlink(full);
       free(full);
     }
   }
 
-  salt_write_file(added_path, added.data ? added.data : "", added.len, 0644);
   rc = salt_db_record_install(db, &ar->meta, &ar->manifest, repo, sig_status, txn_id);
 
 done:
@@ -202,20 +241,21 @@ int salt_remove_pkg(salt_ctx *ctx, salt_db *db, const char *name, int64_t txn_id
   salt_manifest man;
   salt_manifest_init(&man);
   salt_db_pkg_manifest(db, name, &man);
-  for (size_t i = 0; i < man.len; i++) {
+  int rc = SALT_OK;
+  for (size_t i = 0; i < man.len && rc == SALT_OK; i++) {
     const salt_manifest_entry *e = &man.items[i];
     if (!salt_path_is_confined(e->path)) continue;
     char *full = salt_join_path(ctx->root, e->path);
     if (e->typeflag == SALT_TAR_DIR) {
       rmdir(full);
     } else {
-      backup_file(ctx->root, backup_dir, e->path);
-      unlink(full);
+      rc = backup_file(ctx->root, backup_dir, e->path);
+      if (rc == SALT_OK) unlink(full);
     }
     free(full);
   }
   salt_manifest_free(&man);
-  int rc = salt_db_record_remove(db, name, txn_id);
+  if (rc == SALT_OK) rc = salt_db_record_remove(db, name, txn_id);
   free(sdir);
   free(backup_dir);
   return rc;
@@ -298,4 +338,39 @@ int salt_txn_revert_files(const salt_ctx *ctx, int64_t txn_id) {
   free(backup_dir);
   free(added_path);
   return SALT_OK;
+}
+
+int salt_rollback_last(salt_ctx *ctx, salt_db *db) {
+  int64_t id = 0;
+  char *snapshot = NULL;
+  if (salt_db_last_ok_txn(db, &id, &snapshot) != SALT_OK) {
+    salt_set_error("no deployment to roll back to");
+    return SALT_ERR_NOTFOUND;
+  }
+  char *sdir = txn_state_dir(ctx, id);
+  char *before_db = salt_join_path(sdir, "db.before");
+
+  int rc = SALT_OK;
+  if (ctx->use_btrfs && snapshot && snapshot[0]) {
+    rc = salt_snapshot_restore(ctx, snapshot);
+  } else {
+    if (!salt_path_exists(before_db)) {
+      salt_set_error("transaction %lld has no saved state to roll back to", (long long)id);
+      rc = SALT_ERR_NOTFOUND;
+    } else {
+      salt_txn_revert_files(ctx, id);
+      rc = salt_db_restore_state_from(db, before_db);
+    }
+  }
+
+  if (rc == SALT_OK) {
+    salt_db_txn_finish(db, id, "rolled-back");
+    int64_t rb_txn;
+    if (salt_db_txn_new(db, "rollback", &rb_txn) == SALT_OK) salt_db_txn_finish(db, rb_txn, "ok");
+  }
+
+  free(snapshot);
+  free(sdir);
+  free(before_db);
+  return rc;
 }

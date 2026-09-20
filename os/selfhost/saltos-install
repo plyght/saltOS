@@ -77,6 +77,7 @@ umount "$mnt" 2>/dev/null || true
 echo "==> partitioning $disk"
 command -v wipefs >/dev/null 2>&1 && wipefs -a "$disk" >/dev/null 2>&1 || true
 dd if=/dev/zero of="$disk" bs=1M count=16 conv=fsync 2>/dev/null || true
+layout=gpt
 if command -v sfdisk >/dev/null 2>&1; then
   sfdisk --wipe always --wipe-partitions always "$disk" >/dev/null <<'PARTEOF'
 label: gpt
@@ -85,7 +86,9 @@ type=4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709, name="saltos-root"
 PARTEOF
 else
   echo "warning: sfdisk unavailable, falling back to an MBR layout" >&2
+  layout=mbr
   printf 'o\nn\np\n1\n\n+512M\nt\nef\na\n1\nn\np\n2\n\n\nw\n' | fdisk "$disk" >/dev/null 2>&1 || true
+  dd if=/dev/urandom of="$disk" bs=1 seek=440 count=4 conv=notrunc,fsync 2>/dev/null || true
 fi
 settle "$disk" "$esp" "$rootp"
 
@@ -120,29 +123,54 @@ tmpfs /tmp tmpfs defaults,nosuid,nodev 0 0
 EOF
 
 case "$(uname -m)" in
-  aarch64|arm64) kernel=/boot/Image; efi=BOOTAA64.EFI; graphical="console=tty0 fbcon=map:0"; serial="console=ttyAMA0,115200 console=hvc0" ;;
-  *)             kernel=/boot/bzImage; efi=BOOTX64.EFI; graphical="console=tty0 fbcon=map:0"; serial="console=ttyS0,115200" ;;
+  aarch64|arm64) kernel=/boot/Image; efi=BOOTAA64.EFI; consoles="console=tty0 fbcon=map:0 console=hvc0 console=ttyAMA0,115200" ;;
+  *)             kernel=/boot/bzImage; efi=BOOTX64.EFI; consoles="console=tty0 fbcon=map:0 console=ttyS0,115200" ;;
 esac
 [ -f "$mnt$kernel" ] || die "installed kernel missing at $kernel"
 
 # Prefer PARTUUID: /dev/sdX and /dev/nvmeXn1 enumeration order is not stable
 # across boots once other disks or USB devices are attached.
 rootspec="$rootp"
+puuid=""
 if command -v blkid >/dev/null 2>&1; then
   puuid="$(blkid -s PARTUUID -o value "$rootp" 2>/dev/null || true)"
-  [ -n "$puuid" ] && rootspec="PARTUUID=$puuid"
+  case "$puuid" in *PARTUUID=\"*) puuid="${puuid##*PARTUUID=\"}"; puuid="${puuid%%\"*}" ;; esac
+  case "$puuid" in *[!0-9A-Fa-f-]*) puuid="" ;; esac
+fi
+if [ -z "$puuid" ] && [ "$layout" = mbr ]; then
+  sig="$(dd if="$disk" bs=1 skip=440 count=4 2>/dev/null | od -An -tx1 | tr -d ' \n')"
+  case "$sig" in
+    00000000|"") ;;
+    ????????) puuid="$(echo "$sig" | cut -c7-8)$(echo "$sig" | cut -c5-6)$(echo "$sig" | cut -c3-4)$(echo "$sig" | cut -c1-2)-02" ;;
+  esac
+fi
+if [ -n "$puuid" ]; then
+  rootspec="PARTUUID=$puuid"
+elif [ "$layout" = gpt ]; then
+  rootspec="PARTLABEL=saltos-root"
 fi
 echo "==> root will be referenced as $rootspec"
 
 mkdir -p "$mnt/boot/grub" "$mnt/boot/efi/EFI/BOOT"
 cat > "$mnt/boot/grub/grub.cfg" <<EOF
+terminal_input console
+terminal_output console
+if serial --unit=0 --speed=115200; then
+  terminal_input --append serial
+  terminal_output --append serial
+fi
+insmod all_video
+set gfxpayload=text
+if loadfont unicode; then
+  set gfxmode=auto
+  if terminal_output --append gfxterm; then
+    set gfxpayload=keep
+  fi
+fi
 set default=0
 set timeout=3
-menuentry "saltOS installed (graphical display)" {
-  linux $kernel root=$rootspec rootfstype=$rootfstype rw rootwait init=/sbin/runit-init $graphical
-}
-menuentry "saltOS installed (serial console)" {
-  linux $kernel root=$rootspec rootfstype=$rootfstype rw rootwait init=/sbin/runit-init $serial
+menuentry "saltOS installed" {
+  linux $kernel root=$rootspec rootfstype=$rootfstype rw rootwait init=/sbin/runit-init $consoles
 }
 EOF
 for src in "/boot/efi/EFI/BOOT/$efi" "/EFI/BOOT/$efi"; do

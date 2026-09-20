@@ -1,17 +1,53 @@
 name: lint
 
 on:
+  push:
+    branches: ["**"]
   pull_request:
-    paths:
-      - "recipes/**"
 
 concurrency:
   group: lint-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  code-lint:
+    name: clang-format + clang-tidy + cppcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install lint dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config \
+            libzstd-dev libsodium-dev libsqlite3-dev \
+            build-essential clang-format clang-tidy cppcheck
+
+      - name: clang-format check
+        run: |
+          find src/halite src/salt tests \
+            \( -name '*.c' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) -print0 \
+            | xargs -0 clang-format --dry-run --Werror
+
+      - name: Configure (compile database)
+        run: cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: clang-tidy
+        run: |
+          files="$(find src/halite/src src/salt \( -name '*.c' -o -name '*.cpp' \))"
+          run-clang-tidy -p build -quiet $files
+
+      - name: cppcheck
+        run: |
+          cppcheck -q --error-exitcode=1 --enable=warning,performance,portability \
+            --inline-suppr --std=c11 -I src/halite/include src/halite/src
+          cppcheck -q --error-exitcode=1 --enable=warning,performance,portability \
+            --inline-suppr --std=c++20 -I src/halite/include src/salt
+
   recipe-lint:
     name: salt lint + supply-chain scan
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

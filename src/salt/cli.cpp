@@ -154,20 +154,31 @@ static void usage() {
           "  update  <stratum>         upgrade packages inside a stratum\n"
           "  <stratum>/<cmd> [args]    run a stratum command (e.g. salt alpine/nvim file)\n\n"
           "package commands:\n"
-          "  sync                 refresh the repository index\n"
-          "  search <term>        search available packages\n"
+          "  sync                 refresh and verify the repository index\n"
+          "  search <term>        search package names and descriptions\n"
           "  install <pkg>...     install packages (use <stratum>/<pkg> for foreign)\n"
-          "  remove <pkg>...      remove packages\n"
+          "      [--allow-unverified] [--download-only] [--dry-run] [--locked [--lockfile F]]\n"
+          "  remove <pkg>...      remove packages ([--cascade] removes dependents too)\n"
           "  update [stratum...]  upgrade the host, or named strata\n"
+          "      [--download-only] [--allow-unverified] [--dry-run]\n"
           "  rollback [N]         undo the latest transaction (or N and everything after it)\n"
-          "  deployments          list deployments (date, kernel, package changes)\n"
+          "  history              list deployments (date, kernel, package changes; alias: deployments)\n"
           "  pin [--unpin] <N>    keep deployment N's snapshot from being pruned\n"
           "  boot [status|update|try|confirm]  manage the boot menu and kernel trial\n"
-          "  verify [pkg]         verify installed files against the database\n"
-          "  query <pkg>          show package details\n"
+          "  verify [pkg]         compare installed files against the package manifest\n"
+          "  info <pkg>           show package details (alias: query)\n"
           "  files <pkg>          list files owned by a package\n"
           "  owner <path>         show which package owns a path\n"
-          "  list                 list installed packages\n\n"
+          "  list                 list packages [--installed | --upgradable | --available]\n"
+          "  clean [--all] [--dry-run]\n"
+          "                       remove downloaded package artifacts from the cache\n"
+          "  gc [--keep N] [--pin ID] [--dry-run]\n"
+          "                       prune old generations and unreferenced artifacts\n"
+          "  lock [--output F]    write etc/salt/system.lock.toml pinning every package\n"
+          "  lock apply [FILE]    reproduce a lockfile exactly (fails on hash mismatch)\n"
+          "  lock diff [FILE] [--quiet]\n"
+          "                       compare the live system with a lockfile\n"
+          "  config <subcommand>  declarative config: show, apply, diff, history, rollback, gc\n\n"
           "maintainer commands:\n"
           "  build <recipe-dir>   build a package from a recipe\n"
           "  lint <recipe-dir>    lint a recipe\n"
@@ -207,11 +218,13 @@ static int dispatch(const Options &o, const std::string &cmd,
   if (cmd == "remove") return cmd_remove(o, args);
   if (cmd == "update") return cmd_update(o, args);
   if (cmd == "rollback") return cmd_rollback(o, args);
-  if (cmd == "deployments") return cmd_deployments(o, args);
+  if (cmd == "deployments" || cmd == "history") return cmd_deployments(o, args);
   if (cmd == "pin") return cmd_pin(o, args);
   if (cmd == "boot") return cmd_boot(o, args);
   if (cmd == "verify") return cmd_verify(o, args);
-  if (cmd == "query") return cmd_query(o, args);
+  if (cmd == "query" || cmd == "info" || cmd == "show") return cmd_query(o, args);
+  if (cmd == "clean") return cmd_clean(o, args);
+  if (cmd == "gc") return cmd_gc(o, args);
   if (cmd == "files") return cmd_files(o, args);
   if (cmd == "owner") return cmd_owner(o, args);
   if (cmd == "which") return cmd_which(o, args);
@@ -235,7 +248,7 @@ static int dispatch(const Options &o, const std::string &cmd,
   if (cmd == "service") return cmd_service(o, args);
   if (cmd == "config") return cmd_config(o, args);
   if (cmd == "lock") return cmd_lock(o, args);
-  if (cmd.find('/') != std::string::npos && cmd.find('/') != 0) {
+  if (cmd.find('/') != std::string::npos && !cmd.starts_with('/')) {
     PkgRef r = parse_pkgref(cmd);
     std::vector<std::string> ra = {r.stratum, r.pkg};
     ra.insert(ra.end(), args.begin(), args.end());
@@ -258,9 +271,9 @@ static bool cmd_needs_root(const std::string &cmd) {
   // here genuinely needs real root (writes the stratum rootfs / system db /
   // services).
   static const char *root_cmds[] = {
-      "pkg",     "pm",       "stratum",  "expose",  "unexpose",
-      "expose-desktop", "expose-all", "service", "install",
-      "remove", "update", "sync", "rollback", "pin", "boot", "lock", nullptr};
+      "pkg",        "pm",      "stratum", "expose", "unexpose", "expose-desktop",
+      "expose-all", "service", "install", "remove", "update",   "sync",
+      "rollback",   "pin",     "boot",    "lock",   "clean",    "gc",     nullptr};
   for (int i = 0; root_cmds[i]; i++)
     if (cmd == root_cmds[i]) return true;
   return false;
@@ -279,9 +292,12 @@ static bool root_is_writable(const std::string &root) {
   std::string parent = probe;
   while (parent.size() > 1 && parent.back() == '/') parent.pop_back();
   size_t slash = parent.rfind('/');
-  if (slash == std::string::npos) parent = ".";
-  else if (slash == 0) parent = "/";
-  else parent.resize(slash);
+  if (slash == std::string::npos)
+    parent = ".";
+  else if (slash == 0)
+    parent = "/";
+  else
+    parent.resize(slash);
   return errno == ENOENT && access(parent.c_str(), W_OK | X_OK) == 0;
 }
 
@@ -296,8 +312,10 @@ static void reexec_root_if_needed(const Options &o, const std::string &cmd,
   if (o.root != "/" && root_is_writable(o.root)) return;
   char self[PATH_MAX];
   ssize_t n = readlink("/proc/self/exe", self, sizeof(self) - 1);
-  if (n <= 0) snprintf(self, sizeof(self), "%s", argv[0]);
-  else self[n] = '\0';
+  if (n <= 0)
+    snprintf(self, sizeof(self), "%s", argv[0]);
+  else
+    self[n] = '\0';
   std::vector<char *> a;
   a.push_back(const_cast<char *>("sudo"));
   a.push_back(const_cast<char *>("-n"));

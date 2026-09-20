@@ -10,14 +10,14 @@ extern "C" {
 #endif
 
 #define SALT_OK 0
-#define SALT_ERR -1
-#define SALT_ERR_IO -2
-#define SALT_ERR_FORMAT -3
-#define SALT_ERR_NOTFOUND -4
-#define SALT_ERR_VERIFY -5
-#define SALT_ERR_EXISTS -6
-#define SALT_ERR_DEP -7
-#define SALT_ERR_USAGE -8
+#define SALT_ERR (-1)
+#define SALT_ERR_IO (-2)
+#define SALT_ERR_FORMAT (-3)
+#define SALT_ERR_NOTFOUND (-4)
+#define SALT_ERR_VERIFY (-5)
+#define SALT_ERR_EXISTS (-6)
+#define SALT_ERR_DEP (-7)
+#define SALT_ERR_USAGE (-8)
 
 void salt_set_error(const char *fmt, ...);
 const char *salt_last_error(void);

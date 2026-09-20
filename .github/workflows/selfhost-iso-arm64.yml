@@ -54,18 +54,39 @@ jobs:
             KCACHE="$PWD/.kcache-aarch64" \
             bash os/selfhost/build-arm64.sh
 
+      - name: Select QEMU accelerator
+        run: |
+          if [ -w /dev/kvm ]; then
+            echo "KVM available: using hardware virtualization"
+            echo "QEMU_ACCEL=-accel kvm -cpu host" >> "$GITHUB_ENV"
+            echo "QEMU_MEM=1024" >> "$GITHUB_ENV"
+            echo "QEMU_SMP=2" >> "$GITHUB_ENV"
+            echo "QEMU_BOOT_TIMEOUT=300" >> "$GITHUB_ENV"
+            echo "QEMU_INSTALL_TIMEOUT=240" >> "$GITHUB_ENV"
+            echo "QEMU_UEFI_TIMEOUT=120" >> "$GITHUB_ENV"
+          else
+            echo "no writable /dev/kvm: falling back to TCG"
+            echo "QEMU_ACCEL=-accel tcg,thread=multi -cpu cortex-a72" >> "$GITHUB_ENV"
+            echo "QEMU_MEM=2048" >> "$GITHUB_ENV"
+            echo "QEMU_SMP=4" >> "$GITHUB_ENV"
+            echo "QEMU_BOOT_TIMEOUT=1200" >> "$GITHUB_ENV"
+            echo "QEMU_INSTALL_TIMEOUT=1500" >> "$GITHUB_ENV"
+            echo "QEMU_UEFI_TIMEOUT=900" >> "$GITHUB_ENV"
+          fi
+
       - name: Boot test (QEMU direct kernel/initrd)
         run: |
-          timeout 300 qemu-system-aarch64 \
-            -nodefaults -machine virt,accel=kvm:tcg -cpu max -m 1024 \
+          timeout "$QEMU_BOOT_TIMEOUT" qemu-system-aarch64 \
+            -nodefaults -machine virt $QEMU_ACCEL -m "$QEMU_MEM" -smp "$QEMU_SMP" \
             -display none -serial file:qemu-aarch64.log -no-reboot \
             -kernel selfhost-work/Image \
             -initrd selfhost-work/initrd.gz \
             -append "console=ttyAMA0,115200 rdinit=/sbin/runit-init" &
           QPID=$!
-          for i in $(seq 1 30); do
+          for i in $(seq 1 $((QEMU_BOOT_TIMEOUT / 10))); do
             sleep 10
             grep -q "SALTOS_SELFHOST_OK" qemu-aarch64.log 2>/dev/null && break
+            kill -0 "$QPID" 2>/dev/null || break
           done
           kill "$QPID" 2>/dev/null || true
           wait "$QPID" 2>/dev/null || true
@@ -77,6 +98,11 @@ jobs:
             echo "SELF-HOST AARCH64 BOOT OK: kernel+glibc+bash+coreutils+runit+salt from source, no distro base"
           else
             echo "BOOT FAILED: marker not found"
+            exit 1
+          fi
+          if grep -q "error while loading shared libraries" qemu-aarch64.log; then
+            echo "BOOT FAILED: a binary in the image links a library that is not in the rootfs"
+            grep "error while loading shared libraries" qemu-aarch64.log
             exit 1
           fi
 
@@ -101,8 +127,8 @@ jobs:
           ( cd selfhost-work/rootfs && find . | cpio -o -H newc 2>/dev/null | gzip -9 > ../initrd-autoinstall.gz )
 
           dd if=/dev/zero of=saltos-installed-aarch64.img bs=1M count=2048 status=none
-          timeout 240 qemu-system-aarch64 \
-            -nodefaults -machine virt,accel=kvm:tcg -cpu max -m 1536 -smp 2 \
+          timeout "$QEMU_INSTALL_TIMEOUT" qemu-system-aarch64 \
+            -nodefaults -machine virt $QEMU_ACCEL -m "$QEMU_MEM" -smp "$QEMU_SMP" \
             -display none -serial file:qemu-aarch64-install.log -no-reboot \
             -kernel selfhost-work/Image \
             -initrd selfhost-work/initrd-autoinstall.gz \
@@ -113,17 +139,51 @@ jobs:
 
           tail -n 180 qemu-aarch64-install.log || true
           grep -q "SALTOS_INSTALL_EXIT=0" qemu-aarch64-install.log
+          ! grep "error while loading shared libraries" qemu-aarch64-install.log
 
-          timeout 120 qemu-system-aarch64 \
-            -machine virt,accel=kvm:tcg -cpu max -m 1024 -smp 2 \
+          timeout "$QEMU_UEFI_TIMEOUT" qemu-system-aarch64 \
+            -machine virt $QEMU_ACCEL -m "$QEMU_MEM" -smp "$QEMU_SMP" \
             -display none -serial file:qemu-aarch64-installed-uefi.log -no-reboot \
             -bios /usr/share/qemu-efi-aarch64/QEMU_EFI.fd \
             -drive file=saltos-installed-aarch64.img,format=raw,if=none,id=hd0 \
             -device virtio-blk-device,drive=hd0 \
-            -netdev user,id=n0 -device virtio-net-device,netdev=n0 || true
+            -netdev user,id=n0 -device virtio-net-device,netdev=n0 &
+          QPID=$!
+          for i in $(seq 1 $((QEMU_UEFI_TIMEOUT / 10))); do
+            sleep 10
+            grep -q "SALTOS_SELFHOST_OK" qemu-aarch64-installed-uefi.log 2>/dev/null && break
+            kill -0 "$QPID" 2>/dev/null || break
+          done
+          kill "$QPID" 2>/dev/null || true
+          wait "$QPID" 2>/dev/null || true
 
           tail -n 200 qemu-aarch64-installed-uefi.log || true
           grep -q "Run /sbin/runit-init as init process" qemu-aarch64-installed-uefi.log
+          grep -q "SALTOS_SELFHOST_OK" qemu-aarch64-installed-uefi.log
+          ! grep "error while loading shared libraries" qemu-aarch64-installed-uefi.log
+
+      - name: Installed image diagnostics
+        if: failure()
+        run: |
+          IMG=saltos-installed-aarch64.img
+          [ -f "$IMG" ] || { echo "no installed image was produced"; exit 0; }
+          echo "----- partition table -----"
+          sudo sfdisk -d "$IMG" || true
+          LOOP="$(sudo losetup --find --partscan --show "$IMG")"
+          sleep 1
+          echo "----- ESP contents -----"
+          sudo mdir -i "${LOOP}p1" -/ ::/ || true
+          mkdir -p installed-root
+          if sudo mount -o ro "${LOOP}p2" installed-root; then
+            echo "----- /boot/grub/grub.cfg -----"
+            sudo cat installed-root/boot/grub/grub.cfg || true
+            echo "----- /etc/fstab -----"
+            sudo cat installed-root/etc/fstab || true
+            echo "----- /boot -----"
+            sudo ls -la installed-root/boot || true
+            sudo umount installed-root
+          fi
+          sudo losetup -d "$LOOP" || true
 
       - name: Upload serial log
         if: always()

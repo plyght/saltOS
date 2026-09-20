@@ -22,7 +22,8 @@ int salt_archive_build_from_dir(const char *staging_dir, const salt_pkg_meta *me
                                 const char *scripts_dir, salt_archive *out);
 int salt_archive_write(const salt_archive *a, const char *out_path);
 int salt_archive_open(const char *path, salt_archive *out);
-int salt_archive_extract_payload(const salt_archive *a, const char *dest_dir, salt_strlist *installed_paths);
+int salt_archive_extract_payload(const salt_archive *a, const char *dest_dir,
+                                 salt_strlist *installed_paths);
 
 #ifdef __cplusplus
 }

@@ -18,6 +18,7 @@ typedef struct {
   char *repro_status;
   char *repro_reason;
   salt_strlist deps;
+  salt_strlist conflicts;
 } salt_pkg_meta;
 
 typedef struct {

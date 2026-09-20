@@ -19,9 +19,12 @@ extern "C" {
 
 static const char *sev_name(salt_risk_severity s) {
   switch (s) {
-    case SALT_RISK_BLOCK: return "BLOCK";
-    case SALT_RISK_WARN: return "WARN";
-    default: return "INFO";
+    case SALT_RISK_BLOCK:
+      return "BLOCK";
+    case SALT_RISK_WARN:
+      return "WARN";
+    default:
+      return "INFO";
   }
 }
 
@@ -91,7 +94,8 @@ static std::string default_build(const std::string &system) {
     return "cmake -B build -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release\ncmake --build "
            "build -j\"$SALT_JOBS\"\nDESTDIR=\"$SALT_DEST\" cmake --install build";
   if (system == "meson")
-    return "meson setup build --prefix=/usr\nninja -C build -j\"$SALT_JOBS\"\nDESTDIR=\"$SALT_DEST\" "
+    return "meson setup build --prefix=/usr\nninja -C build "
+           "-j\"$SALT_JOBS\"\nDESTDIR=\"$SALT_DEST\" "
            "ninja -C build install";
   return "";
 }
@@ -127,7 +131,7 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
   int release = (int)salt_toml_int(t, "release", 1);
   std::string url = salt_toml_string(t, "source.url", "");
   std::string sha = salt_toml_string(t, "source.sha256", "");
-  std::string system = salt_toml_string(t, "build.system", "custom");
+  std::string build_system = salt_toml_string(t, "build.system", "custom");
   std::string script = salt_toml_string(t, "build.script", "");
 
   const char *workenv = getenv("SALT_WORK");
@@ -147,7 +151,7 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
   if (local) {
     std::string srcpath = localpath;
     std::string copy = "cp -a '" + srcpath + "/.' '" + src + "/'";
-    if (::system(copy.c_str()) != 0) {
+    if (system(copy.c_str()) != 0) {
       fprintf(stderr, "salt: failed to copy local source %s\n", srcpath.c_str());
       salt_toml_free(t);
       return 1;
@@ -173,16 +177,16 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
               sha.empty() ? "missing" : "placeholder");
     }
     std::string ex = "tar -C '" + src + "' -xf '" + tarball + "' 2>/dev/null || true";
-    ::system(ex.c_str());
+    system(ex.c_str());
     std::string strip = "set -- '" + src +
                         "'/*; if [ $# -eq 1 ] && [ -d \"$1\" ]; then mv \"$1\"/* \"$1\"/.[!.]* '" +
                         src + "'/ 2>/dev/null; rmdir \"$1\" 2>/dev/null; fi";
-    ::system(strip.c_str());
+    system(strip.c_str());
   }
 
-  std::string body = script.empty() ? default_build(system) : script;
+  std::string body = script.empty() ? default_build(build_system) : script;
   if (body.empty()) {
-    fprintf(stderr, "salt: no build.script and unknown build.system '%s'\n", system.c_str());
+    fprintf(stderr, "salt: no build.script and unknown build.system '%s'\n", build_system.c_str());
     salt_toml_free(t);
     return 1;
   }
@@ -201,7 +205,7 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
   env.push_back("SALT_ARCH='" + arch + "'");
   env.push_back("SALT_JOBS=" + std::string(getenv("SALT_JOBS") ? getenv("SALT_JOBS") : "4"));
   env.push_back("SALT_NO_NETWORK=1");
-  printf("==> running build (%s)\n", system.c_str());
+  printf("==> running build (%s)\n", build_system.c_str());
   if (run_shell(src, body, env) != SALT_OK) {
     fprintf(stderr, "salt: build failed\n");
     salt_toml_free(t);
@@ -220,13 +224,12 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
   const char *reason = salt_toml_string(t, "reproducibility.reason", nullptr);
   meta.repro_reason = reason ? salt_strdup(reason) : nullptr;
   salt_toml_string_array(t, "package.deps", &meta.deps);
+  salt_toml_string_array(t, "package.conflicts", &meta.conflicts);
 
   std::string scripts_dir = path_join(rdir, "scripts");
   salt_archive ar;
-  int rc = salt_archive_build_from_dir(dest.c_str(), &meta,
-                                       salt_is_dir(scripts_dir.c_str()) ? scripts_dir.c_str()
-                                                                        : nullptr,
-                                       &ar);
+  int rc = salt_archive_build_from_dir(
+      dest.c_str(), &meta, salt_is_dir(scripts_dir.c_str()) ? scripts_dir.c_str() : nullptr, &ar);
   if (rc != SALT_OK) {
     fprintf(stderr, "salt: packaging failed: %s\n", salt_last_error());
     salt_pkg_meta_free(&meta);

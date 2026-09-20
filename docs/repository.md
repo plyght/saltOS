@@ -40,7 +40,7 @@ Each architecture tree contains exactly three things:
 
 - `index.toml` — the signed list of packages available for that arch. Each
   entry records `name`, `version`, `release`, `arch`, `filename`, `sha256`,
-  `size`, and `deps`.
+  `size`, `summary`, `deps`, and `conflicts`.
 - `index.toml.sig` — an ed25519 signature of `index.toml`, stored as hex.
 - `packages/` — the `.grain` files, named
   `<name>-<version>-<release>-<arch>.grain`.
@@ -63,7 +63,9 @@ typedef struct {
   char *filename;
   char *sha256;
   uint64_t size;
+  char *summary;
   salt_strlist deps;
+  salt_strlist conflicts;
 } salt_repo_entry;
 ```
 
@@ -80,12 +82,20 @@ anything. This is the heart of the repository's security model:
    installed system, or passed with `--key`). This uses `salt_verify_file` /
    `salt_verify_buf` from `include/salt/sign.h`. If the signature does not
    verify against the trusted key, the index is rejected and nothing proceeds.
-2. **Trust the signed index.** Once the index signature is verified, the
-   contents of `index.toml` are trusted — including every package's recorded
-   `sha256` and `size`.
-3. **Verify each package hash.** Before installing a `.grain`, `salt`
+2. **Validate the index contents.** `salt_repo_index_verify` checks that every
+   entry has a `name`, a `version`, a `filename`, and a `sha256` that is a
+   lowercase 64-hex digest (`salt_sha256_hex_valid`). An index with a missing,
+   placeholder (`TODO-sha256`), uppercase, or truncated hash is rejected as a
+   whole and `salt sync` fails, keeping the previous index.
+3. **Trust the signed, validated index.** Once both checks pass, the contents
+   of `index.toml` are trusted — including every package's recorded `sha256`
+   and `size`.
+4. **Verify each package hash.** Before installing a `.grain`, `salt`
    recomputes its sha256 and checks it against the hash recorded in the signed
-   index. A package whose contents do not match the signed index is rejected.
+   index. A package whose contents do not match the signed index is rejected
+   and evicted from the cache. An entry whose hash cannot be checked is refused
+   unless the operator passes `--allow-unverified`, which prints a loud warning
+   and records `sig_status = unverified` for that package.
 
 In short: **verify the signed metadata first, then verify package hashes from
 the signed index.** A package is never trusted on its own; it is trusted only
@@ -104,8 +114,11 @@ The repository tooling lives in `include/salt/repo.h`:
   `index.toml`, signs it with the supplied secret key, and writes
   `index.toml.sig`.
 - `salt_repo_index_load(path, out)` reads an `index.toml` back into a
-  `salt_repo_index`, and `salt_repo_index_find(idx, name)` looks up a single
-  package entry by name.
+  `salt_repo_index`; `salt_repo_index_find(idx, name)` looks up a single
+  package entry by name and `salt_repo_index_find_exact(idx, name, version,
+  release)` the exact build a lockfile pins.
+- `salt_repo_index_verify(idx, problems)` applies the content checks from the
+  trust order above and reports every offending entry.
 
 The maintainer-facing workflow uses the `salt` CLI:
 
@@ -144,8 +157,9 @@ source (`--repo`, or the source in `/etc/salt/repo.conf`). It:
 1. fetches `index.toml` and `index.toml.sig` for the host arch (the arch is
    detected at runtime: `arm64` → `aarch64`, `amd64` → `x86_64`);
 2. verifies `index.toml.sig` against the trusted public key;
-3. loads the verified index for later use by `salt search`, `salt install`, and
-   `salt update`.
+3. verifies every entry carries a well-formed `sha256`;
+4. atomically replaces `var/lib/salt/repo/<arch>/index.toml` for later use by
+   `salt search`, `salt install`, `salt update`, and `salt lock`.
 
 From then on, `salt install <pkg>` and `salt update` resolve packages against
 the verified index, fetch the corresponding `.grain` from `packages/`, and

@@ -102,8 +102,7 @@ static void append_missing_identity(const std::string &src_etc, const std::strin
     std::string uid = nth_field(line, 2);
     if (name.empty() || !is_human_id(uid)) continue;  // system users never copied
     human_names.insert(name);
-    if (dst_names.find(name) == dst_names.end())
-      add_passwd += line + "\n";
+    if (dst_names.find(name) == dst_names.end()) add_passwd += line + "\n";
   }
   pin.close();
   append_lines(dst_passwd, add_passwd, 0644);
@@ -307,8 +306,9 @@ int cmd_run(const Options &o, const std::vector<std::string> &args) {
   // exits 126 is passed through untouched instead of being re-run under sudo.
   if (st == SALT_RUN_USERNS_DENIED) {
     run_fallback_sudo(o, args);
-    fprintf(stderr, "salt run: needs unprivileged user namespaces or sudo "
-                    "(could not escalate)\n");
+    fprintf(stderr,
+            "salt run: needs unprivileged user namespaces or sudo "
+            "(could not escalate)\n");
     return 126;
   }
   // A command may have *installed* new binaries into the stratum (npm i -g,

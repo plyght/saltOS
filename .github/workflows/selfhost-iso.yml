@@ -114,6 +114,30 @@ jobs:
           tail -n 200 qemu-installed-uefi.log || true
           grep -q "Run /sbin/runit-init as init process" qemu-installed-uefi.log
 
+      - name: Installed image diagnostics
+        if: failure()
+        run: |
+          IMG=saltos-installed-x86_64.img
+          [ -f "$IMG" ] || { echo "no installed image was produced"; exit 0; }
+          echo "----- partition table -----"
+          sudo sfdisk -d "$IMG" || true
+          LOOP="$(sudo losetup --find --partscan --show "$IMG")"
+          sleep 1
+          echo "----- ESP contents -----"
+          command -v mdir >/dev/null 2>&1 || sudo apt-get install -y --no-install-recommends mtools >/dev/null
+          sudo mdir -i "${LOOP}p1" -/ ::/ || true
+          mkdir -p installed-root
+          if sudo mount -o ro "${LOOP}p2" installed-root; then
+            echo "----- /boot/grub/grub.cfg -----"
+            sudo cat installed-root/boot/grub/grub.cfg || true
+            echo "----- /etc/fstab -----"
+            sudo cat installed-root/etc/fstab || true
+            echo "----- /boot -----"
+            sudo ls -la installed-root/boot || true
+            sudo umount installed-root
+          fi
+          sudo losetup -d "$LOOP" || true
+
       - name: Upload serial log
         if: always()
         uses: actions/upload-artifact@v4

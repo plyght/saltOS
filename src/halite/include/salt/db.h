@@ -22,6 +22,10 @@ typedef struct {
   char *sig_status;
   int64_t install_time;
   int64_t txn_id;
+  char *summary;
+  char *license;
+  char *filename;
+  char *sha256;
 } salt_db_pkg;
 
 typedef struct {
@@ -56,9 +60,14 @@ int salt_db_pkg_files(salt_db *db, const char *name, salt_strlist *out);
 int salt_db_owner(salt_db *db, const char *path, char **owner_out);
 int salt_db_pkg_manifest(salt_db *db, const char *name, salt_manifest *out);
 int salt_db_revdeps(salt_db *db, const char *name, salt_strlist *out);
+int salt_db_pkg_deps(salt_db *db, const char *name, salt_strlist *out);
+int salt_db_conflicts_with(salt_db *db, const char *name, salt_strlist *out);
+int salt_db_set_pkg_artifact(salt_db *db, const char *name, const char *filename,
+                             const char *sha256);
 
 int salt_db_vacuum_into(salt_db *db, const char *path);
 int salt_db_restore_state_from(salt_db *db, const char *before_path);
+int salt_db_snapshot_filenames(const char *path, salt_strlist *out);
 
 void salt_db_pkg_free_fields(salt_db_pkg *p);
 

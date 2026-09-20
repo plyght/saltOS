@@ -313,13 +313,14 @@ def main():
         ser.note("boot 5: refuse a corrupted grain")
         wait_network(ser, badhash + "/", 180)
         set_repo(ser, badhash)
+        _, before = ser.run("sudo -n salt deployments", check=0)
         rc_, out = ser.run("sudo -n salt-ota run --no-reboot", 300)
-        expect(rc_ == 4 and "HASH MISMATCH" in out, "bad hash: update rolled back (rc 4)")
+        expect(rc_ == 4 and "HASH MISMATCH" in out, "bad hash: update refused before any change (rc 4)")
         expect(installed_version(ser, "salt") == a.old_version, "bad hash: salt unchanged")
         expect(kernel_running(ser) == a.old_kernel and
                ser.run("test ! -e /boot/vmlinuz-%s" % a.new_kernel)[0] == 0, "bad hash: boot files unchanged")
         _, out = ser.run("sudo -n salt deployments", check=0)
-        expect("failed" in out, "bad hash: failed transaction recorded")
+        expect(out.strip() == before.strip(), "bad hash: no deployment created")
 
         ser.note("boot 5: refuse an index signed by an unknown key")
         set_repo(ser, badsig)

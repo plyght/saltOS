@@ -68,11 +68,23 @@ build/src/setup/salt-setup.
 Quick commands
 --------------
 
-  salt sync                         refresh repository index
-  salt search <term>                search native packages
-  salt install <pkg>                install a native package
-  salt update                       snapshot and upgrade host
+  salt sync                         refresh and verify repository index
+  salt search <term>                search native package names and summaries
+  salt install <pkg>                install a native package and its dependencies
+  salt remove <pkg> [--cascade]     remove a package (and dependents with --cascade)
+  salt update [--download-only]     snapshot and upgrade host
   salt rollback                     restore previous host deployment
+  salt history                      list transactions and deployments
+  salt info <pkg>                   show package details
+  salt files <pkg>                  list files owned by a package
+  salt owner <path>                 show which package owns a path
+  salt list [--upgradable]          list installed or upgradable packages
+  salt verify [pkg]                 compare installed files with their manifest
+  salt lock                         pin every installed package to a lockfile
+  salt lock apply [file]            reproduce a lockfile exactly
+  salt lock diff                    compare the system with the lockfile
+  salt clean                        remove downloaded package artifacts
+  salt gc [--keep N] [--dry-run]    prune old generations and unreferenced artifacts
   salt-ota run                      snapshot, sync, update, rollback on failure
   salt-ota status                   show OTA and rollback state
 
@@ -112,6 +124,7 @@ Documentation
   docs/rollback.md          rollback design
   docs/recipes.md           package recipes
   docs/repository.md        repository format
+  docs/reproducibility.md   lockfiles, config apply, generations and gc
   docs/trust-model.md       trust and supply-chain policy
   docs/installation.md      installation notes
   docs/raspberry-pi.md      Raspberry Pi 5 image
