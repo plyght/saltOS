@@ -95,14 +95,18 @@ jobs:
           echo "----- boot partition -----"
           ls -l /mnt/pi-boot
           echo "----- config.txt -----"; cat /mnt/pi-boot/config.txt
-          echo "----- cmdline.txt -----"; cat /mnt/pi-boot/cmdline.txt
-          for f in config.txt cmdline.txt vmlinuz initramfs bcm2712-rpi-5-b.dtb overlays/vc4-kms-v3d.dtbo; do
+          KERNEL=$(sed -n 's/^kernel=//p' /mnt/pi-boot/config.txt | tail -1)
+          CMDLINE=$(sed -n 's/^cmdline=//p' /mnt/pi-boot/config.txt | tail -1)
+          INITRAMFS=$(sed -n 's/^initramfs \([^ ]*\).*/\1/p' /mnt/pi-boot/config.txt | tail -1)
+          [ -n "$KERNEL" ] || { echo "FAIL: config.txt has no kernel= line"; exit 1; }
+          [ -n "$CMDLINE" ] || CMDLINE=cmdline.txt
+          echo "----- $CMDLINE -----"; cat "/mnt/pi-boot/$CMDLINE"
+          for f in config.txt "$CMDLINE" "$KERNEL" ${INITRAMFS:+"$INITRAMFS"} bcm2712-rpi-5-b.dtb overlays/vc4-kms-v3d.dtbo; do
             [ -s "/mnt/pi-boot/$f" ] || { echo "FAIL: boot partition is missing $f"; exit 1; }
           done
-          grep -q '^kernel=vmlinuz' /mnt/pi-boot/config.txt
-          grep -q 'root=LABEL=saltos-root' /mnt/pi-boot/cmdline.txt
-          grep -q 'console=serial0,115200' /mnt/pi-boot/cmdline.txt
-          file /mnt/pi-boot/vmlinuz | grep -qiE 'kernel|gzip|zstd|arm64|aarch64|PE32' || { echo "FAIL: vmlinuz is not a kernel image"; exit 1; }
+          grep -q 'root=LABEL=saltos-root' "/mnt/pi-boot/$CMDLINE"
+          grep -q 'console=serial0,115200' "/mnt/pi-boot/$CMDLINE"
+          file "/mnt/pi-boot/$KERNEL" | grep -qiE 'kernel|gzip|zstd|arm64|aarch64|PE32' || { echo "FAIL: $KERNEL is not a kernel image"; exit 1; }
           echo "----- root subvolume -----"
           for f in lib/runit/runit-init usr/sbin/runit etc/runit/1 etc/runit/2 usr/bin/salt usr/bin/salt-setup etc/fstab etc/os-release; do
             [ -e "/mnt/pi-root/$f" ] || { echo "FAIL: root filesystem is missing /$f"; exit 1; }
