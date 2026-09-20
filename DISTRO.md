@@ -244,7 +244,7 @@ saltOS consists of:
 - stratum manager for foreign distro roots
 - command routing and optional command exposure
 - signed metadata for native packages and salt-managed strata
-- text-first installer
+- text installer (`salt-setup`) and a Calamares GUI sharing one engine
 - daily-driver desktop edition
 
 ## 7. Base Technology Decisions
@@ -1117,27 +1117,28 @@ Default developer packages may include:
 
 ## 20. Installer
 
-The installer is text-first and native. It is `salt-setup`, a C++23 program in `src/setup/` built on the shared `halite` engine — a sibling of `salt`, not a shell script and not a desktop application. Installer logic is OS runtime code; only the image build (`os/iso/live-build.sh`) stays in shell.
+saltOS ships two installers and one installation engine. The engine is `salt-setup`, a C++23 program in `src/setup/` built on the shared `halite` engine — a sibling of `salt`, not a shell script and not a desktop application. Installer logic is OS runtime code; only the image build (`os/iso/live-build.sh`) stays in shell. The text installer *is* `salt-setup`; the graphical installer is Calamares, whose only job is to collect answers, partition and mount, and then run `salt-setup --from <generated system.toml> --target <root> --yes`. Every installation rule therefore exists exactly once.
 
 The defining choice the installer presents is **which distribution provides userland**. saltOS installs its own minimal native layer as the root (init, `salt`, `halite`, the boot contract, the btrfs layout, and system identity) and then bootstraps the chosen distribution as the **primary stratum** under `/strata/<name>`, auto-exposed so its userland is on `PATH`. This is how saltOS stays its own OS while sourcing package depth from any ecosystem, without the maintainer repackaging the Linux world.
 
-`salt-setup` runs interactively in the bare boot environment, or non-interactively from a config: `salt-setup --from system.toml`. The non-interactive path is intended to share the reproducibility `salt config apply` engine, so installing a system and reproducing one from a lockfile are the same code.
+`salt-setup` runs interactively in the bare boot environment, or non-interactively from a config: `salt-setup --from system.toml`. Every interactive question has a key in the file, so headless and scripted installs need no prompts; `--profile` preseeds prompt defaults and `--set section.key=value` overrides single values. Option parsing and validation live in `src/setup/config.{hpp,cpp}` and are unit-tested. The non-interactive path shares the reproducibility `salt config apply` engine, so installing a system and reproducing one from a lockfile are the same code.
 
-Installer must support:
+Both installers are **unopinionated**: they ask, they do not assume. They support:
 
-- disk selection
-- Btrfs partitioning (the canonical `@ @home @var @log @snapshots @strata` layout)
-- encryption option
-- bootloader install (the salt-owned boot contract)
-- user creation
-- network setup
+- disk selection and three modes: erase, alongside (free GPT space only; existing partitions are never touched and stay in the GRUB menu via os-prober), and an already mounted target
+- Btrfs (default; the canonical `@ @home @var @log @snapshots @strata` layout) or ext4
+- LUKS2 full-disk encryption
+- swap as none, file, partition or zram
+- firmware target: legacy BIOS, UEFI or both on x86_64; UEFI on aarch64; a shim-ready ESP layout (saltOS ships no signed shim of its own; Secure Boot status is documented honestly in `docs/installer.md`)
+- hostname, locale, timezone, console keymap and derived X keyboard layout
+- user creation, passwords or hashes, sudo policy, autologin, optional root password
+- network: wired DHCP, Wi-Fi (joined from the live session and persisted), or none
 - minimal native base install
 - base distribution (primary stratum) selection
-- optional desktop install from the chosen stratum
+- kernel source (native by default, or from a stratum)
+- desktop: keep what the live medium runs or install a console system
 - default command exposure policy
-- writing the reproducible `system.toml` (and, once the lock engine lands, `system.lock.toml`)
-
-A graphical installer is not required. The previous Calamares GUI flow is retired (see 20.1).
+- writing the reproducible `system.toml` and `system.lock.toml`
 
 Possible install profiles:
 
@@ -1152,30 +1153,15 @@ native host + developer strata
 
 The installer should not force users to think in distro theory before they can boot the machine: a sensible default base distribution is preselected.
 
-See `docs/installer.md` for the full flow.
+See `docs/installer.md` for the full flow and `docs/installation.md` for the walkthrough.
 
-### 20.1 Native installer (`salt-setup`) and Calamares retirement
+### 20.1 Media and coverage
 
-The installer is the native `salt-setup` program described above, autostarted on
-the console by a `base` ISO edition (`EDITION=base` in `os/iso/live-build.sh`): a
-minimal environment with no desktop and no Calamares, carrying `salt`,
-`salt-setup`, the stratum bootstrap tools, firmware, and the `strata/` recipes.
+- **installer** ISO edition (`EDITION=installer`): LXQt live session with Calamares ("Install saltOS") and `salt-setup` in a terminal ("Install saltOS (text installer)").
+- **base** ISO edition: console-only, `salt-setup` autostarts on tty1.
+- **desktop** / **console** editions: live sessions; desktop also carries the terminal installer.
 
-The earlier graphical Calamares flow (`os/installer/settings-live.conf`, the
-modules under `os/installer/modules/` and `os/installer/modules-live/`) and the
-Debian-clone `os/installer/saltos-install.sh` are superseded by `salt-setup`.
-Those assets remain in-tree until the native path is validated on real hardware,
-then are removed.
-
-The guided flow collects: target disk; the base distribution (primary stratum);
-hostname, user account, timezone, and locale; kernel source (native by default);
-and a confirmation before erasing. It then partitions the disk, lays down the
-canonical `@ @home @var @log @snapshots @strata` btrfs layout, populates the
-minimal native base, calls the `halite` stratum API directly to bootstrap and
-auto-expose the chosen distribution, installs the kernel + initramfs + GRUB under
-the salt boot contract, and writes `/etc/salt/system.toml`. The installed system
-uses `salt` as its native package and stratum manager; the chosen distribution's
-userland is available immediately.
+Coverage in CI (`.github/workflows/installer-iso*.yml`, `live-iso*.yml`, `vm-image-*.yml`, `thinkpad-image.yml`, `pi5-image.yml`): x86_64 BIOS and UEFI text installs and a UEFI Calamares install, each rebooting into the installed disk and asserting the runit markers over serial; aarch64 UEFI text install under AAVMF; generic x86_64/aarch64 VM images booted under OVMF/AAVMF; the ThinkPad image booted live, installed and rebooted; the Raspberry Pi 5 image's boot partition mounted and inspected. Live media carries the common GPU and Wi-Fi firmware so hardware works out of the box.
 
 ## 21. Bootloader
 
@@ -1357,7 +1343,7 @@ Decided:
 - **Package format / core library:** `.grain` (a grain of salt) for native packages; the C core library is `halite`.
 - **Service integration:** supported in v0 as runit `sv` wrappers generated by `salt service import` (a stratum never takes PID 1).
 - **Foreign package manager use:** wrapped and recorded via `salt pkg`, with a pre-operation per-stratum snapshot; direct use inside `salt stratum shell` is allowed but unrecorded.
-- **Installer:** native `salt-setup` (C++23 on `halite`, `src/setup/`), text-first; the Calamares GUI flow is retired. The base distribution is chosen at install time and bootstrapped as the auto-exposed primary stratum; saltOS's own minimal native layer is always the root.
+- **Installer:** native `salt-setup` (C++23 on `halite`, `src/setup/`) as the text installer and as the single engine; Calamares is the GUI front-end that generates `system.toml` and runs `salt-setup --from`. The base distribution is chosen at install time and bootstrapped as the auto-exposed primary stratum; saltOS's own minimal native layer is always the root.
 - **Boot contract:** `salt` is the sole authority over `/boot`, GRUB, and initramfs generation. The kernel is a declared, replaceable input (`[kernel] source`), defaulting to the native kernel, with no per-distro boot integration required.
 - **Reproducibility model:** declarative `system.toml` (intent) + fully pinned `system.lock.toml` (resolution); `salt config apply` reproduces a system. Source-level reproducibility for the native plane, content-pinned reinstall for foreign strata.
 
