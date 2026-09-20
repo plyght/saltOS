@@ -25,4 +25,4 @@ helium-runtime	nss gtk3 alsa-lib libxkbcommon libcups mesa libxcomposite libxran
 vicinae-runtime	bash fontconfig freetype2 libglvnd libxkbcommon wayland	bash fontconfig libfreetype6 libgl1 libxkbcommon0 libwayland-client0	bash fontconfig freetype libglvnd libxkbcommon libwayland-client	bash fontconfig freetype libglvnd libxkbcommon wayland	bash fontconfig freetype mesa-gl libxkbcommon wayland-libs-client	bash fontconfig libfreetype6 libglvnd libxkbcommon0 libwayland-client0
 network-tui	networkmanager	network-manager	NetworkManager-tui	NetworkManager	networkmanager-tui	NetworkManager-tui
 bluetooth-cli	bluez-utils	bluez	bluez	bluez	bluez	bluez
-session	dbus bash sudo	dbus dbus-bin bash sudo	dbus dbus-daemon bash sudo	dbus bash sudo	dbus bash sudo	dbus-1 bash sudo
+session	dbus bash sudo util-linux	dbus dbus-bin bash sudo util-linux	dbus dbus-daemon bash sudo util-linux-core	dbus bash sudo util-linux	dbus bash sudo util-linux-misc	dbus-1 bash sudo util-linux

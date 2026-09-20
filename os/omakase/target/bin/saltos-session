@@ -37,4 +37,13 @@ mkdir -p "$(dirname "$SALTOS_SESSION_LOG")"
 
 [ -f "$HOME/.config/saltos/current-theme" ] || saltos-theme render tokyo-night >/dev/null 2>&1
 
+if [ "$(id -u)" -ne 0 ] && sudo -n -l /opt/saltos/bin/saltos-session-launch >/dev/null 2>&1; then
+  session_env=()
+  for v in XDG_SESSION_TYPE XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP MOZ_ENABLE_WAYLAND QT_QPA_PLATFORM \
+    QT_QPA_PLATFORMTHEME SDL_VIDEODRIVER _JAVA_AWT_WM_NONREPARENTING GTK_THEME XCURSOR_THEME XCURSOR_SIZE \
+    EDITOR TERMINAL BROWSER WLR_RENDERER_ALLOW_SOFTWARE LANG TERM; do
+    [ -n "${!v:-}" ] && session_env+=("$v=${!v}")
+  done
+  exec sudo -n /opt/saltos/bin/saltos-session-launch "${session_env[@]}" >>"$SALTOS_SESSION_LOG" 2>&1
+fi
 exec salt run "$distro" dbus-run-session -- sway >>"$SALTOS_SESSION_LOG" 2>&1

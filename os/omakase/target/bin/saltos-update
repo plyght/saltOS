@@ -9,11 +9,13 @@ section() { printf '\n\033[1;34m== %s ==\033[0m\n' "$1"; }
 
 update_host() {
   section "saltOS core"
-  if command -v salt-ota >/dev/null 2>&1; then
-    sudo -n salt-ota run || rc=1
-  else
-    salt sync && salt update || rc=1
-  fi
+  saltos-host ota run
+  case $? in
+    0) ;;
+    2) echo "saltOS core updated." ;;
+    3) echo "saltOS core updated; reboot to finish." ;;
+    *) rc=1 ;;
+  esac
 }
 
 update_stratum() {

@@ -229,7 +229,12 @@ phase_mount() {
   if [ "$encrypt" = true ] && ! mountpoint -q "$MNT/boot"; then
     mount "$(blkid -L saltOS-boot)" "$MNT/boot" || return 1
   fi
-  mountpoint -q "$MNT/boot/efi" || mount "$(blkid -L EFI | head -1)" "$MNT/boot/efi" 2>/dev/null || true
+  if ! mountpoint -q "$MNT/boot/efi"; then
+    local esp
+    esp="$(awk '$2 == "/boot/efi" {print $1}' "$MNT/etc/fstab" 2>/dev/null | head -1)"
+    [ -n "$esp" ] || esp="$(blkid -L EFI | head -1)"
+    mount "$esp" "$MNT/boot/efi" 2>/dev/null || true
+  fi
   bind_target || return 1
   restore_recipe
   return 0
@@ -355,6 +360,7 @@ phase_apps() {
   cp -a "$OMAKASE_SHARE/lib" "$MNT/opt/saltos/lib"
   install -m 0755 "$OMAKASE_SHARE/live/saltos-vt-palette" "$MNT/opt/saltos/bin/saltos-vt-palette"
   chmod 0755 "$MNT/opt/saltos/bin/"*
+  chown -R 0:0 "$MNT/opt/saltos"
   printf '%s\n' "$distro" >"$MNT/etc/saltos-omakase-stratum"
   local b name
   for b in "$MNT/opt/saltos/bin/"*; do
@@ -463,10 +469,10 @@ EOF
   fi
   rm -f "$rundir/agetty-serial" "$rundir/agetty-ttyS0"
   rm -f "$MNT/etc/sudoers.d/salt-live" "$MNT/etc/sudoers.d/90-salt-live" "$MNT/etc/sudoers.d/salt" 2>/dev/null
-  printf '%%wheel ALL=(ALL:ALL) ALL\n%%sudo ALL=(ALL:ALL) ALL\n%s ALL=(ALL) NOPASSWD: /usr/bin/salt, /usr/bin/salt-ota, /usr/local/bin/salt-ota\n' "$username" >"$MNT/etc/sudoers.d/91-saltos-omakase"
+  printf '%%wheel ALL=(ALL:ALL) ALL\n%%sudo ALL=(ALL:ALL) ALL\n%s ALL=(ALL) NOPASSWD: /usr/bin/salt, /usr/bin/salt-ota, /usr/local/bin/salt-ota, /opt/saltos/bin/saltos-session-launch\n' "$username" >"$MNT/etc/sudoers.d/91-saltos-omakase"
   chmod 0440 "$MNT/etc/sudoers.d/91-saltos-omakase"
   mkdir -p "$MNT/strata/$distro/etc/sudoers.d"
-  printf '%s ALL=(ALL:ALL) ALL\n%s ALL=(ALL) NOPASSWD: /usr/local/bin/salt\n' "$username" "$username" >"$MNT/strata/$distro/etc/sudoers.d/91-saltos-omakase"
+  printf '%s ALL=(ALL:ALL) ALL\n%s ALL=(ALL) NOPASSWD: /usr/local/bin/salt, /opt/saltos/bin/saltos-host\n' "$username" "$username" >"$MNT/strata/$distro/etc/sudoers.d/91-saltos-omakase"
   chmod 0440 "$MNT/strata/$distro/etc/sudoers.d/91-saltos-omakase"
   return 0
 }

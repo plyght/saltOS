@@ -52,7 +52,14 @@ os/omakase/
    the session service under `/etc/runit/runsvdir/current`, locks the `root`
    account (the user is in `sudo`/`wheel`), and removes the live installer.
 4. **Reboot.** First boot autologs the user into Sway on tty1 through a runit
-   service (`saltos-session`); no display manager.
+   service (`saltos-session`); no display manager. The session is started by
+   `saltos-session-launch` (root via a passwordless sudoers entry): it enters
+   the stratum with `salt run` and drops to the user with `setpriv`, keeping
+   the real uid and the host's supplementary groups (`seat`, `audio`, `video`,
+   `input`, ...). Because the uid is real rather than a user-namespace
+   mapping, the stratum's setuid `sudo` works in the terminal, `sudo salt ...`
+   escapes to the host as usual, and `saltos-host ota run` (used by
+   `saltos-update`) runs `salt-ota` on the host from inside the stratum.
 
 ### Offline vs online
 
@@ -105,7 +112,8 @@ containing:
   ```
 
 - `credentials` — `password=<plain text>` (mode 0600 on the target; omit when
-  `deferred = true`).
+  `deferred = true`). With `encrypt = true` an optional `passphrase=<text>`
+  line sets the LUKS passphrase; it defaults to the account password.
 
 `saltos-cidata-load` mounts it read-only, validates disk/stratum/credentials,
 applies the keymap, and the greeter skips straight to the dashboard. On
@@ -115,8 +123,16 @@ reboots; on failure `SALTOS_OMAKASE_INSTALL_FAIL <reason>`.
 `build/test-vm.sh <iso>` does exactly this under QEMU/OVMF: creates the target
 disk and `cidata` image, installs, boots the installed disk, waits for
 `SALTOS_SWAY_SESSION_OK`, runs `saltos-theme set gruvbox` over serial, lists
-runit services, and grabs a `screendump`. `.github/workflows/omakase-iso.yml`
-runs it on every push touching `os/omakase/`.
+runit services, and grabs a `screendump`. `OMAKASE_TEST_MODE` selects the
+path: `erase` (default), `encrypt` (cidata with `encrypt = true`; answers the
+LUKS prompt at boot, then installs a throwaway grain, runs `salt rollback` and
+reboots to prove the rolled-back root unlocks and boots), `alongside`
+(free-space install next to a fake Windows ESP + NTFS layout; asserts the
+existing partitions are byte-identical afterwards and GRUB lists `Windows Boot
+Manager`), and `interactive` (no cidata; drives the gum configurator over the
+serial console, toggling encryption on). `.github/workflows/omakase-iso.yml`
+runs `erase` in the build job and the other three as a matrix on the built ISO
+on every push touching `os/omakase/`.
 
 ## Desktop
 

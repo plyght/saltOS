@@ -61,6 +61,7 @@ for d in lib live packages target themes; do
   cp -a "$HERE/$d" "$SHARE/$d"
 done
 chmod 0755 "$SHARE"/live/saltos-* "$SHARE"/target/bin/* "$SHARE"/target/sv/*/run
+chown -R 0:0 "$SHARE"
 for f in "$SHARE"/live/saltos-*; do
   ln -sf "/usr/share/saltos-omakase/live/$(basename "$f")" "$ROOTFS/usr/local/bin/$(basename "$f")"
 done

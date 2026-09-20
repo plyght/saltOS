@@ -1,0 +1,32 @@
+#!/bin/bash
+set -u
+
+[ "$(id -u)" -eq 0 ] || { echo "saltos-session-launch: must run as root (via sudo from saltos-session)" >&2; exit 2; }
+user="${SUDO_USER:-}"
+[ -n "$user" ] && [ "$user" != root ] || { echo "saltos-session-launch: no SUDO_USER" >&2; exit 2; }
+[ "$user" = "$(cat /etc/saltos-omakase-user 2>/dev/null)" ] || { echo "saltos-session-launch: $user is not the omakase user" >&2; exit 2; }
+
+distro="$(cat /etc/saltos-omakase-stratum 2>/dev/null)"
+[ -n "$distro" ] || { echo "saltos-session-launch: /etc/saltos-omakase-stratum missing" >&2; exit 1; }
+
+uid="$(id -u "$user")"
+gid="$(id -g "$user")"
+groups="$(id -G "$user" | tr ' ' ,)"
+home="$(getent passwd "$user" | cut -d: -f6)"
+[ -n "$home" ] || home="/home/$user"
+
+env_args=(HOME="$home" USER="$user" LOGNAME="$user" SHELL=/bin/bash XDG_RUNTIME_DIR="/run/user/$uid")
+for kv in "$@"; do
+  case "$kv" in
+    [A-Za-z_]*=*) env_args+=("$kv") ;;
+    *) echo "saltos-session-launch: ignoring argument '$kv'" >&2 ;;
+  esac
+done
+
+mkdir -p "/run/user/$uid"
+chown "$uid:$gid" "/run/user/$uid"
+chmod 0700 "/run/user/$uid"
+
+unset SUDO_UID SUDO_GID SUDO_USER SUDO_HOME SUDO_COMMAND
+exec salt run "$distro" setpriv --reuid="$uid" --regid="$gid" --groups="$groups" -- \
+  env "${env_args[@]}" dbus-run-session -- sway
