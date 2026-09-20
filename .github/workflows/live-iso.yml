@@ -9,13 +9,15 @@ on:
   push:
     paths:
       - "os/iso/live-build.sh"
+      - "os/iso/live/**"
+      - "os/installer/**"
+      - "src/setup/**"
       - ".github/workflows/live-iso.yml"
 
 jobs:
   build:
     name: live ISO (x86_64, ${{ matrix.label }})
     runs-on: ubuntu-latest
-    continue-on-error: ${{ matrix.edition == 'desktop' }}
     strategy:
       fail-fast: false
       matrix:
@@ -54,12 +56,13 @@ jobs:
               cmake ninja-build pkg-config g++ ca-certificates \
               libzstd-dev libsodium-dev libsqlite3-dev
             cmake -G Ninja -B build-iso -DCMAKE_BUILD_TYPE=Release
-            cmake --build build-iso --target salt'
+            cmake --build build-iso --target salt salt-setup'
 
       - name: Build live ISO
         run: |
           sudo env \
             SALT_BIN="$PWD/build-iso/src/salt/salt" \
+            SALTSETUP_BIN="$PWD/build-iso/src/setup/salt-setup" \
             REPO_DIR="$PWD" \
             EDITION="$EDITION" \
             SALTOS_E2E="$SALTOS_E2E" \
@@ -81,8 +84,10 @@ jobs:
           else
             MARKER="SALTOS_BOOT_OK"; MEM=2560; TMO=420; TRIES=40
           fi
+          ACCEL="-accel tcg,thread=multi"
+          [ -w /dev/kvm ] && ACCEL="-accel kvm -cpu host"
           set +e
-          timeout "$TMO" qemu-system-x86_64 \
+          timeout "$TMO" qemu-system-x86_64 $ACCEL \
             -machine pc -m "$MEM" -vga std -display none -no-reboot $NET \
             -serial file:qemu.log -monitor unix:/tmp/qmon,server,nowait \
             -cdrom "$ISO" -boot d &
@@ -100,10 +105,10 @@ jobs:
           else
             sleep 3
           fi
-          kill $QPID 2>/dev/null || true
+          kill $QPID 2>/dev/null
           set -e
           echo "----- qemu serial tail -----"
-          tail -n 80 qemu.log || true
+          tail -n 80 qemu.log
           if grep -q "$MARKER" qemu.log; then
             echo "BOOT OK: found $MARKER"
           else
@@ -123,7 +128,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: saltos-desktop-screenshot
+          name: saltos-desktop-screenshot-${{ matrix.label }}
           path: saltos-desktop.png
           if-no-files-found: ignore
 
@@ -131,7 +136,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: live-serial-log
+          name: live-serial-log-${{ matrix.label }}
           path: qemu.log
           if-no-files-found: ignore
 
@@ -139,6 +144,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: saltos-live-x86_64-${{ matrix.edition }}
+          name: saltos-live-x86_64-${{ matrix.label }}
           path: out-iso/*.iso
-          if-no-files-found: warn
+          if-no-files-found: error
