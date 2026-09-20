@@ -1,6 +1,6 @@
 name = "curl"
 version = "8.11.0"
-release = 1
+release = 2
 summary = "Command line tool and library for transferring data with URLs"
 license = "curl"
 arch = ["x86_64", "aarch64"]
@@ -14,7 +14,7 @@ system = "autotools"
 deps = ["gcc", "make", "pkgconf", "openssl", "zlib", "zstd", "ca-certificates"]
 script = """
 #!/bin/sh
-./configure --prefix=/usr --with-openssl --with-ca-bundle=/etc/ssl/certs/ca-certificates.crt --enable-threaded-resolver --with-zstd
+./configure --prefix=/usr --with-openssl --with-ca-bundle=/etc/ssl/certs/ca-certificates.crt --enable-threaded-resolver --with-zstd --without-libpsl
 make -j"$SALT_JOBS"
 make DESTDIR="$SALT_DEST" install
 """
