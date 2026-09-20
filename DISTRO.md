@@ -1049,6 +1049,7 @@ Design goal:
 | Edition   | Build                                   | Experience                                                                                                                                                                    |
 |-----------|-----------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `base`    | `os/iso/live-build.sh` (`EDITION=base`) | Console live ISO; `salt-setup` installs the native core and a chosen primary stratum. Unopinionated.                                                                          |
+| `installer` | `os/iso/live-build.sh` (`EDITION=installer`) | LXQt live session with the Calamares GUI installer and the text installer; both drive `salt-setup`. Unopinionated.                                                    |
 | `desktop` | `os/iso/live-build.sh` (`EDITION=desktop`) | Graphical live ISO with the unopinionated desktop from section 17.                                                                                                        |
 | `omakase` | `os/omakase/build/iso.sh`               | Opinionated Sway desktop: gum wizard on the ISO, offline Arch mirror (online for other strata), Tokyo Night and six more themes, `saltos-theme`, `saltos-menu`, `saltos-update`. |
 
@@ -1170,6 +1171,7 @@ See `docs/installer.md` for the full flow and `docs/installation.md` for the wal
 - **installer** ISO edition (`EDITION=installer`): LXQt live session with Calamares ("Install saltOS") and `salt-setup` in a terminal ("Install saltOS (text installer)").
 - **base** ISO edition: console-only, `salt-setup` autostarts on tty1.
 - **desktop** / **console** editions: live sessions; desktop also carries the terminal installer.
+- **omakase** ISO edition (`os/omakase/build/iso.sh`): gum wizard on tty1, unattended `cidata` installs, `saltos-install` orchestrating `salt-setup --from` plus the curated Sway desktop from the chosen stratum (section 17.3, `docs/omakase.md`).
 
 Coverage in CI (`.github/workflows/installer-iso*.yml`, `live-iso*.yml`, `vm-image-*.yml`, `thinkpad-image.yml`, `pi5-image.yml`): x86_64 BIOS and UEFI text installs and a UEFI Calamares install, each rebooting into the installed disk and asserting the runit markers over serial; aarch64 UEFI text install under AAVMF; generic x86_64/aarch64 VM images booted under OVMF/AAVMF; the ThinkPad image booted live, installed and rebooted; the Raspberry Pi 5 image's boot partition mounted and inspected. Live media carries the common GPU and Wi-Fi firmware so hardware works out of the box.
 

@@ -43,6 +43,9 @@ Editions
 
   base      console live ISO with salt-setup; installs the native core plus a
             chosen primary stratum (os/iso/live-build.sh, EDITION=base)
+  installer LXQt live ISO with the Calamares GUI installer and the text
+            installer, both driving salt-setup (os/iso/live-build.sh,
+            EDITION=installer)
   desktop   unopinionated graphical live ISO (os/iso/live-build.sh,
             EDITION=desktop)
   omakase   opinionated Sway desktop: gum wizard on the ISO, offline Arch
