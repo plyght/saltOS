@@ -11,7 +11,7 @@ filesystem = "btrfs"
 encrypt = false
 swap = "file"
 swap_size = "512M"
-desktop = "none"
+desktop = "keep"
 
 [boot]
 firmware = "auto"

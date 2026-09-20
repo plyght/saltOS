@@ -106,7 +106,7 @@ wait_for() {
     for m in "$@"; do grep -q -- "$m" "$log" 2> /dev/null && return 0; done
     kill -0 "$QPID" 2> /dev/null || return 1
     sleep 5; t=$((t + 5))
-    if [ "$shots" = 1 ] && [ $((t % 30)) -eq 0 ]; then
+    if [ "$shots" = 1 ] && { [ $((t % 30)) -eq 0 ] || [ "$t" -le 180 ] && [ $((t % 10)) -eq 0 ]; }; then
       n=$((n + 1)); screendump "$(printf '%s-%03d' "$STAGE" "$n")"
     fi
   done
