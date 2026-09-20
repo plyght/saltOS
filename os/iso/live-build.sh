@@ -593,7 +593,11 @@ menuentry "saltOS $VERSION (live, safe graphics)" {
 EOF
 
 ISO_PATH="$OUT/saltos-$VERSION-$EDITION-$ARCH.iso"
-grub-mkrescue -o "$ISO_PATH" "$ISODIR" \
+MKRESCUE_OPTS=()
+if [ "$ARCH" = aarch64 ]; then
+  MKRESCUE_OPTS=(-d "$ROOTFS/usr/lib/grub/arm64-efi")
+fi
+grub-mkrescue "${MKRESCUE_OPTS[@]}" -o "$ISO_PATH" "$ISODIR" \
   -- -volid "SALTOS_LIVE"
 echo "wrote $ISO_PATH"
 ls -lh "$ISO_PATH"
