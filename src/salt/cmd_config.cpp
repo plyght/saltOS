@@ -333,7 +333,7 @@ static const salt_repo_entry *find_pinned(const salt_repo_index &idx, const std:
       digits = digits && isdigit((unsigned char)ver[i]);
     if (digits) {
       rel = atoi(ver.c_str() + dash + 1);
-      ver = ver.substr(0, dash);
+      ver.resize(dash);
     }
   }
   const salt_repo_entry *best = nullptr;
