@@ -16,7 +16,7 @@ script = """
 #!/bin/sh
 cd "$(find . -maxdepth 2 -type d -name runit-2.1.2 | head -n 1)"
 sed -i 's/ -static$//' src/Makefile
-echo "gcc -O2 -Wall -Wno-parentheses -Wno-incompatible-pointer-types -D_GNU_SOURCE" > src/conf-cc
+echo "gcc -O2 -Wall -Wno-parentheses -Wno-incompatible-pointer-types -Wno-implicit-function-declaration -D_GNU_SOURCE" > src/conf-cc
 echo "gcc -Wl,-z,relro" > src/conf-ld
 cd src
 make -j"$SALT_JOBS"
