@@ -39,9 +39,12 @@ packages = [
 [base]
 packages = [
   "glibc",
+  "zlib",
+  "gmp",
+  "mpfr",
+  "mpc",
   "binutils",
   "gcc",
-  "zlib",
   "bzip2",
   "xz",
   "zstd",
@@ -102,6 +105,7 @@ packages = [
   "chrony",
   "runit",
   "linux",
+  "busybox",
   "dracut",
   "popt",
   "efivar",

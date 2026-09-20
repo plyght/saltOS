@@ -17,11 +17,21 @@ esac
 
 ORDER="$REPO_ROOT/os/bootstrap/build-order.toml"
 WORK="$OUT/$ARCH"
-PKGDIR="$WORK/packages"
+TOOLS="$OUT/tools"
 SYSROOT="$WORK/sysroot"
 LOGDIR="$WORK/logs"
 
-mkdir -p "$PKGDIR" "$SYSROOT" "$LOGDIR"
+mkdir -p "$SYSROOT" "$LOGDIR"
+
+stage_repo() {
+  case "$1" in
+    cross-toolchain|temp-tools) REPO_OUT="$TOOLS" ;;
+    *) REPO_OUT="$OUT" ;;
+  esac
+  REPO_DIR="$REPO_OUT/$ARCH"
+  PKGDIR="$REPO_DIR/packages"
+  mkdir -p "$PKGDIR"
+}
 
 log() { printf '[bootstrap %s] %s\n' "$ARCH" "$*"; }
 
@@ -55,7 +65,7 @@ build_one() {
   else
     log "building $name"
     rm -f "$PKGDIR/$name"-*-"$ARCH".grain
-    if ! SALT_ARCH="$ARCH" SALT_JOBS="$JOBS" SALT_OUT="$OUT" FORCE_UNSAFE_CONFIGURE=1 \
+    if ! SALT_ARCH="$ARCH" SALT_JOBS="$JOBS" SALT_OUT="$REPO_OUT" FORCE_UNSAFE_CONFIGURE=1 \
         "$SALT" build "$recipe" >"$LOGDIR/$name.log" 2>&1; then
       echo "build failed for $name; log follows:" >&2
       cat "$LOGDIR/$name.log" >&2 || true
@@ -68,18 +78,18 @@ build_one() {
     return 1
   fi
   log "publishing local index"
-  if ! "$SALT" repo publish "$WORK" >>"$LOGDIR/$name.log" 2>&1; then
+  if ! "$SALT" repo publish "$REPO_DIR" >>"$LOGDIR/$name.log" 2>&1; then
     echo "repo publish failed for $name; log follows:" >&2
     cat "$LOGDIR/$name.log" >&2 || true
     return 1
   fi
-  if ! "$SALT" --root "$SYSROOT" --repo "$OUT" --yes sync >>"$LOGDIR/$name.log" 2>&1; then
+  if ! "$SALT" --root "$SYSROOT" --repo "$REPO_OUT" --yes sync >>"$LOGDIR/$name.log" 2>&1; then
     echo "sync failed for $name; log follows:" >&2
     cat "$LOGDIR/$name.log" >&2 || true
     return 1
   fi
   log "installing $name into sysroot"
-  if ! "$SALT" --root "$SYSROOT" --repo "$OUT" --yes install --nodeps "$name" >>"$LOGDIR/$name.log" 2>&1; then
+  if ! "$SALT" --root "$SYSROOT" --repo "$REPO_OUT" --yes install --nodeps "$name" >>"$LOGDIR/$name.log" 2>&1; then
     echo "install failed for $name; log follows:" >&2
     cat "$LOGDIR/$name.log" >&2 || true
     return 1
@@ -155,6 +165,7 @@ trap sysroot_chroot_umount EXIT INT TERM
 run_stage() {
   stage="$1"
   log "=== stage: $stage ==="
+  stage_repo "$stage"
   case "$stage" in
     cross-toolchain) ;;
     temp-tools) sysroot_toolchain_env ;;
@@ -181,4 +192,5 @@ for stage in $STAGES; do
 done
 
 log "base rootfs assembled under $SYSROOT"
-log "package outputs under $PKGDIR"
+log "package outputs under $WORK/packages"
+log "bootstrap tool packages under $TOOLS/$ARCH/packages"
