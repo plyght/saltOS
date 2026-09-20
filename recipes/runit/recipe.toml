@@ -1,6 +1,6 @@
 name = "runit"
 version = "2.1.2"
-release = 2
+release = 3
 summary = "UNIX init scheme with service supervision"
 license = "BSD-3-Clause"
 arch = ["x86_64", "aarch64"]
@@ -28,6 +28,7 @@ for bin in runit runit-init runsv runsvchdir runsvdir sv svlogd chpst utmpset; d
 done
 install -d "$SALT_DEST/usr/sbin"
 ln -sf ../bin/runit-init "$SALT_DEST/usr/sbin/init"
+ln -sf ../bin/runit "$SALT_DEST/usr/sbin/runit"
 install -d "$SALT_DEST/etc/runit"
 install -d "$SALT_DEST/etc/runit/runsvdir/default"
 install -d "$SALT_DEST/var/service"
