@@ -1,0 +1,185 @@
+#!/bin/bash
+set -uo pipefail
+
+. /usr/share/saltos-omakase/lib/omakase.sh
+
+export GUM_INPUT_CURSOR_FOREGROUND=4 GUM_INPUT_PROMPT_FOREGROUND=5
+export GUM_CHOOSE_CURSOR_FOREGROUND=4 GUM_CHOOSE_SELECTED_FOREGROUND=4
+export GUM_CONFIRM_SELECTED_BACKGROUND=4 GUM_FILTER_INDICATOR_FOREGROUND=4
+export GUM_FILTER_MATCH_FOREGROUND=4
+
+mkdir -p "$OMAKASE_RUN"
+umask 077
+
+step=1
+total=9
+header() {
+  clear
+  gum style --foreground 5 --bold "saltOS omakase install  ·  step $step of $total"
+  gum style --foreground 4 --bold "$1"
+  [ -n "${2:-}" ] && gum style --faint "$2"
+  echo
+}
+
+next() { step=$((step + 1)); }
+
+deferred=0
+[ -e "$OMAKASE_DEFERRED" ] && deferred=1
+
+header "Keyboard layout" "Type to filter, Return to accept"
+layouts="$(find /usr/share/kbd/keymaps /usr/share/keymaps \( -name '*.map.gz' -o -name '*.kmap.gz' \) 2>/dev/null | sed 's|.*/||; s|\.k\?map\.gz$||; s|\.inc$||' | grep -v '^include' | sort -u)"
+[ -n "$layouts" ] || layouts="us"
+keymap="$(printf '%s\n' "$layouts" | grep -vx us | sed '1i us' | gum filter --height 12 --placeholder "us")" || exit 1
+[ -n "$keymap" ] || keymap=us
+loadkeys "$keymap" 2>/dev/null || true
+next
+
+username=saltos
+full_name=""
+email=""
+password=""
+if [ $deferred -eq 0 ]; then
+  header "Your account"
+  while :; do
+    username="$(gum input --placeholder "username (lowercase, letters/digits/-/_)" --value "")" || exit 1
+    if printf '%s' "$username" | grep -Eq '^[a-z_][a-z0-9_-]{0,31}$' && [ "$username" != root ]; then break; fi
+    gum style --foreground 1 "Invalid username."
+  done
+  while :; do
+    password="$(gum input --password --placeholder "password")" || exit 1
+    confirm="$(gum input --password --placeholder "confirm password")" || exit 1
+    if [ -z "$password" ]; then gum style --foreground 1 "Password cannot be empty."; continue; fi
+    if [ "$password" != "$confirm" ]; then gum style --foreground 1 "Passwords do not match."; continue; fi
+    break
+  done
+  full_name="$(gum input --placeholder "full name (optional, used for git)")" || exit 1
+  email="$(gum input --placeholder "email (optional, used for git)")" || exit 1
+fi
+next
+
+header "Hostname"
+while :; do
+  hostname="$(gum input --placeholder "hostname" --value "saltos")" || exit 1
+  if printf '%s' "$hostname" | grep -Eq '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'; then break; fi
+  gum style --foreground 1 "Invalid hostname."
+done
+next
+
+header "Timezone" "Type to filter, Return to accept"
+zones="$(find /usr/share/zoneinfo -type f ! -path '*/posix/*' ! -path '*/right/*' ! -name '*.tab' ! -name 'posixrules' ! -name 'leapseconds' ! -name 'tzdata.zi' \
+  | sed 's|/usr/share/zoneinfo/||' | grep '/' | sort)"
+timezone="$(printf 'UTC\n%s\n' "$zones" | gum filter --height 12 --placeholder "UTC")" || exit 1
+[ -n "$timezone" ] || timezone=UTC
+next
+
+header "Base distribution" "Desktop software (sway, foot, neovim, ...) is installed from this distribution's repositories"
+strata="$(available_strata | sort)"
+default_stratum=arch
+offline_note=""
+if medium="$(live_medium)" && [ -d "$medium/omakase/mirror/arch" ]; then
+  offline_note=" (offline mirror on this ISO)"
+fi
+choices="$(printf '%s\n' "$strata" | grep -vx "$default_stratum"; true)"
+distro="$(printf '%s%s\n%s\n' "$default_stratum" "$offline_note" "$choices" | gum choose --height 10)" || exit 1
+distro="${distro%% *}"
+[ -n "$distro" ] || distro=$default_stratum
+next
+
+header "Does this look right?"
+{
+  printf 'Setting\tValue\n'
+  printf 'Keyboard\t%s\n' "$keymap"
+  if [ $deferred -eq 1 ]; then
+    printf 'Account\t(set by the new owner at first boot)\n'
+  else
+    printf 'Username\t%s\n' "$username"
+    printf 'Full name\t%s\n' "${full_name:--}"
+    printf 'Email\t%s\n' "${email:--}"
+  fi
+  printf 'Hostname\t%s\n' "$hostname"
+  printf 'Timezone\t%s\n' "$timezone"
+  printf 'Base distro\t%s\n' "$distro"
+} | gum table --print --separator $'\t' --border rounded --border.foreground 8
+echo
+gum confirm "Continue to disk selection?" || exit 1
+next
+
+header "Install disk" "Everything on the chosen disk is erased unless you pick free-space mode"
+disks="$(lsblk -dnpo NAME,SIZE,MODEL,TYPE,RM -e 7,11 | awk '$4=="disk" && $5=="0" {printf "%s\t%s\t%s\n", $1, $2, ($3==""?"-":$3)}')"
+live_dev="$(findmnt -no SOURCE /run/initramfs/live 2>/dev/null || findmnt -no SOURCE /run/live/medium 2>/dev/null || true)"
+if [ -n "$live_dev" ]; then
+  live_disk="$(lsblk -no PKNAME "$live_dev" 2>/dev/null | head -1)"
+  [ -n "$live_disk" ] && disks="$(printf '%s\n' "$disks" | grep -v "^/dev/$live_disk"$'\t')"
+fi
+if [ -z "$disks" ]; then
+  gum style --foreground 1 "No installable disks found."
+  read -r _
+  exit 1
+fi
+disk_line="$(printf '%s\n' "$disks" | gum choose --height 10)" || exit 1
+disk="${disk_line%%$'\t'*}"
+next
+
+header "Install mode"
+mode="$(printf 'Use the entire disk (erase everything)\nInstall into free space (dual boot, keeps existing partitions)\n' | gum choose)" || exit 1
+case "$mode" in
+  Install\ into*) mode=free ;;
+  *) mode=disk ;;
+esac
+if [ "$mode" = free ]; then
+  free_bytes="$(sfdisk -F --bytes "$disk" 2>/dev/null | awk 'NR>1 && $1 ~ /^[0-9]+$/ && $4 > m {m=$4} END {print m+0}')"
+  if [ "${free_bytes:-0}" -lt $((12 * 1024 * 1024 * 1024)) ]; then
+    gum style --foreground 1 "Less than 12 GiB of contiguous free space on $disk."
+    read -r _
+    exit 1
+  fi
+fi
+next
+
+header "Disk encryption" "LUKS2 full-disk encryption; you unlock with your password at boot"
+encrypt=false
+if gum confirm --default=false "Encrypt the system partition?"; then
+  encrypt=true
+  if [ $deferred -eq 1 ]; then
+    while :; do
+      password="$(gum input --password --placeholder "disk passphrase")" || exit 1
+      confirm="$(gum input --password --placeholder "confirm passphrase")" || exit 1
+      [ -n "$password" ] && [ "$password" = "$confirm" ] && break
+      gum style --foreground 1 "Passphrases do not match."
+    done
+  fi
+fi
+
+clear
+gum style --foreground 1 --bold "Ready to install"
+if [ "$mode" = disk ]; then
+  gum style "All data on $(gum style --bold "$disk") will be destroyed."
+else
+  gum style "saltOS will be installed into the free space on $(gum style --bold "$disk")."
+fi
+gum style "Encryption: $(gum style --bold "$encrypt")   Base distribution: $(gum style --bold "$distro")"
+echo
+gum confirm --default=false "Install now?" || exit 1
+
+{
+  printf '[system]\n'
+  printf 'hostname = %s\n' "$(toml_quote "$hostname")"
+  printf 'locale = "en_US.UTF-8"\n'
+  printf 'timezone = %s\n' "$(toml_quote "$timezone")"
+  printf 'keymap = %s\n\n' "$(toml_quote "$keymap")"
+  printf '[kernel]\nsource = "native"\n\n'
+  printf '[[stratum]]\nname = %s\nrole = "primary"\nexpose = true\n\n' "$(toml_quote "$distro")"
+  printf '[user]\n'
+  printf 'username = %s\n' "$(toml_quote "$username")"
+  printf 'full_name = %s\n' "$(toml_quote "$full_name")"
+  printf 'email = %s\n' "$(toml_quote "$email")"
+  printf 'deferred = %s\n\n' "$([ $deferred -eq 1 ] && echo true || echo false)"
+  printf '[install]\n'
+  printf 'profile = "omakase"\n'
+  printf 'disk = %s\n' "$(toml_quote "$disk")"
+  printf 'mode = %s\n' "$(toml_quote "$mode")"
+  printf 'encrypt = %s\n' "$encrypt"
+} >"$OMAKASE_CONFIG"
+printf 'password=%s\n' "$password" >"$OMAKASE_CREDENTIALS"
+chmod 600 "$OMAKASE_CREDENTIALS"
+exit 0

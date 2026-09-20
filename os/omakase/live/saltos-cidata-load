@@ -1,0 +1,40 @@
+#!/bin/bash
+set -uo pipefail
+
+. /usr/share/saltos-omakase/lib/omakase.sh
+
+dev="$(blkid -L cidata 2>/dev/null || blkid -L CIDATA 2>/dev/null || true)"
+[ -n "$dev" ] || exit 1
+
+mnt="$(mktemp -d /run/cidata.XXXXXX)"
+cleanup() { umount "$mnt" 2>/dev/null; rmdir "$mnt" 2>/dev/null; }
+trap cleanup EXIT
+
+mount -o ro "$dev" "$mnt" 2>/dev/null || exit 1
+[ -f "$mnt/install.toml" ] || exit 1
+
+mkdir -p "$OMAKASE_RUN"
+umask 077
+cp "$mnt/install.toml" "$OMAKASE_CONFIG"
+rm -f "$OMAKASE_CREDENTIALS" "$OMAKASE_DEFERRED"
+if [ -f "$mnt/credentials" ]; then
+  cp "$mnt/credentials" "$OMAKASE_CREDENTIALS"
+  chmod 600 "$OMAKASE_CREDENTIALS"
+fi
+if [ "$(toml_get "$OMAKASE_CONFIG" user deferred)" = true ]; then
+  : >"$OMAKASE_DEFERRED"
+fi
+
+disk="$(toml_get "$OMAKASE_CONFIG" install disk)"
+[ -n "$disk" ] || { echo "cidata: install.disk missing" >&2; exit 2; }
+[ -b "$disk" ] || { echo "cidata: $disk is not a block device" >&2; exit 2; }
+if [ ! -e "$OMAKASE_DEFERRED" ] && [ -z "$(credential_get password)" ]; then
+  echo "cidata: credentials file with password= is required" >&2
+  exit 2
+fi
+[ -n "$(toml_get "$OMAKASE_CONFIG" stratum name)" ] || { echo "cidata: stratum name missing" >&2; exit 2; }
+
+keymap="$(toml_get "$OMAKASE_CONFIG" system keymap)"
+[ -n "$keymap" ] && loadkeys "$keymap" 2>/dev/null
+echo "cidata: unattended install of $(toml_get "$OMAKASE_CONFIG" system hostname) on $disk"
+exit 0

@@ -1,0 +1,95 @@
+#!/bin/bash
+set -uo pipefail
+
+. /usr/share/saltos-omakase/lib/omakase.sh
+
+hostname_="$(toml_get "$OMAKASE_CONFIG" system hostname)"
+distro="$(toml_get "$OMAKASE_CONFIG" stratum name)"
+disk="$(toml_get "$OMAKASE_CONFIG" install disk)"
+unattended=false
+blkid -L cidata >/dev/null 2>&1 && unattended=true
+
+: >"$OMAKASE_LOG"
+rm -f "$OMAKASE_STATE"
+saltos-install &
+INSTALLER=$!
+
+phase_label() {
+  case "$1" in
+    preflight) echo "Checking hardware and media" ;;
+    base) echo "Partitioning, native base and $distro stratum" ;;
+    mount) echo "Mounting the installed system" ;;
+    desktop) echo "Installing the Sway desktop from $distro" ;;
+    apps) echo "Installing Helium, vicinae and saltOS tools" ;;
+    host) echo "Enabling services and autologin" ;;
+    user) echo "Writing dotfiles and the Tokyo Night theme" ;;
+    finish) echo "Syncing and unmounting" ;;
+    *) echo "$1" ;;
+  esac
+}
+
+render() {
+  local rows cols lines="" phase status icon color elapsed
+  rows=$(tput lines); cols=$(tput cols)
+  printf '\e[H\e[J'
+  gum style --foreground 5 --bold "  saltOS omakase  ·  installing $(gum style --bold "$hostname_") on $disk with the $distro stratum"
+  echo
+  if [ -s "$OMAKASE_STATE" ]; then
+    while IFS=$'\t' read -r phase status; do
+      case "$status" in
+        done) icon="✓"; color=2 ;;
+        running) icon="●"; color=4 ;;
+        failed) icon="✗"; color=1 ;;
+        *) icon="○"; color=8 ;;
+      esac
+      lines="$lines$(gum style --foreground "$color" "  $icon $(phase_label "$phase")")"$'\n'
+    done < <(jq -r '.phases[] | [.name, .status] | @tsv' "$OMAKASE_STATE" 2>/dev/null)
+    printf '%s' "$lines"
+    elapsed=$(( $(date +%s) - $(jq -r .started "$OMAKASE_STATE") ))
+    printf '\n  %s\n' "$(gum style --faint "elapsed $((elapsed / 60))m $((elapsed % 60))s")"
+  else
+    gum style --foreground 4 "  ● Starting installer"
+  fi
+  local tail_lines=$((rows - 16))
+  [ $tail_lines -lt 3 ] && tail_lines=3
+  echo
+  gum style --faint "  ── log ──"
+  tail -n "$tail_lines" "$OMAKASE_LOG" 2>/dev/null | cut -c1-$((cols - 4)) | sed 's/^/  /'
+}
+
+saltos-vt-palette 2>/dev/null || clear
+while kill -0 "$INSTALLER" 2>/dev/null; do
+  render
+  sleep 1
+done
+wait "$INSTALLER"
+rc=$?
+render
+echo
+printf '\e[?25h'
+if [ $rc -eq 0 ]; then
+  gum style --border rounded --padding "1 3" --border-foreground 2 \
+    "$(gum style --bold --foreground 2 'saltOS is installed.')" "" \
+    "Remove the install medium and reboot to start your desktop."
+  if [ "$unattended" = true ]; then
+    echo "SALTOS_OMAKASE_INSTALL_OK" >/dev/console 2>/dev/null
+    echo "SALTOS_OMAKASE_INSTALL_OK" >/dev/ttyS0 2>/dev/null
+    sleep 3
+    reboot
+    exit 0
+  fi
+  echo "SALTOS_OMAKASE_INSTALL_OK" >/dev/ttyS0 2>/dev/null
+  if gum confirm --default=true "Reboot now?"; then
+    reboot
+    exit 0
+  fi
+  exec bash -l
+fi
+{
+  echo "SALTOS_OMAKASE_INSTALL_FAIL $(jq -r .message "$OMAKASE_STATE" 2>/dev/null)"
+  echo "----- install.log tail -----"
+  tail -n 60 "$OMAKASE_LOG" 2>/dev/null
+  echo "----- end install.log -----"
+} >/dev/ttyS0 2>/dev/null
+gum style --foreground 1 --bold "Install failed: $(jq -r .message "$OMAKASE_STATE" 2>/dev/null)"
+exit 1

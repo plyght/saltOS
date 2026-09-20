@@ -1,0 +1,467 @@
+#!/bin/bash
+set -uo pipefail
+
+. /usr/share/saltos-omakase/lib/omakase.sh
+
+MNT="$OMAKASE_TARGET"
+PHASES=(preflight base mount desktop apps host user finish)
+
+[ "$(id -u)" -eq 0 ] || { echo "saltos-install must run as root" >&2; exit 1; }
+[ -f "$OMAKASE_CONFIG" ] || { echo "no $OMAKASE_CONFIG" >&2; exit 1; }
+mkdir -p "$OMAKASE_RUN"
+
+exec >>"$OMAKASE_LOG" 2>&1
+
+hostname_="$(toml_get "$OMAKASE_CONFIG" system hostname)"
+timezone="$(toml_get "$OMAKASE_CONFIG" system timezone)"
+locale="$(toml_get "$OMAKASE_CONFIG" system locale)"
+keymap="$(toml_get "$OMAKASE_CONFIG" system keymap)"
+distro="$(toml_get "$OMAKASE_CONFIG" stratum name)"
+username="$(toml_get "$OMAKASE_CONFIG" user username)"
+full_name="$(toml_get "$OMAKASE_CONFIG" user full_name)"
+email="$(toml_get "$OMAKASE_CONFIG" user email)"
+disk="$(toml_get "$OMAKASE_CONFIG" install disk)"
+mode="$(toml_get "$OMAKASE_CONFIG" install mode)"
+encrypt="$(toml_get "$OMAKASE_CONFIG" install encrypt)"
+serial_console="$(toml_get "$OMAKASE_CONFIG" install serial_console)"
+[ "$serial_console" = true ] || serial_console=false
+password="$(credential_get password || true)"
+deferred=false
+[ -e "$OMAKASE_DEFERRED" ] && deferred=true
+[ -n "$locale" ] || locale="en_US.UTF-8"
+[ -n "$timezone" ] || timezone=UTC
+[ -n "$mode" ] || mode=disk
+[ -n "$encrypt" ] || encrypt=false
+[ -n "$username" ] || username=saltos
+if [ "$deferred" = true ]; then
+  username=saltos
+fi
+
+state_write() {
+  local current="$1" result="$2" phase json="" st
+  for phase in "${PHASES[@]}"; do
+    st="${PHASE_STATUS[$phase]}"
+    json="$json{\"name\":\"$phase\",\"status\":\"$st\"},"
+  done
+  json="${json%,}"
+  printf '{"phases":[%s],"current":"%s","result":"%s","started":%s,"updated":%s,"message":%s}\n' \
+    "$json" "$current" "$result" "$STARTED" "$(date +%s)" "$(printf '%s' "${MESSAGE:-}" | jq -Rs .)" \
+    >"$OMAKASE_STATE.tmp"
+  mv "$OMAKASE_STATE.tmp" "$OMAKASE_STATE"
+}
+
+declare -A PHASE_STATUS
+for p in "${PHASES[@]}"; do PHASE_STATUS[$p]=pending; done
+STARTED=$(date +%s)
+MESSAGE=""
+
+log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
+die() {
+  MESSAGE="$*"
+  log "FAILED: $*"
+  PHASE_STATUS[$CURRENT]=failed
+  state_write "$CURRENT" failed
+  cleanup_mounts
+  exit 1
+}
+
+cleanup_mounts() {
+  umount -R "$MNT" 2>/dev/null || true
+  [ -n "${MIRROR_BIND:-}" ] && umount "$MIRROR_BIND" 2>/dev/null || true
+  if [ "$encrypt" = true ] && [ -e /dev/mapper/saltos-root ]; then
+    cryptsetup close saltos-root 2>/dev/null || true
+  fi
+}
+
+run_phase() {
+  CURRENT="$1"
+  PHASE_STATUS[$CURRENT]=running
+  MESSAGE=""
+  state_write "$CURRENT" running
+  log "==> phase $CURRENT"
+  "phase_$CURRENT" || die "phase $CURRENT failed"
+  PHASE_STATUS[$CURRENT]="done"
+  state_write "$CURRENT" running
+}
+
+chroot_target() { chroot "$MNT" /usr/bin/env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/root TERM=linux "$@"; }
+
+phase_preflight() {
+  [ -b "$disk" ] || { log "not a block device: $disk"; return 1; }
+  [ -n "$distro" ] || { log "no stratum selected"; return 1; }
+  [ -f "/etc/salt/strata/$distro.toml" ] || { log "no recipe for $distro"; return 1; }
+  if [ "$deferred" = false ] && [ -z "$password" ]; then log "no password"; return 1; fi
+  if [ "$encrypt" = true ] && [ -z "$password" ]; then log "encryption needs a passphrase"; return 1; fi
+  for t in salt salt-setup jq; do
+    command -v "$t" >/dev/null || { log "missing tool $t"; return 1; }
+  done
+  MEDIUM="$(live_medium || true)"
+  OFFLINE=false
+  if [ "$distro" = arch ] && [ -n "$MEDIUM" ] && [ -f "$MEDIUM/omakase/mirror/arch/offline.db" ]; then
+    OFFLINE=true
+    log "offline arch mirror found at $MEDIUM/omakase/mirror/arch"
+  fi
+  if [ "$OFFLINE" = false ]; then
+    log "online install for $distro; waiting for network"
+    local _
+    for _ in $(seq 1 60); do
+      getent hosts github.com >/dev/null 2>&1 && break
+      sleep 2
+    done
+    getent hosts github.com >/dev/null 2>&1 || { log "no network and no offline mirror"; return 1; }
+  fi
+  return 0
+}
+
+stage_offline_recipe() {
+  RECIPE_BACKUP="$OMAKASE_RUN/$distro.toml.orig"
+  cp "/etc/salt/strata/$distro.toml" "$RECIPE_BACKUP"
+  local tarball sha
+  tarball="$(ls "$MEDIUM/omakase/mirror/arch"/archlinux-bootstrap-*.tar.zst 2>/dev/null | head -1)"
+  [ -n "$tarball" ] || { log "no bootstrap tarball on the medium"; return 1; }
+  sha="$(sha256sum "$tarball" | cut -d' ' -f1)"
+  sed -i -e "s|^url = .*|url = \"$tarball\"|" -e "s|^sha256 = .*|sha256 = \"$sha\"|" "/etc/salt/strata/$distro.toml"
+  log "stratum bootstrap staged from $tarball"
+}
+
+restore_recipe() {
+  [ -n "${RECIPE_BACKUP:-}" ] || return 0
+  cp "$RECIPE_BACKUP" "/etc/salt/strata/$distro.toml"
+  [ -d "$MNT/etc/salt/strata" ] && cp "$RECIPE_BACKUP" "$MNT/etc/salt/strata/$distro.toml"
+  return 0
+}
+
+write_setup_config() {
+  SETUP_CONFIG="$OMAKASE_RUN/salt-setup.toml"
+  local setup_mode=erase cmdline=""
+  [ "$mode" = free ] && setup_mode=alongside
+  [ "$serial_console" = true ] && cmdline="console=tty0 console=ttyS0,115200"
+  (
+    umask 077
+    {
+      printf '[system]\nhostname = %s\nlocale = %s\ntimezone = %s\nkeymap = %s\n\n' \
+        "$(toml_quote "$hostname_")" "$(toml_quote "$locale")" "$(toml_quote "$timezone")" "$(toml_quote "${keymap:-us}")"
+      printf '[install]\ndisk = %s\nmode = %s\nfilesystem = "btrfs"\nencrypt = %s\ndesktop = "none"\n' \
+        "$(toml_quote "$disk")" "$(toml_quote "$setup_mode")" "$encrypt"
+      [ "$encrypt" = true ] && printf 'passphrase = %s\n' "$(toml_quote "$password")"
+      printf '\n[boot]\ncmdline = %s\n\n' "$(toml_quote "$cmdline")"
+      printf '[user]\nname = %s\nsudo = true\nautologin = false\n' "$(toml_quote "$username")"
+      if [ "$deferred" = true ]; then
+        printf 'password_hash = "!"\n\n'
+      else
+        printf 'password = %s\n\n' "$(toml_quote "$password")"
+      fi
+      printf '[network]\nmode = "dhcp"\n\n[kernel]\nsource = "native"\n\n'
+      printf '[[stratum]]\nname = %s\nrole = "primary"\nexpose = true\n' "$(toml_quote "$distro")"
+    } >"$SETUP_CONFIG"
+  )
+}
+
+phase_base() {
+  if [ "$OFFLINE" = true ]; then stage_offline_recipe || return 1; fi
+  write_setup_config
+  log "delegating partitioning, base, user, stratum bootstrap and boot to salt-setup ($mode, encrypt=$encrypt)"
+  salt-setup --from "$SETUP_CONFIG" --mnt "$MNT" </dev/null
+  local rc=$?
+  rm -f "$SETUP_CONFIG"
+  return $rc
+}
+
+bind_target() {
+  mountpoint -q "$MNT/dev" || mount --bind /dev "$MNT/dev" || return 1
+  mountpoint -q "$MNT/dev/pts" || mount --bind /dev/pts "$MNT/dev/pts" 2>/dev/null || true
+  mountpoint -q "$MNT/proc" || mount -t proc proc "$MNT/proc" || return 1
+  mountpoint -q "$MNT/sys" || mount -t sysfs sys "$MNT/sys" || return 1
+  mountpoint -q "$MNT/run" || mount -t tmpfs tmpfs "$MNT/run" || return 1
+  if [ -d /sys/firmware/efi ]; then
+    mountpoint -q "$MNT/sys/firmware/efi/efivars" || mount -t efivarfs efivarfs "$MNT/sys/firmware/efi/efivars" 2>/dev/null || true
+  fi
+  return 0
+}
+
+phase_mount() {
+  restore_recipe
+  if mountpoint -q "$MNT"; then
+    bind_target || return 1
+    return 0
+  fi
+  local rootdev
+  if [ "$encrypt" = true ]; then
+    rootdev=/dev/mapper/saltos-root
+    if [ ! -e "$rootdev" ]; then
+      local cryptpart
+      cryptpart="$(blkid -t TYPE=crypto_LUKS -o device | head -1)"
+      [ -n "$cryptpart" ] || { log "no LUKS partition found"; return 1; }
+      printf '%s' "$password" | cryptsetup open --key-file - "$cryptpart" saltos-root || return 1
+    fi
+  else
+    rootdev="$(blkid -L saltOS)"
+  fi
+  [ -b "$rootdev" ] || { log "cannot find installed root"; return 1; }
+  mkdir -p "$MNT"
+  mount -o subvol=@ "$rootdev" "$MNT" || return 1
+  mount -o subvol=@home "$rootdev" "$MNT/home" || return 1
+  mount -o subvol=@var "$rootdev" "$MNT/var" || return 1
+  mount -o subvol=@log "$rootdev" "$MNT/var/log" || return 1
+  mount -o subvol=@strata "$rootdev" "$MNT/strata" || return 1
+  if [ "$encrypt" = true ]; then
+    mount "$(blkid -L saltOS-boot)" "$MNT/boot" || return 1
+  fi
+  mount "$(blkid -L EFI | head -1)" "$MNT/boot/efi" 2>/dev/null || true
+  bind_target || return 1
+  restore_recipe
+  return 0
+}
+
+stratum_root() {
+  local r
+  r="$(toml_get "/etc/salt/strata/$distro.toml" "" root)"
+  [ -n "$r" ] || r="/strata/$distro"
+  echo "$MNT$r"
+}
+
+in_stratum() {
+  local root="$1"; shift
+  chroot "$root" /usr/bin/env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/root TERM=linux LANG=C.UTF-8 "$@"
+}
+
+bind_stratum() {
+  local root="$1"
+  mkdir -p "$root"/{dev,proc,sys,run,tmp}
+  mountpoint -q "$root/dev" || mount --bind /dev "$root/dev" || return 1
+  mountpoint -q "$root/proc" || mount -t proc proc "$root/proc" || return 1
+  mountpoint -q "$root/sys" || mount -t sysfs sys "$root/sys" || return 1
+  mountpoint -q "$root/run" || mount -t tmpfs tmpfs "$root/run" || return 1
+  mountpoint -q "$root/tmp" || mount -t tmpfs tmpfs "$root/tmp" || return 1
+  cp -L /etc/resolv.conf "$root/etc/resolv.conf" 2>/dev/null || true
+  return 0
+}
+
+unbind_stratum() {
+  local root="$1"
+  umount "$root/tmp" "$root/run" "$root/sys" "$root/proc" "$root/dev" 2>/dev/null || true
+}
+
+phase_desktop() {
+  local root pkgs
+  root="$(stratum_root)"
+  [ -d "$root/usr" ] || { log "stratum root $root missing"; return 1; }
+  pkgs="$(pkgmap_packages "$distro" | tr '\n' ' ')"
+  local -a pkg
+  read -r -a pkg <<<"$pkgs"
+  log "installing into $distro: $pkgs"
+  bind_stratum "$root" || return 1
+  local rc=0
+  case "$(stratum_family "$distro")" in
+    arch)
+      if [ "$OFFLINE" = true ]; then
+        MIRROR_BIND="$root/var/cache/saltos-offline"
+        mkdir -p "$MIRROR_BIND"
+        mount --bind "$MEDIUM/omakase/mirror/arch" "$MIRROR_BIND" || return 1
+        printf '[options]\nArchitecture = auto\nSigLevel = Never\nHoldPkg = pacman glibc\n\n[offline]\nServer = file:///var/cache/saltos-offline\n' >"$root/etc/pacman.d/saltos-offline.conf"
+        in_stratum "$root" pacman -Sy --noconfirm --needed --config /etc/pacman.d/saltos-offline.conf "${pkg[@]}" || rc=1
+        rm -f "$root/etc/pacman.d/saltos-offline.conf" "$root/var/lib/pacman/sync/offline.db" "$root"/var/cache/pacman/pkg/*.pkg.tar.*
+        umount "$MIRROR_BIND"; MIRROR_BIND=""
+        rmdir "$root/var/cache/saltos-offline" 2>/dev/null || true
+      else
+        in_stratum "$root" sh -c 'pacman-key --init >/dev/null 2>&1; pacman-key --populate archlinux >/dev/null 2>&1' || true
+        in_stratum "$root" pacman -Syu --noconfirm --needed "${pkg[@]}" || rc=1
+      fi
+      ;;
+    debian)
+      in_stratum "$root" sh -c 'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@"' apt "${pkg[@]}" || rc=1
+      ;;
+    fedora)
+      in_stratum "$root" dnf install -y --setopt=install_weak_deps=False "${pkg[@]}" || rc=1
+      ;;
+    void)
+      in_stratum "$root" sh -c 'xbps-install -Suy xbps && xbps-install -Sy "$@"' xbps "${pkg[@]}" || rc=1
+      ;;
+    alpine)
+      in_stratum "$root" sh -c 'apk update && apk add "$@"' apk "${pkg[@]}" || rc=1
+      ;;
+    opensuse)
+      in_stratum "$root" sh -c 'zypper -n ref && zypper -n install --no-recommends "$@"' zypper "${pkg[@]}" || rc=1
+      ;;
+    *) log "unknown family for $distro"; rc=1 ;;
+  esac
+  unbind_stratum "$root"
+  [ $rc -eq 0 ] || return 1
+  log "refreshing exposed commands"
+  salt --root "$MNT" --yes expose-all "$distro" || log "expose refresh incomplete"
+  log "dropping stratum shims that shadow host commands"
+  local shim name d dropped=0
+  for shim in "$MNT"/usr/local/salt/shims/*; do
+    [ -e "$shim" ] || continue
+    name="${shim##*/}"
+    for d in usr/bin bin usr/sbin sbin usr/local/bin; do
+      [ -e "$MNT/$d/$name" ] || continue
+      salt --root "$MNT" --yes unexpose "$name" >/dev/null 2>&1 || true
+      rm -f "$shim"
+      dropped=$((dropped + 1))
+      break
+    done
+  done
+  log "dropped $dropped shadowing shims"
+  return 0
+}
+
+phase_apps() {
+  local src="$MEDIUM/omakase/vendor" arch
+  arch="$(uname -m)"
+  local sroot="$MNT/strata/$distro"
+  rm -rf "$MNT/opt/saltos"
+  mkdir -p "$MNT/opt/saltos/share" "$MNT/usr/local/bin" "$sroot/usr/local/bin" "$sroot/usr/local/share/applications"
+  cp -a "$OMAKASE_SHARE/target/bin" "$MNT/opt/saltos/bin"
+  cp -a "$OMAKASE_SHARE/target/templates" "$MNT/opt/saltos/share/templates"
+  cp -a "$OMAKASE_SHARE/target/config" "$MNT/opt/saltos/share/config"
+  cp -a "$OMAKASE_SHARE/themes" "$MNT/opt/saltos/share/themes"
+  cp -a "$OMAKASE_SHARE/packages" "$MNT/opt/saltos/share/packages"
+  cp -a "$OMAKASE_SHARE/lib" "$MNT/opt/saltos/lib"
+  install -m 0755 "$OMAKASE_SHARE/live/saltos-vt-palette" "$MNT/opt/saltos/bin/saltos-vt-palette"
+  chmod 0755 "$MNT/opt/saltos/bin/"*
+  printf '%s\n' "$distro" >"$MNT/etc/saltos-omakase-stratum"
+  local b name
+  for b in "$MNT/opt/saltos/bin/"*; do
+    name="$(basename "$b")"
+    ln -sf "/opt/saltos/bin/$name" "$MNT/usr/local/bin/$name"
+    ln -sf "/opt/saltos/bin/$name" "$sroot/usr/local/bin/$name"
+  done
+  [ -d "$src/vicinae-$arch" ] || { log "vicinae bundle for $arch not on medium"; return 1; }
+  [ -d "$src/helium-$arch" ] || { log "helium bundle for $arch not on medium"; return 1; }
+  rm -rf "$MNT/opt/vicinae" "$MNT/opt/helium"
+  cp -a "$src/vicinae-$arch" "$MNT/opt/vicinae"
+  cp -a "$src/helium-$arch" "$MNT/opt/helium"
+  log "installed vicinae and helium under /opt"
+  cat >"$sroot/usr/local/bin/vicinae" <<'EOF'
+#!/bin/sh
+exec /opt/vicinae/AppRun "$@"
+EOF
+  cat >"$sroot/usr/local/bin/helium" <<'EOF'
+#!/bin/sh
+exec /opt/helium/helium --ozone-platform-hint=auto --enable-features=UseOzonePlatform,WaylandWindowDecorations "$@"
+EOF
+  chmod 0755 "$sroot/usr/local/bin/vicinae" "$sroot/usr/local/bin/helium"
+  sed 's|^Exec=vicinae|Exec=/usr/local/bin/vicinae|; s|^Icon=.*|Icon=/opt/vicinae/vicinae.png|' \
+    "$MNT/opt/vicinae/vicinae.desktop" >"$sroot/usr/local/share/applications/vicinae.desktop"
+  sed 's|^Exec=.*|Exec=/usr/local/bin/helium %U|; s|^Icon=.*|Icon=/opt/helium/product_logo_256.png|' \
+    "$MNT/opt/helium/helium.desktop" >"$sroot/usr/local/share/applications/helium.desktop"
+  if [ -f "$src/gum-$arch" ]; then
+    install -m 0755 "$src/gum-$arch" "$MNT/opt/saltos/bin/gum"
+    ln -sf /opt/saltos/bin/gum "$MNT/usr/local/bin/gum"
+    [ -x "$sroot/usr/bin/gum" ] || ln -sf /opt/saltos/bin/gum "$sroot/usr/local/bin/gum"
+  fi
+  local rules="$MNT/etc/udev/rules.d/90-saltos-omakase.rules"
+  mkdir -p "$(dirname "$rules")"
+  printf 'ACTION=="add", SUBSYSTEM=="backlight", RUN+="/bin/chmod a+w /sys/class/backlight/%%k/brightness"\nACTION=="add", SUBSYSTEM=="leds", RUN+="/bin/chmod a+w /sys/class/leds/%%k/brightness"\nSUBSYSTEM=="sound", KERNEL=="controlC[0-9]*|pcmC*|timer|seq|hwC*|midiC*", MODE="0666"\nSUBSYSTEM=="video4linux", MODE="0666"\n' >"$rules"
+  return 0
+}
+
+phase_host() {
+  local svroot=/etc/runit/sv rundir="$MNT/etc/runit/runsvdir/current"
+  mkdir -p "$rundir" "$MNT$svroot"
+  install -Dm755 "$OMAKASE_SHARE/target/sv/udevd/run" "$MNT$svroot/udevd/run"
+  printf '127.0.0.1 localhost\n127.0.1.1 %s\n::1 localhost ip6-localhost ip6-loopback\n' "$hostname_" >"$MNT/etc/hosts"
+  local svc
+  for svc in udevd dbus polkitd NetworkManager bluetoothd; do
+    [ -d "$MNT$svroot/$svc" ] && ln -sf "$svroot/$svc" "$rundir/$svc"
+  done
+  if [ -d "$MNT$svroot/bluetoothd" ] || [ -x "$MNT/usr/libexec/bluetooth/bluetoothd" ] || [ -x "$MNT/usr/lib/bluetooth/bluetoothd" ]; then
+    mkdir -p "$MNT$svroot/bluetoothd"
+    cat >"$MNT$svroot/bluetoothd/run" <<'EOF'
+#!/bin/sh
+exec 2>&1
+for b in /usr/libexec/bluetooth/bluetoothd /usr/lib/bluetooth/bluetoothd /usr/bin/bluetoothd; do
+  [ -x "$b" ] && exec "$b" -n
+done
+exec sleep infinity
+EOF
+    chmod 0755 "$MNT$svroot/bluetoothd/run"
+    ln -sf "$svroot/bluetoothd" "$rundir/bluetoothd"
+  fi
+  if [ ! -x "$MNT$svroot/seatd/run" ]; then
+    mkdir -p "$MNT$svroot/seatd"
+    cat >"$MNT$svroot/seatd/run" <<'EOF'
+#!/bin/sh
+exec 2>&1
+[ -d /run/seatd ] || mkdir -p /run/seatd
+exec seatd -g seat
+EOF
+    chmod 0755 "$MNT$svroot/seatd/run"
+  fi
+  chroot_target groupadd -f seat
+  ln -sf "$svroot/seatd" "$rundir/seatd"
+  rm -f "$rundir/saltos-live-install" "$rundir/boot-check" "$rundir/stratum-e2e" "$rundir/netdhcp"
+  rm -rf "$MNT$svroot/saltos-live-install"
+  chroot_target passwd -l root >/dev/null 2>&1 || true
+  rm -f "$MNT/root/.bash_profile" "$MNT/home/salt/.bash_profile"
+  printf 'saltOS omakase -- saltos-menu for themes, updates and setup\n' >"$MNT/etc/motd"
+  mkdir -p "$MNT$svroot/saltos-session"
+  printf '%s\n' "$username" >"$MNT/etc/saltos-omakase-user"
+  cat >"$MNT$svroot/saltos-session/run" <<'EOF'
+#!/bin/sh
+exec 2>&1
+exec /opt/saltos/bin/saltos-session-tty "$(cat /etc/saltos-omakase-user)"
+EOF
+  chmod 0755 "$MNT$svroot/saltos-session/run"
+  ln -sf "$svroot/saltos-session" "$rundir/saltos-session"
+  rm -f "$rundir/agetty-tty1"
+  [ -n "$keymap" ] && printf 'KEYMAP=%s\n' "$keymap" >"$MNT/etc/vconsole.conf"
+  if [ -f "$MNT/etc/rc.conf" ] && [ -n "$keymap" ]; then
+    sed -i "s|^#\?KEYMAP=.*|KEYMAP=\"$keymap\"|" "$MNT/etc/rc.conf"
+  fi
+  printf 'saltOS omakase (%s stratum)\n' "$distro" >"$MNT/etc/saltos-edition"
+  if [ "$deferred" = true ]; then
+    : >"$MNT/etc/saltos-firstboot-pending"
+    chroot_target passwd -l "$username" >/dev/null 2>&1 || true
+  fi
+  if [ "$serial_console" = true ]; then
+    mkdir -p "$MNT$svroot/saltos-serial-console"
+    cat >"$MNT$svroot/saltos-serial-console/run" <<EOF
+#!/bin/sh
+exec 2>&1
+[ -e /sys/class/tty/ttyS0 ] || exec sleep infinity
+exec setsid -w agetty --noclear --autologin $username ttyS0 115200 vt100
+EOF
+    chmod 0755 "$MNT$svroot/saltos-serial-console/run"
+    ln -sf "$svroot/saltos-serial-console" "$rundir/saltos-serial-console"
+  fi
+  rm -f "$rundir/agetty-serial" "$rundir/agetty-ttyS0"
+  rm -f "$MNT/etc/sudoers.d/salt-live" "$MNT/etc/sudoers.d/90-salt-live" "$MNT/etc/sudoers.d/salt" 2>/dev/null
+  printf '%%wheel ALL=(ALL:ALL) ALL\n%%sudo ALL=(ALL:ALL) ALL\n%s ALL=(ALL) NOPASSWD: /usr/bin/salt, /usr/bin/salt-ota, /usr/local/bin/salt-ota\n' "$username" >"$MNT/etc/sudoers.d/91-saltos-omakase"
+  chmod 0440 "$MNT/etc/sudoers.d/91-saltos-omakase"
+  mkdir -p "$MNT/strata/$distro/etc/sudoers.d"
+  printf '%s ALL=(ALL:ALL) ALL\n%s ALL=(ALL) NOPASSWD: /usr/local/bin/salt\n' "$username" "$username" >"$MNT/strata/$distro/etc/sudoers.d/91-saltos-omakase"
+  chmod 0440 "$MNT/strata/$distro/etc/sudoers.d/91-saltos-omakase"
+  return 0
+}
+
+phase_user() {
+  local home g
+  home="$(chroot_target getent passwd "$username" | cut -d: -f6)"
+  [ -n "$home" ] || { log "no home for $username"; return 1; }
+  for g in seat _seatd audio video input render storage network bluetooth users; do
+    chroot_target getent group "$g" >/dev/null 2>&1 && chroot_target usermod -aG "$g" "$username"
+  done
+  OMAKASE_TARGET_ROOT="$MNT" OMAKASE_SHARE="$MNT/opt/saltos" \
+    "$MNT/opt/saltos/bin/saltos-provision-home" "$MNT$home" "$username" "$distro" "$full_name" "$email" || return 1
+  chroot_target chown -R "$username:$username" "$home"
+  return 0
+}
+
+phase_finish() {
+  chroot_target sync 2>/dev/null || true
+  sync
+  cleanup_mounts
+  return 0
+}
+
+CURRENT=preflight
+state_write preflight running
+for p in "${PHASES[@]}"; do
+  run_phase "$p"
+done
+MESSAGE="Installed saltOS omakase ($distro) to $disk"
+state_write finish ok
+log "install complete"
+exit 0
