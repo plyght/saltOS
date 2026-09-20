@@ -11,6 +11,7 @@ on:
   push:
     paths:
       - "os/build/pi5.sh"
+      - "os/build/common.sh"
       - "os/ota/**"
       - "os/runit/sv/salt-update/**"
       - ".github/workflows/pi5-image.yml"
@@ -48,7 +49,7 @@ jobs:
             mmdebstrap debian-archive-keyring gdisk dosfstools btrfs-progs \
             zstd curl gpg ca-certificates fdisk mount
 
-      - name: Build salt against the Debian base (arm64)
+      - name: Build salt and salt-setup against the Debian base (arm64)
         run: |
           docker run --rm -v "$PWD":/src -w /src debian:bookworm bash -c '
             set -e
@@ -57,12 +58,13 @@ jobs:
               cmake ninja-build pkg-config g++ ca-certificates \
               libzstd-dev libsodium-dev libsqlite3-dev
             cmake -G Ninja -B build-iso -DCMAKE_BUILD_TYPE=Release
-            cmake --build build-iso --target salt'
+            cmake --build build-iso --target salt salt-setup'
 
       - name: Build Raspberry Pi 5 image
         run: |
           sudo env \
             SALT_BIN="$PWD/build-iso/src/salt/salt" \
+            SALTSETUP_BIN="$PWD/build-iso/src/setup/salt-setup" \
             REPO_DIR="$PWD" \
             EDITION="$EDITION" \
             VERSION="$VERSION" \
@@ -75,6 +77,41 @@ jobs:
         run: |
           ls -lh out-pi/
           file out-pi/*.img || true
+
+      - name: Inspect boot and root partitions
+        run: |
+          set -euo pipefail
+          IMG=$(ls out-pi/*.img | head -1)
+          sudo sgdisk -p "$IMG"
+          LOOP=$(sudo losetup --find --show --partscan "$IMG")
+          trap 'sudo umount -R /mnt/pi-root 2>/dev/null || true; sudo umount /mnt/pi-boot 2>/dev/null || true; sudo losetup -d "$LOOP"' EXIT
+          for i in $(seq 1 20); do [ -b "${LOOP}p1" ] && [ -b "${LOOP}p2" ] && break; sleep 0.5; done
+          sudo blkid "${LOOP}p1" "${LOOP}p2"
+          sudo blkid -o value -s LABEL "${LOOP}p1" | grep -qx saltos-boot
+          sudo blkid -o value -s TYPE "${LOOP}p2" | grep -qx btrfs
+          sudo mkdir -p /mnt/pi-boot /mnt/pi-root
+          sudo mount -o ro "${LOOP}p1" /mnt/pi-boot
+          sudo mount -o ro,subvol=@ "${LOOP}p2" /mnt/pi-root
+          echo "----- boot partition -----"
+          ls -l /mnt/pi-boot
+          echo "----- config.txt -----"; cat /mnt/pi-boot/config.txt
+          echo "----- cmdline.txt -----"; cat /mnt/pi-boot/cmdline.txt
+          for f in config.txt cmdline.txt vmlinuz initramfs bcm2712-rpi-5-b.dtb overlays/vc4-kms-v3d.dtbo; do
+            [ -s "/mnt/pi-boot/$f" ] || { echo "FAIL: boot partition is missing $f"; exit 1; }
+          done
+          grep -q '^kernel=vmlinuz' /mnt/pi-boot/config.txt
+          grep -q 'root=LABEL=saltos-root' /mnt/pi-boot/cmdline.txt
+          grep -q 'console=serial0,115200' /mnt/pi-boot/cmdline.txt
+          file /mnt/pi-boot/vmlinuz | grep -qiE 'kernel|gzip|zstd|arm64|aarch64|PE32' || { echo "FAIL: vmlinuz is not a kernel image"; exit 1; }
+          echo "----- root subvolume -----"
+          for f in lib/runit/runit-init usr/sbin/runit etc/runit/1 etc/runit/2 usr/bin/salt usr/bin/salt-setup etc/fstab etc/os-release; do
+            [ -e "/mnt/pi-root/$f" ] || { echo "FAIL: root filesystem is missing /$f"; exit 1; }
+          done
+          readlink /mnt/pi-root/usr/sbin/init | grep -q runit-init || { echo "FAIL: /sbin/init is not runit-init"; exit 1; }
+          cat /mnt/pi-root/etc/os-release
+          grep -q 'LABEL=saltos-boot  /boot/firmware' /mnt/pi-root/etc/fstab
+          ls /mnt/pi-root/lib/modules | grep -q rpt-rpi-2712 || { echo "FAIL: no Raspberry Pi 5 kernel modules"; ls /mnt/pi-root/lib/modules; exit 1; }
+          echo "PI5 IMAGE OK: boot partition carries firmware, kernel, initramfs and config; root carries runit + salt"
 
       - name: Upload image
         if: always()

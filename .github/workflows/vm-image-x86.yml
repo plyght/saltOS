@@ -12,6 +12,7 @@ on:
     paths:
       - "os/build/vm-x86.sh"
       - "os/build/common.sh"
+      - "os/iso/qemu-boot-test.sh"
       - ".github/workflows/vm-image-x86.yml"
 
 concurrency:
@@ -45,7 +46,8 @@ jobs:
             cmake ninja-build pkg-config \
             libzstd-dev libsodium-dev libsqlite3-dev build-essential \
             gdisk dosfstools btrfs-progs grub-efi-amd64-bin grub-common \
-            zstd curl gpg ca-certificates fdisk mount
+            zstd curl gpg ca-certificates fdisk mount \
+            qemu-system-x86 ovmf socat netpbm
 
       - name: Build salt (static-linked)
         run: |
@@ -74,6 +76,22 @@ jobs:
         run: |
           ls -lh out-vm/
           file out-vm/*.img || true
+
+      - name: Boot test (QEMU x86_64, UEFI)
+        run: |
+          IMG=$(ls out-vm/*.img | head -1)
+          bash os/iso/qemu-boot-test.sh --disk "$IMG" --arch x86_64 --firmware uefi --mem 3072 --timeout 900 \
+            --ok "login: salt" --log qemu.log --screenshot saltos-vm-x86_64.png
+
+      - name: Upload boot log and screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: saltos-vm-${{ matrix.edition }}-x86_64-boot
+          path: |
+            qemu.log
+            saltos-vm-x86_64.png
+          if-no-files-found: ignore
 
       - name: Upload image
         if: always()

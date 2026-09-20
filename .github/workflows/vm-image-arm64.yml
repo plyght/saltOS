@@ -12,6 +12,8 @@ on:
     paths:
       - "os/build/vm-apple.sh"
       - "os/runit/**"
+      - "os/build/common.sh"
+      - "os/iso/qemu-boot-test.sh"
       - ".github/workflows/vm-image-arm64.yml"
 
 concurrency:
@@ -44,9 +46,10 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build pkg-config \
             libzstd-dev libsodium-dev libsqlite3-dev build-essential \
-            gdisk dosfstools btrfs-progs dosfstools \
+            gdisk dosfstools btrfs-progs \
             grub-efi-arm64-bin grub-common \
-            zstd curl gpg ca-certificates fdisk mount
+            zstd curl gpg ca-certificates fdisk mount \
+            qemu-system-arm qemu-system-data qemu-efi-aarch64 socat netpbm
 
       - name: Build salt against the Debian base (arm64, static-linked)
         run: |
@@ -75,6 +78,20 @@ jobs:
         run: |
           ls -lh out-vm/
           file out-vm/*.img || true
+
+      - name: Boot test (QEMU aarch64, UEFI, virtio console)
+        run: |
+          IMG=$(ls out-vm/*.img | head -1)
+          bash os/iso/qemu-boot-test.sh --disk "$IMG" --arch aarch64 --firmware uefi --console virtio \
+            --mem 3072 --timeout 1500 --ok "login: salt" --log qemu.log
+
+      - name: Upload boot log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: saltos-vm-${{ matrix.edition }}-aarch64-boot
+          path: qemu.log
+          if-no-files-found: ignore
 
       - name: Upload image
         if: always()

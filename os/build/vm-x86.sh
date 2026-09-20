@@ -136,9 +136,9 @@ saltos_write_sudoers salt
 
 cat > "$ROOTFS/etc/motd" <<'EOF'
 
-  saltOS on Apple Virtualization / UTM (aarch64) -- you are 'salt'.
+  saltOS x86_64 UEFI VM -- you are 'salt'.
 
-  Console is virtio (hvc0). Graphics are virtio-gpu.
+  Console is serial (ttyS0). Graphics are virtio-gpu.
   salt --help            native package manager + strata
   salt-setup             pick a base distro / install to disk
 
