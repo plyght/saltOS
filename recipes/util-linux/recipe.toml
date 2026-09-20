@@ -1,6 +1,6 @@
 name = "util-linux"
 version = "2.40.1"
-release = 1
+release = 2
 summary = "Miscellaneous system utilities for Linux"
 license = "GPL-2.0-or-later"
 arch = ["x86_64", "aarch64"]
@@ -24,6 +24,7 @@ script = """
     --disable-runuser \\
     --disable-pylibmount \\
     --disable-static \\
+    --disable-use-tty-group \\
     --without-python
 make -j"$SALT_JOBS"
 make DESTDIR="$SALT_DEST" install
