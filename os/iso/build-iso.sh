@@ -185,10 +185,17 @@ if command -v dracut >/dev/null 2>&1; then
 else
 	cp -a "$SELF_DIR/live/live-init" "$INITRAMFS_DIR/init"
 	chmod 0755 "$INITRAMFS_DIR/init"
-	for b in busybox sh mount umount switch_root blkid modprobe sleep cp mkdir cat udevd udevadm; do
-		src=$(command -v "$b" 2>/dev/null || true)
-		[ -n "$src" ] && cp -a "$src" "$INITRAMFS_DIR/bin/" 2>/dev/null || true
-	done
+	if [ -x "$LIVE_ROOT/usr/bin/busybox" ] && ! readelf -l "$LIVE_ROOT/usr/bin/busybox" 2>/dev/null | grep -q INTERP; then
+		cp -a "$LIVE_ROOT/usr/bin/busybox" "$INITRAMFS_DIR/bin/busybox"
+		for b in sh mount umount mountpoint switch_root findfs blkid modprobe sleep cp mkdir cat; do
+			ln -sf busybox "$INITRAMFS_DIR/bin/$b"
+		done
+	else
+		for b in busybox sh mount umount switch_root blkid modprobe sleep cp mkdir cat udevd udevadm; do
+			src=$(command -v "$b" 2>/dev/null || true)
+			[ -n "$src" ] && cp -a "$src" "$INITRAMFS_DIR/bin/" 2>/dev/null || true
+		done
+	fi
 	mkdir -p "$INITRAMFS_DIR/lib/modules/$KERNEL_VERSION"
 	cp -a "$LIVE_ROOT/lib/modules/$KERNEL_VERSION/." \
 		"$INITRAMFS_DIR/lib/modules/$KERNEL_VERSION/" 2>/dev/null || true

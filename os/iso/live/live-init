@@ -34,7 +34,7 @@ mkdir -p "$MEDIUM"
 
 DEV=""
 for i in 1 2 3 4 5 6 7 8 9 10; do
-	DEV=$(blkid -L "$LIVE_LABEL" 2>/dev/null)
+	DEV=$(findfs "LABEL=$LIVE_LABEL" 2>/dev/null || blkid -L "$LIVE_LABEL" 2>/dev/null)
 	[ -n "$DEV" ] && break
 	sleep 1
 done

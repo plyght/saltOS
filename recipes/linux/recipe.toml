@@ -1,6 +1,6 @@
 name = "linux"
 version = "6.12.30"
-release = 2
+release = 3
 summary = "Linux kernel"
 license = "GPL-2.0-only"
 arch = ["x86_64", "aarch64"]
@@ -27,6 +27,32 @@ scripts/config --enable BTRFS_FS
 scripts/config --enable EFI
 scripts/config --enable EFI_STUB
 scripts/config --enable BLK_DEV_INITRD
+scripts/config --enable RD_GZIP
+scripts/config --enable RD_ZSTD
+scripts/config --enable DEVTMPFS
+scripts/config --enable DEVTMPFS_MOUNT
+scripts/config --enable SERIAL_8250
+scripts/config --enable SERIAL_8250_CONSOLE
+scripts/config --enable BLK_DEV_LOOP
+scripts/config --enable BLK_DEV_SR
+scripts/config --enable ISO9660_FS
+scripts/config --enable SQUASHFS
+scripts/config --enable SQUASHFS_XZ
+scripts/config --enable SQUASHFS_ZSTD
+scripts/config --enable OVERLAY_FS
+scripts/config --enable VFAT_FS
+scripts/config --enable NLS_CODEPAGE_437
+scripts/config --enable NLS_ISO8859_1
+scripts/config --enable VIRTIO
+scripts/config --enable VIRTIO_PCI
+scripts/config --enable VIRTIO_BLK
+scripts/config --enable VIRTIO_NET
+scripts/config --enable VIRTIO_CONSOLE
+scripts/config --enable DRM
+scripts/config --enable DRM_BOCHS
+scripts/config --enable DRM_VIRTIO_GPU
+scripts/config --enable DRM_FBDEV_EMULATION
+scripts/config --enable FRAMEBUFFER_CONSOLE
 scripts/config --set-str CONFIG_LOCALVERSION "-saltos"
 make ARCH="$karch" olddefconfig
 make ARCH="$karch" -j"$SALT_JOBS"

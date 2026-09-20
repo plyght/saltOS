@@ -56,7 +56,24 @@ for stage in $STAGES; do
   done
 done
 
-log "installing runit service tree"
+log "installing runit stages and service tree"
+for stage in 1 2 3; do
+  install -Dm755 "$REPO_ROOT/os/runit/stages/$stage" "$ROOTFS/etc/runit/$stage"
+done
+install -Dm755 "$REPO_ROOT/os/runit/svc" "$ROOTFS/usr/bin/svc"
+mkdir -p "$ROOTFS/etc/runit/sv/boot-check"
+cat > "$ROOTFS/etc/runit/sv/boot-check/run" <<'EOF'
+#!/bin/sh
+exec 2>&1
+if salt --version > /dev/console 2>&1; then
+  echo "SALTOS_BOOT_OK runit stage 2 reached; salt runs" > /dev/console
+else
+  echo "SALTOS_BOOT_FAIL salt did not run" > /dev/console
+fi
+exec sleep infinity
+EOF
+chmod 0755 "$ROOTFS/etc/runit/sv/boot-check/run"
+ln -sf /etc/runit/sv/boot-check "$ROOTFS/etc/runit/runsvdir/current/boot-check"
 if [ -d "$RUNIT_SRC" ]; then
   cp -a "$RUNIT_SRC/." "$ROOTFS/etc/runit/sv/"
   for svc in udevd dbus seatd socklog sshd chronyd dhcpcd agetty-tty1 agetty-tty2 sddm; do

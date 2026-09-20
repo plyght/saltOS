@@ -24,6 +24,8 @@ install -d "$SALT_DEST/usr/bin"
 for bin in runit runit-init runsv runsvchdir runsvdir sv svlogd chpst utmpset; do
     install -m 0755 "command/$bin" "$SALT_DEST/usr/bin/$bin"
 done
+install -d "$SALT_DEST/usr/sbin"
+ln -sf ../bin/runit-init "$SALT_DEST/usr/sbin/init"
 install -d "$SALT_DEST/etc/runit"
 install -d "$SALT_DEST/etc/runit/runsvdir/default"
 install -d "$SALT_DEST/var/service"
