@@ -372,6 +372,8 @@ export HOME=/root
 export PATH=/usr/local/salt/shims:/usr/bin:/usr/sbin:/bin:/sbin
 export XKB_CONFIG_ROOT=/usr/share/X11/xkb
 sleep 3
+mkdir -p /var/log /tmp/.X11-unix
+chmod 1777 /tmp/.X11-unix
 xinit /root/.xinitrc -- /usr/bin/Xorg :0 vt1 -logfile /var/log/Xorg.0.log
 rc=$?
 if [ -c /dev/ttyS0 ]; then

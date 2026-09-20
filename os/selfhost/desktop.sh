@@ -110,6 +110,8 @@ xbuild "$XR/xserver/xorg-server-21.1.13.tar.xz" \
   --disable-systemd-logind --disable-libunwind --without-dtrace \
   --disable-libdrm --disable-config-udev --disable-config-udev-kms --disable-config-hal \
   --with-sha1=libmd \
+  --with-xkb-path=/usr/share/X11/xkb --with-xkb-output=/var/lib/xkb \
+  --with-xkb-bin-directory=/usr/bin \
   --enable-xorg --with-fontrootdir="$FONTROOTDIR"
 xbuild "$XR/driver/xf86-video-fbdev-0.5.1.tar.xz"
 xbuild "$XR/driver/xf86-input-keyboard-1.9.0.tar.bz2"
