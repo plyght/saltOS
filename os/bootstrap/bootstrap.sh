@@ -71,6 +71,7 @@ build_one() {
       cat "$LOGDIR/$name.log" >&2 || true
       return 1
     fi
+    rm -rf "${SALT_WORK:-work}/$name"
   fi
   if [ ! -f "$grain" ]; then
     echo "no grain produced for $name; build log follows:" >&2
@@ -175,6 +176,8 @@ run_stage() {
     [ -n "$pkg" ] || continue
     build_one "$pkg"
   done
+  log "pruning stale generations and cached artifacts in sysroot"
+  "$SALT" --root "$SYSROOT" --yes gc --keep 1 >/dev/null
 }
 
 STAGES="${STAGES:-cross-toolchain temp-tools base desktop}"
