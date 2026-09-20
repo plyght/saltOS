@@ -561,6 +561,10 @@ void delive(const std::string &mnt, const setup::Config &cfg) {
                         "home/salt/Desktop/Install-saltOS.desktop", "etc/sudoers.d/salt",
                         "etc/sudoers.d/calamares", "etc/xdg/autostart/saltos-installer.desktop",
                         "etc/xdg/autostart/saltos-setup.desktop", "usr/local/bin/saltos-installer",
+                        "usr/local/bin/saltos-setup-terminal", "usr/lib/saltos/autoinstall.sh",
+                        "usr/lib/saltos/autoinstall-calamares.sh",
+                        "usr/share/applications/saltos-installer.desktop",
+                        "usr/share/applications/saltos-setup.desktop", "etc/calamares",
                         "etc/salt/live-profile.toml", "etc/motd"})
     run_quiet({"rm", "-rf", mnt + "/" + f});
   std::vector<std::string> drop = {"agetty-serial", "stratum-e2e", "installer-check",
@@ -782,7 +786,7 @@ std::string luks_backing(const std::string &mapper) {
   return "";
 }
 
-void discover_mounted(const setup::Config &cfg, Layout &lay) {
+void discover_mounted(const setup::Config &cfg, const std::string &fw, Layout &lay) {
   std::string mnt = cfg.target;
   while (mnt.size() > 1 && mnt.back() == '/') mnt.pop_back();
   static const std::set<std::string> real = {"btrfs", "ext4", "ext3", "ext2", "xfs", "vfat",
@@ -839,7 +843,8 @@ void discover_mounted(const setup::Config &cfg, Layout &lay) {
     std::string uuid = blkid_uuid(dev);
     lay.mounts.push_back({uuid.empty() ? dev : "UUID=" + uuid, m.where, m.fstype, m.opts});
   }
-  if (lay.esp.empty()) fail("no EFI system partition is mounted at " + mnt + "/boot/efi");
+  if (lay.esp.empty() && fw != "bios")
+    fail("no EFI system partition is mounted at " + mnt + "/boot/efi");
   std::sort(lay.mounts.begin(), lay.mounts.end(),
             [](const Layout::Mount &a, const Layout::Mount &b) { return a.where < b.where; });
   for (const auto &m : lay.mounts)
@@ -861,7 +866,8 @@ void lay_down_base(const std::string &mnt) {
   unmount_pseudo(mnt);
   std::string squashfs;
   for (const char *c : {"/run/live/medium/live/filesystem.squashfs",
-                        "/lib/live/mount/medium/live/filesystem.squashfs"})
+                        "/lib/live/mount/medium/live/filesystem.squashfs",
+                        "/run/initramfs/live/live/filesystem.squashfs"})
     if (salt_path_exists(c)) {
       squashfs = c;
       break;
@@ -1316,7 +1322,7 @@ void install_boot(const std::string &mnt, const setup::Config &cfg, const Layout
     set_kv(grub_def, "GRUB_TERMINAL", "\"console serial\"");
     set_kv(grub_def, "GRUB_SERIAL_COMMAND", "\"serial --speed=115200\"");
   }
-  if (!lay.luks_uuid.empty()) set_kv(grub_def, "GRUB_ENABLE_CRYPTODISK", "n");
+  if (!lay.luks_uuid.empty()) set_kv(grub_def, "GRUB_ENABLE_CRYPTODISK", lay.boot.empty() ? "y" : "n");
 
   bool signed_grub = salt_path_exists((mnt + "/usr/lib/grub/x86_64-efi-signed").c_str()) ||
                      salt_path_exists((mnt + "/usr/lib/grub/arm64-efi-signed").c_str());
@@ -1570,7 +1576,7 @@ int main(int argc, char **argv) {
 
   Layout lay;
   if (cfg.mode == "mounted") {
-    discover_mounted(cfg, lay);
+    discover_mounted(cfg, fw, lay);
     info("installing into prepared target " + mnt + " (root on " + lay.root_dev + ")");
   } else {
     partition_disk(cfg, fw, mnt, lay);
@@ -1585,9 +1591,9 @@ int main(int argc, char **argv) {
   configure_network(mnt, cfg);
   setup_swap(mnt, cfg, lay);
   bootstrap_stratum(mnt, cfg);
+  delive(mnt, cfg);
   install_boot(mnt, cfg, lay, arch, fw, booted_efi);
   write_system_config(mnt, cfg);
-  delive(mnt, cfg);
   configure_desktop(mnt, cfg);
 
   info("syncing");
