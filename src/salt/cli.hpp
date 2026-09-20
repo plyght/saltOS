@@ -61,7 +61,15 @@ int native_transaction(const Options &o, const RepoConf &c, salt_ctx *ctx, salt_
                        const NativePlan &plan, const char *op, const TxnFlags &f);
 
 std::string lock_path_for(const Options &o, const std::string &override_path);
-bool lock_load(const std::string &path, std::vector<LockEntry> &out, std::string &err);
+struct StratumLock {
+  std::string name;
+  std::string family;
+  std::string package_manager;
+  std::vector<std::pair<std::string, std::string>> packages;
+};
+
+bool lock_load(const std::string &path, std::vector<LockEntry> &out,
+               std::vector<StratumLock> &strata, std::string &err);
 int lock_apply(const Options &o, const std::string &path, const TxnFlags &f);
 int lock_diff(const Options &o, const std::string &path, bool quiet);
 int lock_write(const Options &o, const std::string &path, bool update_existing);

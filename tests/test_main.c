@@ -11,6 +11,7 @@
 #include "salt/trust.h"
 #include "salt/txn.h"
 #include "salt/gc.h"
+#include "salt/run.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -751,6 +752,85 @@ static void test_txn_rollback(void) {
   salt_remove_recursive(d);
 }
 
+static void test_foreign_pkg(void) {
+  salt_foreign_pkg_list l;
+  salt_foreign_pkg_list_init(&l);
+  const char *pac = "zlib 1:1.3.1-2\nbash 5.2.037-1\n";
+  CHECK(salt_foreign_pkg_parse("pacman", pac, strlen(pac), &l) == SALT_OK, "pacman -Q parse");
+  CHECK(l.len == 2 && strcmp(l.items[0].name, "bash") == 0, "pacman sorted by name");
+  const salt_foreign_pkg *z = salt_foreign_pkg_list_find(&l, "zlib");
+  CHECK(z && strcmp(z->version, "1:1.3.1-2") == 0, "pacman epoch version kept");
+  salt_foreign_pkg_list_free(&l);
+
+  const char *dpkg =
+      "installed\tbash\t5.2.21-2ubuntu4\nconfig-files\told\t1.0\n"
+      "installed\tlibc6\t2.39-0ubuntu8.4\n";
+  CHECK(salt_foreign_pkg_parse("apt", dpkg, strlen(dpkg), &l) == SALT_OK, "dpkg-query parse");
+  CHECK(l.len == 2 && !salt_foreign_pkg_list_find(&l, "old"), "dpkg config-files skipped");
+  z = salt_foreign_pkg_list_find(&l, "libc6");
+  CHECK(z && strcmp(z->version, "2.39-0ubuntu8.4") == 0, "dpkg version");
+  salt_foreign_pkg_list_free(&l);
+
+  const char *apk =
+      "WARNING: opening from cache\nmusl-1.2.5-r0\nca-certificates-bundle-20240705-r0\n";
+  CHECK(salt_foreign_pkg_parse("apk", apk, strlen(apk), &l) == SALT_OK, "apk info parse");
+  z = salt_foreign_pkg_list_find(&l, "ca-certificates-bundle");
+  CHECK(l.len == 2 && z && strcmp(z->version, "20240705-r0") == 0, "apk dashed name split");
+  salt_foreign_pkg_list_free(&l);
+  const char *apk_bad = "nodash\n";
+  CHECK(salt_foreign_pkg_parse("apk", apk_bad, strlen(apk_bad), &l) != SALT_OK,
+        "apk malformed line rejected");
+  salt_foreign_pkg_list_free(&l);
+
+  const char *rpm = "gpg-pubkey\t18b8e74c-62f2920f\nbash\t5.2.26-3.fc40\nglibc\t2.39-33.fc40\n";
+  CHECK(salt_foreign_pkg_parse("dnf", rpm, strlen(rpm), &l) == SALT_OK, "rpm -qa parse");
+  CHECK(l.len == 2 && !salt_foreign_pkg_list_find(&l, "gpg-pubkey"), "rpm gpg-pubkey skipped");
+  salt_foreign_pkg_list_free(&l);
+
+  const char *xbps =
+      "ii base-files-0.143_3          Void Linux base\n"
+      "uu old-1.0_1  unpacked\nii zlib-1.3.1_1  zlib\n";
+  CHECK(salt_foreign_pkg_parse("xbps", xbps, strlen(xbps), &l) == SALT_OK, "xbps-query -l parse");
+  z = salt_foreign_pkg_list_find(&l, "base-files");
+  CHECK(l.len == 2 && z && strcmp(z->version, "0.143_3") == 0, "xbps pkgver split");
+  salt_foreign_pkg_list_free(&l);
+
+  CHECK(salt_foreign_pkg_parse("brew", "x 1\n", 4, &l) != SALT_OK, "unknown manager rejected");
+  salt_foreign_pkg_list_free(&l);
+
+  salt_buf spec;
+  salt_buf_init(&spec);
+  CHECK(salt_foreign_pkg_spec("apt", "bash", "5.2.21-2ubuntu4", &spec) == SALT_OK &&
+            strcmp(spec.data, "bash=5.2.21-2ubuntu4") == 0,
+        "apt exact spec");
+  salt_buf_free(&spec);
+  salt_buf_init(&spec);
+  CHECK(salt_foreign_pkg_spec("dnf", "bash", "5.2.26-3.fc40", &spec) == SALT_OK &&
+            strcmp(spec.data, "bash-5.2.26-3.fc40") == 0,
+        "dnf exact spec");
+  salt_buf_free(&spec);
+  salt_buf_init(&spec);
+  CHECK(salt_foreign_pkg_spec("xbps", "zlib", "1.3.1_1", &spec) == SALT_OK &&
+            strcmp(spec.data, "zlib-1.3.1_1") == 0,
+        "xbps exact spec");
+  salt_buf_free(&spec);
+  salt_buf_init(&spec);
+  CHECK(salt_foreign_pkg_spec("pacman", "zlib", "1.3.1-2", &spec) != SALT_OK,
+        "pacman has no versioned repo spec");
+  CHECK(salt_foreign_pkg_spec("apk", "zlib", "", &spec) != SALT_OK, "empty version rejected");
+  salt_buf_free(&spec);
+
+  salt_stratum st;
+  memset(&st, 0, sizeof(st));
+  st.family = "ubuntu";
+  CHECK(strcmp(salt_stratum_pkg_kind(&st), "apt") == 0, "kind from family");
+  st.package_manager = "xbps";
+  CHECK(strcmp(salt_stratum_pkg_kind(&st), "xbps") == 0, "kind prefers package_manager");
+  st.package_manager = "nix";
+  st.family = "nixos";
+  CHECK(salt_stratum_pkg_kind(&st) == NULL, "unknown kind is NULL");
+}
+
 int main(void) {
   test_buf();
   test_strlist();
@@ -767,6 +847,7 @@ int main(void) {
   test_repo_verify();
   test_db_deps_conflicts();
   test_txn_rollback();
+  test_foreign_pkg();
   printf("\n%d/%d checks passed\n", g_total - g_fail, g_total);
   return g_fail ? 1 : 0;
 }

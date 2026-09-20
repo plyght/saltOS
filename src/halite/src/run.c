@@ -7,6 +7,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <dirent.h>
+#include <errno.h>
 
 #if defined(__linux__)
 #include <sched.h>
@@ -843,6 +845,380 @@ int salt_stratum_pkg(const salt_stratum *s, const char *op, char *const pkgs[], 
 
   int rc = salt_stratum_run(s, &opts, argv, status);
 
+  free(argv);
+  return rc;
+}
+
+void salt_foreign_pkg_list_init(salt_foreign_pkg_list *l) {
+  l->items = NULL;
+  l->len = 0;
+  l->cap = 0;
+}
+
+int salt_foreign_pkg_list_push(salt_foreign_pkg_list *l, const char *name, const char *version) {
+  if (l->len == l->cap) {
+    size_t ncap = l->cap ? l->cap * 2 : 64;
+    salt_foreign_pkg *n = (salt_foreign_pkg *)realloc(l->items, ncap * sizeof(*n));
+    if (!n) {
+      salt_set_error("out of memory");
+      return SALT_ERR;
+    }
+    l->items = n;
+    l->cap = ncap;
+  }
+  l->items[l->len].name = salt_strdup(name);
+  l->items[l->len].version = salt_strdup(version);
+  if (!l->items[l->len].name || !l->items[l->len].version) {
+    free(l->items[l->len].name);
+    free(l->items[l->len].version);
+    salt_set_error("out of memory");
+    return SALT_ERR;
+  }
+  l->len++;
+  return SALT_OK;
+}
+
+const salt_foreign_pkg *salt_foreign_pkg_list_find(const salt_foreign_pkg_list *l,
+                                                   const char *name) {
+  for (size_t i = 0; i < l->len; i++)
+    if (strcmp(l->items[i].name, name) == 0) return &l->items[i];
+  return NULL;
+}
+
+void salt_foreign_pkg_list_free(salt_foreign_pkg_list *l) {
+  for (size_t i = 0; i < l->len; i++) {
+    free(l->items[i].name);
+    free(l->items[i].version);
+  }
+  free(l->items);
+  salt_foreign_pkg_list_init(l);
+}
+
+const char *salt_stratum_pkg_kind(const salt_stratum *s) {
+  return s ? salt_pkg_kind(s) : NULL;
+}
+
+static int foreign_pkg_cmp(const void *a, const void *b) {
+  return strcmp(((const salt_foreign_pkg *)a)->name, ((const salt_foreign_pkg *)b)->name);
+}
+
+/* Split "name-ver-rel" where the version is the last NDASH dash-separated
+ * fields (apk: ver-rN, xbps/pacman-style pkgver: ver). */
+static int split_trailing(const char *tok, int ndash, salt_foreign_pkg_list *out) {
+  const char *cut = tok + strlen(tok);
+  for (int i = 0; i < ndash; i++) {
+    while (cut > tok && *cut != '-') cut--;
+    if (cut == tok) return SALT_ERR;
+    if (i + 1 < ndash) cut--;
+  }
+  if (cut == tok) return SALT_ERR;
+  char *name = (char *)malloc((size_t)(cut - tok) + 1);
+  if (!name) return SALT_ERR;
+  memcpy(name, tok, (size_t)(cut - tok));
+  name[cut - tok] = '\0';
+  int rc = salt_foreign_pkg_list_push(out, name, cut + 1);
+  free(name);
+  return rc;
+}
+
+int salt_foreign_pkg_parse(const char *kind, const char *text, size_t len,
+                           salt_foreign_pkg_list *out) {
+  if (!kind) {
+    salt_set_error("unknown package manager");
+    return SALT_ERR;
+  }
+  const char *p = text;
+  const char *end = text + len;
+  while (p < end) {
+    const char *nl = memchr(p, '\n', (size_t)(end - p));
+    if (!nl) nl = end;
+    size_t n = (size_t)(nl - p);
+    while (n > 0 && (p[n - 1] == '\r' || p[n - 1] == ' ')) n--;
+    char *line = (char *)malloc(n + 1);
+    if (!line) {
+      salt_set_error("out of memory");
+      return SALT_ERR;
+    }
+    memcpy(line, p, n);
+    line[n] = '\0';
+    p = nl < end ? nl + 1 : end;
+    if (n == 0) {
+      free(line);
+      continue;
+    }
+    int rc = SALT_OK;
+    if (strcmp(kind, "pacman") == 0) {
+      char *sp = strchr(line, ' ');
+      if (!sp) {
+        salt_set_error("pacman -Q: malformed line '%s'", line);
+        rc = SALT_ERR;
+      } else {
+        *sp = '\0';
+        rc = salt_foreign_pkg_list_push(out, line, sp + 1);
+      }
+    } else if (strcmp(kind, "apt") == 0) {
+      char *t1 = strchr(line, '\t');
+      char *t2 = t1 ? strchr(t1 + 1, '\t') : NULL;
+      if (!t1 || !t2) {
+        salt_set_error("dpkg-query: malformed line '%s'", line);
+        rc = SALT_ERR;
+      } else {
+        *t1 = '\0';
+        *t2 = '\0';
+        if (strcmp(line, "installed") == 0) rc = salt_foreign_pkg_list_push(out, t1 + 1, t2 + 1);
+      }
+    } else if (strcmp(kind, "apk") == 0) {
+      if (strncmp(line, "WARNING", 7) == 0) {
+        free(line);
+        continue;
+      }
+      if (split_trailing(line, 2, out) != SALT_OK) {
+        salt_set_error("apk info: malformed line '%s'", line);
+        rc = SALT_ERR;
+      }
+    } else if (strcmp(kind, "dnf") == 0 || strcmp(kind, "zypper") == 0) {
+      char *t1 = strchr(line, '\t');
+      if (!t1) {
+        salt_set_error("rpm -qa: malformed line '%s'", line);
+        rc = SALT_ERR;
+      } else {
+        *t1 = '\0';
+        if (strcmp(line, "gpg-pubkey") != 0) rc = salt_foreign_pkg_list_push(out, line, t1 + 1);
+      }
+    } else if (strcmp(kind, "xbps") == 0) {
+      /* "ii pkg-1.0_1  summary": two-letter state, pkgver, description */
+      if (line[0] != 'i' || line[1] == '\0' || line[2] != ' ') {
+        free(line);
+        continue;
+      }
+      char *tok = line + 3;
+      while (*tok == ' ') tok++;
+      char *sp = strchr(tok, ' ');
+      if (sp) *sp = '\0';
+      if (split_trailing(tok, 1, out) != SALT_OK) {
+        salt_set_error("xbps-query -l: malformed line '%s'", line);
+        rc = SALT_ERR;
+      }
+    } else {
+      salt_set_error("unknown package manager '%s'", kind);
+      rc = SALT_ERR;
+    }
+    free(line);
+    if (rc != SALT_OK) return rc;
+  }
+  if (out->len > 1) qsort(out->items, out->len, sizeof(*out->items), foreign_pkg_cmp);
+  return SALT_OK;
+}
+
+int salt_foreign_pkg_spec(const char *kind, const char *name, const char *version, salt_buf *out) {
+  if (!kind || !name || !version || !name[0] || !version[0]) {
+    salt_set_error("package spec needs a manager, name and version");
+    return SALT_ERR;
+  }
+  if (strcmp(kind, "apt") == 0 || strcmp(kind, "apk") == 0 || strcmp(kind, "zypper") == 0)
+    return salt_buf_printf(out, "%s=%s", name, version);
+  if (strcmp(kind, "dnf") == 0 || strcmp(kind, "xbps") == 0)
+    return salt_buf_printf(out, "%s-%s", name, version);
+  if (strcmp(kind, "pacman") == 0) {
+    salt_set_error("pacman repositories serve only the current version of %s", name);
+    return SALT_ERR;
+  }
+  salt_set_error("unknown package manager '%s'", kind);
+  return SALT_ERR;
+}
+
+static int pkg_run(const salt_stratum *s, char *const argv[], int *status) {
+  salt_run_opts opts;
+  salt_run_opts_default(&opts);
+  opts.graphics = false;
+  opts.interactive = false;
+  opts.user = "root";
+  opts.workdir = "/";
+  return salt_stratum_run(s, &opts, argv, status);
+}
+
+static int pkg_run_capture(const salt_stratum *s, char *const argv[], salt_buf *out, int *status) {
+  char tmpl[] = "/tmp/salt-pkgq-XXXXXX";
+  int fd = mkstemp(tmpl);
+  if (fd < 0) {
+    salt_set_error("mkstemp: %s", strerror(errno));
+    return SALT_ERR;
+  }
+  unlink(tmpl);
+  fflush(stdout);
+  int saved = dup(STDOUT_FILENO);
+  if (saved < 0 || dup2(fd, STDOUT_FILENO) < 0) {
+    salt_set_error("dup2: %s", strerror(errno));
+    if (saved >= 0) close(saved);
+    close(fd);
+    return SALT_ERR;
+  }
+  int rc = pkg_run(s, argv, status);
+  fflush(stdout);
+  dup2(saved, STDOUT_FILENO);
+  close(saved);
+  if (rc == SALT_OK) {
+    if (lseek(fd, 0, SEEK_SET) < 0) {
+      salt_set_error("lseek: %s", strerror(errno));
+      rc = SALT_ERR;
+    } else {
+      char chunk[8192];
+      ssize_t r;
+      while ((r = read(fd, chunk, sizeof(chunk))) > 0) salt_buf_append(out, chunk, (size_t)r);
+      if (r < 0) {
+        salt_set_error("read: %s", strerror(errno));
+        rc = SALT_ERR;
+      }
+    }
+  }
+  close(fd);
+  return rc;
+}
+
+int salt_stratum_pkg_query(const salt_stratum *s, salt_foreign_pkg_list *out) {
+  const char *kind = salt_stratum_pkg_kind(s);
+  if (!kind) {
+    salt_set_error("unknown package manager for stratum '%s'", s && s->name ? s->name : "?");
+    return SALT_ERR;
+  }
+  const char *argv[5] = {0};
+  if (strcmp(kind, "pacman") == 0) {
+    argv[0] = "pacman";
+    argv[1] = "-Q";
+  } else if (strcmp(kind, "apt") == 0) {
+    argv[0] = "dpkg-query";
+    argv[1] = "-W";
+    argv[2] = "--showformat=${db:Status-Status}\t${Package}\t${Version}\n";
+  } else if (strcmp(kind, "apk") == 0) {
+    argv[0] = "apk";
+    argv[1] = "info";
+    argv[2] = "-v";
+  } else if (strcmp(kind, "xbps") == 0) {
+    argv[0] = "xbps-query";
+    argv[1] = "-l";
+  } else {
+    argv[0] = "rpm";
+    argv[1] = "-qa";
+    argv[2] = "--qf";
+    argv[3] = "%{NAME}\\t%{EVR}\\n";
+  }
+  salt_buf text;
+  salt_buf_init(&text);
+  int status = -1;
+  int rc = pkg_run_capture(s, (char *const *)argv, &text, &status);
+  if (rc == SALT_OK && status != 0) {
+    salt_set_error("%s exited %d while listing packages in stratum '%s'", argv[0], status,
+                   s->name ? s->name : "?");
+    rc = SALT_ERR;
+  }
+  if (rc == SALT_OK) rc = salt_foreign_pkg_parse(kind, text.data ? text.data : "", text.len, out);
+  salt_buf_free(&text);
+  return rc;
+}
+
+static int pacman_cached_artifact(const salt_stratum *s, const salt_foreign_pkg *p, salt_buf *out) {
+  const char *cache = "var/cache/pacman/pkg";
+  salt_buf dir;
+  salt_buf_init(&dir);
+  salt_buf_printf(&dir, "%s/%s", s->root ? s->root : "", cache);
+  DIR *d = opendir(dir.data);
+  salt_buf_free(&dir);
+  if (!d) return SALT_ERR;
+  salt_buf prefix;
+  salt_buf_init(&prefix);
+  salt_buf_printf(&prefix, "%s-%s-", p->name, p->version);
+  int rc = SALT_ERR;
+  struct dirent *e;
+  while ((e = readdir(d)) != NULL) {
+    if (strncmp(e->d_name, prefix.data, prefix.len) != 0) continue;
+    if (strstr(e->d_name, ".pkg.tar") == NULL) continue;
+    size_t l = strlen(e->d_name);
+    if (l >= 4 && strcmp(e->d_name + l - 4, ".sig") == 0) continue;
+    /* the arch field may not itself contain a dash, so the remainder past the
+       prefix must be "<arch>.pkg.tar.<ext>" */
+    if (strchr(e->d_name + prefix.len, '-') != NULL) continue;
+    salt_buf_printf(out, "/%s/%s", cache, e->d_name);
+    rc = SALT_OK;
+    break;
+  }
+  salt_buf_free(&prefix);
+  closedir(d);
+  return rc;
+}
+
+int salt_stratum_pkg_install_exact(const salt_stratum *s, const salt_foreign_pkg *pkgs, size_t n,
+                                   int *status) {
+  if (status) *status = -1;
+  const char *kind = salt_stratum_pkg_kind(s);
+  if (!kind) {
+    salt_set_error("unknown package manager for stratum '%s'", s && s->name ? s->name : "?");
+    return SALT_ERR;
+  }
+  if (n == 0) {
+    if (status) *status = 0;
+    return SALT_OK;
+  }
+
+  const char *base[6];
+  int nbase = 0;
+  if (strcmp(kind, "pacman") == 0) {
+    base[nbase++] = "pacman";
+    base[nbase++] = "-U";
+    base[nbase++] = "--noconfirm";
+  } else if (strcmp(kind, "apt") == 0) {
+    base[nbase++] = "apt-get";
+    base[nbase++] = "install";
+    base[nbase++] = "-y";
+    base[nbase++] = "--allow-downgrades";
+  } else if (strcmp(kind, "apk") == 0) {
+    base[nbase++] = "apk";
+    base[nbase++] = "add";
+  } else if (strcmp(kind, "dnf") == 0) {
+    base[nbase++] = "dnf";
+    base[nbase++] = "install";
+    base[nbase++] = "-y";
+  } else if (strcmp(kind, "zypper") == 0) {
+    base[nbase++] = "zypper";
+    base[nbase++] = "-n";
+    base[nbase++] = "install";
+    base[nbase++] = "--oldpackage";
+  } else {
+    base[nbase++] = "xbps-install";
+    base[nbase++] = "-Sy";
+  }
+
+  salt_buf *specs = (salt_buf *)calloc(n, sizeof(salt_buf));
+  char **argv = (char **)calloc((size_t)nbase + n + 1, sizeof(char *));
+  if (!specs || !argv) {
+    free(specs);
+    free(argv);
+    salt_set_error("out of memory building package command");
+    return SALT_ERR;
+  }
+  int rc = SALT_OK;
+  for (size_t i = 0; i < n && rc == SALT_OK; i++) {
+    salt_buf_init(&specs[i]);
+    if (strcmp(kind, "pacman") == 0) {
+      /* pacman repositories only ever serve the current build, so a pinned
+         version can only come from the stratum's own package cache; anything
+         else would silently substitute whatever the mirror has today. */
+      rc = pacman_cached_artifact(s, &pkgs[i], &specs[i]);
+      if (rc != SALT_OK)
+        salt_set_error("pacman cannot provide %s %s: not in %s/var/cache/pacman/pkg", pkgs[i].name,
+                       pkgs[i].version, s->root ? s->root : "");
+    } else {
+      rc = salt_foreign_pkg_spec(kind, pkgs[i].name, pkgs[i].version, &specs[i]);
+    }
+  }
+  if (rc == SALT_OK) {
+    int k = 0;
+    for (int i = 0; i < nbase; i++) argv[k++] = (char *)base[i];
+    for (size_t i = 0; i < n; i++) argv[k++] = specs[i].data;
+    argv[k] = NULL;
+    rc = pkg_run(s, argv, status);
+  }
+  for (size_t i = 0; i < n; i++) salt_buf_free(&specs[i]);
+  free(specs);
   free(argv);
   return rc;
 }

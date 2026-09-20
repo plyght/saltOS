@@ -243,6 +243,21 @@ file(WRITE "${WORKDIR}/nohash.lock.toml" "${NOHASHLOCK}")
 expect_fail("lock apply with hashless lock" "${SALT_BIN}" --root "${ROOT}" --yes lock apply "${WORKDIR}/nohash.lock.toml")
 execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes install hello COMMAND_ERROR_IS_FATAL ANY)
 
+file(WRITE "${WORKDIR}/stratum.lock.toml"
+  "${LOCK}\n[[stratum]]\nname = \"ghost\"\nfamily = \"alpine\"\npackage_manager = \"apk\"\n\n[[stratum.package]]\nname = \"musl\"\nversion = \"1.2.5-r0\"\n")
+expect_fail_output("lock diff reports an unbootstrapped stratum" "ghost .*not bootstrapped"
+  "${SALT_BIN}" --root "${ROOT}" lock diff "${WORKDIR}/stratum.lock.toml")
+file(WRITE "${WORKDIR}/unversioned.lock.toml"
+  "${LOCK}\n[[stratum]]\nname = \"ghost\"\n\n[[stratum.package]]\nname = \"musl\"\n")
+expect_fail_output("lock apply refuses an unversioned stratum package" "musl has no version"
+  "${SALT_BIN}" --root "${ROOT}" --yes lock apply "${WORKDIR}/unversioned.lock.toml")
+expect_fail_output("lock diff refuses an unversioned stratum package" "musl has no version"
+  "${SALT_BIN}" --root "${ROOT}" lock diff "${WORKDIR}/unversioned.lock.toml")
+file(WRITE "${WORKDIR}/dupstratum.lock.toml"
+  "${LOCK}\n[[stratum]]\nname = \"ghost\"\n\n[[stratum.package]]\nname = \"musl\"\nversion = \"1\"\n\n[[stratum.package]]\nname = \"musl\"\nversion = \"2\"\n")
+expect_fail_output("lock apply refuses a twice-pinned stratum package" "musl is pinned twice"
+  "${SALT_BIN}" --root "${ROOT}" --yes lock apply "${WORKDIR}/dupstratum.lock.toml")
+
 file(READ "${OUT}/${ARCH}/index.toml" INDEX)
 string(REGEX REPLACE "(name = \"hello\"[^[]*sha256 = )\"[0-9a-f]+\"" "\\1\"TODO-sha256\"" BADINDEX "${INDEX}")
 file(WRITE "${OUT}/${ARCH}/index.toml" "${BADINDEX}")
