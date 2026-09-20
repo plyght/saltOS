@@ -1,0 +1,88 @@
+name: ota
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "os/ota/**"
+      - "os/build/vm-x86.sh"
+      - "os/build/common.sh"
+      - "os/selfhost/build-base-grains.sh"
+      - "os/runit/sv/salt-update/**"
+      - "src/halite/**"
+      - "src/salt/**"
+      - ".github/workflows/ota.yml"
+  pull_request:
+    paths:
+      - "os/ota/**"
+      - "os/build/vm-x86.sh"
+      - "os/build/common.sh"
+      - "os/selfhost/build-base-grains.sh"
+      - "os/runit/sv/salt-update/**"
+      - "src/halite/**"
+      - "src/salt/**"
+      - ".github/workflows/ota.yml"
+
+concurrency:
+  group: ota-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qemu:
+    name: OTA upgrade / trial kernel / rollback / refusal (x86_64 UEFI, QEMU)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      OUT: ${{ github.workspace }}/out-ota
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet \
+            /opt/hostedtoolcache/CodeQL /usr/local/.ghcup 2>/dev/null || true
+          df -h /
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config \
+            libzstd-dev libsodium-dev libsqlite3-dev build-essential \
+            gdisk dosfstools btrfs-progs grub-efi-amd64-bin grub-common \
+            zstd curl ca-certificates fdisk mount python3 \
+            qemu-system-x86 qemu-utils ovmf
+          sudo chmod 666 /dev/kvm 2>/dev/null || true
+          ls -l /dev/kvm || echo "no /dev/kvm; qemu will use tcg"
+
+      - name: Build salt
+        run: |
+          cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+
+      - name: Unit / smoke tests
+        run: ctest --test-dir build --output-on-failure -R 'ota_smoke|pi_tryboot'
+
+      - name: Build image, publish OTA repos, drive QEMU
+        run: |
+          sudo env OUT="$OUT" SALT_BIN="$PWD/build/src/salt/salt" \
+            sh os/ota/test-qemu.sh
+          sudo chown -R "$USER" "$OUT"
+
+      - name: Serial log summary
+        if: always()
+        run: |
+          [ -f "$OUT/driver.log" ] && cat "$OUT/driver.log" || true
+          [ -f "$OUT/serial.log" ] && tr -d '\033' < "$OUT/serial.log" | grep -a -E '^(ok|FAIL|boot |reboot|SALTOS_OTA)' || true
+
+      - name: Upload serial + driver logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ota-qemu-logs
+          path: |
+            out-ota/serial.log
+            out-ota/driver.log
+            out-ota/ship.log
+            out-ota/http.log
+          if-no-files-found: warn

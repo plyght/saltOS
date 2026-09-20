@@ -13,6 +13,12 @@
 #
 # Required: SALT (path to the salt binary), SEC_KEY (hex secret key for signing).
 # Optional: ARCH, VERSION, OUT, BASE_SRC (dir tree for saltos-base), KERNEL.
+#
+# KERNEL_TREE=<root> KERNEL_RELEASE=<uname -r> packages a complete kernel from a
+# root tree instead: boot/vmlinuz-<rel> (or vmlinux/Image), boot/initramfs-<rel>.img
+# and usr/lib/modules/<rel>, versioned as KERNEL_VERSION (default: the release
+# up to its first '_' or '-'). EXTRA_GRAINS=<dir> adds prebuilt .grain files to
+# the published repo.
 set -eu
 
 SALT="${SALT:?set SALT to the salt binary}"
@@ -93,7 +99,38 @@ EOF
 fi
 
 # --- kernel grain (optional) ----------------------------------------------
-if [ -n "${KERNEL:-}" ] && [ -f "$KERNEL" ]; then
+if [ -n "${KERNEL_TREE:-}" ] && [ -n "${KERNEL_RELEASE:-}" ]; then
+  kstage="$WORK/stage-kernel"; mkdir -p "$kstage/boot" "$kstage/usr/lib/modules"
+  kimg=""
+  for cand in vmlinuz vmlinux Image; do
+    if [ -f "$KERNEL_TREE/boot/$cand-$KERNEL_RELEASE" ]; then kimg="$cand-$KERNEL_RELEASE"; break; fi
+  done
+  [ -n "$kimg" ] || { echo "no kernel image for $KERNEL_RELEASE in $KERNEL_TREE/boot" >&2; exit 1; }
+  cp "$KERNEL_TREE/boot/$kimg" "$kstage/boot/$kimg"
+  [ -f "$KERNEL_TREE/boot/initramfs-$KERNEL_RELEASE.img" ] && \
+    cp "$KERNEL_TREE/boot/initramfs-$KERNEL_RELEASE.img" "$kstage/boot/"
+  [ -d "$KERNEL_TREE/usr/lib/modules/$KERNEL_RELEASE" ] && \
+    cp -a "$KERNEL_TREE/usr/lib/modules/$KERNEL_RELEASE" "$kstage/usr/lib/modules/"
+  KVERSION="${KERNEL_VERSION:-$(printf '%s' "$KERNEL_RELEASE" | sed -E 's/[_-].*//')}"
+  cat > "$WORK/linux-saltos.recipe.toml" <<EOF
+name = "linux-saltos"
+version = "$KVERSION"
+release = 1
+summary = "saltOS Linux kernel $KERNEL_RELEASE with modules"
+license = "GPL-2.0"
+arch = ["x86_64", "aarch64"]
+[source]
+url = "file://$kstage"
+sha256 = ""
+[build]
+system = "custom"
+script = """
+cp -a "\$SALT_SRC/." "\$SALT_DEST/"
+"""
+[package]
+EOF
+  "$SALT" build "$WORK/linux-saltos.recipe.toml"
+elif [ -n "${KERNEL:-}" ] && [ -f "$KERNEL" ]; then
   kstage="$WORK/stage-kernel"; mkdir -p "$kstage/boot"
   cp "$KERNEL" "$kstage/boot/$(basename "$KERNEL")"
   cat > "$WORK/linux-saltos.recipe.toml" <<EOF
@@ -121,6 +158,9 @@ fi
 mkdir -p "$OUT/$ARCH/packages"
 cp "$SALT_OUT/$ARCH/packages"/*.grain "$OUT/$ARCH/packages/" 2>/dev/null || \
   cp "$SALT_OUT"/*.grain "$OUT/$ARCH/packages/" 2>/dev/null || true
+if [ -n "${EXTRA_GRAINS:-}" ] && [ -d "$EXTRA_GRAINS" ]; then
+  cp "$EXTRA_GRAINS"/*.grain "$OUT/$ARCH/packages/"
+fi
 "$SALT" --key "$SEC_KEY" repo publish "$OUT/$ARCH"
 echo "wrote signed base-grain repo: $OUT/$ARCH"
 ls -la "$OUT/$ARCH" "$OUT/$ARCH/packages"

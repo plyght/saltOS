@@ -1,6 +1,7 @@
 #!/bin/sh
 exec 2>&1
 [ -x /usr/bin/salt-ota ] || exec sleep 3600
+[ -r ./conf ] && . ./conf
 [ "$(/usr/bin/salt-ota status 2>/dev/null | awk -F': ' '/^ota.enabled/{print $2}')" = "true" ] || exec sleep 3600
 sleep "${SALTOS_OTA_CONFIRM_DELAY:-30}"
 /usr/bin/salt-ota confirm --fallback || true

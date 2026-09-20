@@ -53,6 +53,14 @@ auto_expose = "always"
 expose_pm = true
 expose_all = true
 auto_service = true
+
+[ota]
+enabled = true
+interval = "86400"
+reboot_on_kernel = false
+
+[deploy]
+keep = 5
 EOF
 }
 

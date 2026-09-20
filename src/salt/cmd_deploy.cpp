@@ -343,7 +343,12 @@ void retain_running_kernel(const Options &o, salt_ctx *ctx, salt_db *db, int64_t
   if (!initrd.empty()) rel.push_back("boot/" + initrd);
   for (auto &r : rel) {
     std::string from = path_join(src, r), to = path_join(o.root, r);
-    if (!salt_path_exists(from.c_str()) || salt_path_exists(to.c_str())) continue;
+    std::string probe = r.rfind("usr/lib/modules/", 0) == 0 ? path_join(to, "modules.dep") : to;
+    if (!salt_path_exists(from.c_str()) || salt_path_exists(probe.c_str())) continue;
+    if (salt_is_dir(to.c_str())) {
+      std::string rm = "rm -rf '" + to + "'";
+      if (system(rm.c_str()) != 0) fprintf(stderr, "salt: cannot replace %s\n", to.c_str());
+    }
     std::string cmd = "cp -a --reflink=auto '" + from + "' '" + to + "'";
     if (system(cmd.c_str()) != 0) fprintf(stderr, "salt: cannot keep %s as a fallback\n", r.c_str());
   }

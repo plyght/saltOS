@@ -19,6 +19,12 @@ SALTSETUP_BIN="${SALTSETUP_BIN:-$PWD/build/src/setup/salt-setup}"
 IMG_SIZE_MB="${IMG_SIZE_MB:-24576}"
 ESP_SIZE_MB="${ESP_SIZE_MB:-256}"
 HOSTNAME="${SALTOS_HOSTNAME:-saltos-vm}"
+KERNEL_PKG="${KERNEL_PKG:-linux}"
+OTA_KERNEL_PKG="${OTA_KERNEL_PKG:-}"
+OTA_SIGNING_KEY="${OTA_SIGNING_KEY:-}"
+OTA_STAGE="${OTA_STAGE:-$OUT/ota}"
+OTA_SERVICE_CONF="${OTA_SERVICE_CONF:-}"
+COMPRESS="${COMPRESS:-1}"
 
 VOID_MIRROR="https://repo-default.voidlinux.org/live/current"
 VOID_DATE="20250202"
@@ -67,7 +73,11 @@ inchroot "xbps-install -Sy void-repo-nonfree" || true
 inchroot "xbps-install -Sy linux-firmware-network" || true
 
 echo "==> installing base, boot, and virtio-aware tooling"
-inchroot "xbps-install -Sy base-system linux dracut btrfs-progs dosfstools gptfdisk parted \
+if [ "$KERNEL_PKG" != linux ]; then
+  mkdir -p "$ROOTFS/etc/xbps.d"
+  echo "ignorepkg=linux" > "$ROOTFS/etc/xbps.d/10-saltos-kernel.conf"
+fi
+inchroot "xbps-install -Sy base-system $KERNEL_PKG dracut btrfs-progs dosfstools gptfdisk parted \
   rsync curl ca-certificates grub grub-x86_64-efi efibootmgr \
   NetworkManager dbus elogind polkit seatd sudo chrony openssh \
   zstd xz bzip2 tar debootstrap"
@@ -97,6 +107,25 @@ EOF
 echo "==> installing saltOS control plane (expose-by-default + escalation)"
 saltos_install_controlplane
 saltos_write_config
+install -Dm755 "$REPO/os/ota/salt-ota.sh" "$ROOTFS/usr/bin/salt-ota"
+install -Dm755 "$REPO/os/btrfs/snapshot.sh" "$ROOTFS/usr/lib/saltos/snapshot.sh"
+mkdir -p "$ROOTFS/etc/sv"
+cp -a "$REPO/os/runit/sv/salt-update" "$ROOTFS/etc/sv/salt-update"
+[ -z "$OTA_SERVICE_CONF" ] || printf '%s\n' "$OTA_SERVICE_CONF" > "$ROOTFS/etc/sv/salt-update/conf"
+mkdir -p "$ROOTFS/etc/salt/health.d"
+cat > "$ROOTFS/etc/salt/boot.conf" <<EOF
+[boot]
+loader = "grub"
+title = "saltOS $VERSION"
+root_label = "$ROOT_LABEL"
+root_subvol = "@"
+snapshots_subvol = "@snapshots"
+cmdline = "rootwait rw console=tty0 console=ttyS0,115200 loglevel=4 net.ifnames=0 panic=30"
+serial = "--unit=0 --speed=115200"
+grubenv = "/boot/efi/EFI/saltos/grubenv"
+grubenv_label = "saltos-esp"
+timeout = 3
+EOF
 
 echo "==> creating user 'salt' (passwordless sudo)"
 inchroot "useradd -m -G wheel,audio,video,input,network,storage,_seatd -s /bin/bash salt" 2>/dev/null || \
@@ -119,11 +148,12 @@ echo "==> enabling runit services (Void native /etc/sv)"
 RUNDIR="$ROOTFS/etc/runit/runsvdir/default"
 mkdir -p "$RUNDIR"
 enable_sv() { [ -d "$ROOTFS/etc/sv/$1" ] && ln -sf "/etc/sv/$1" "$RUNDIR/$1"; }
-for svc in udevd dbus NetworkManager polkitd seatd sshd chronyd; do enable_sv "$svc"; done
+for svc in udevd dbus NetworkManager polkitd seatd sshd chronyd salt-update; do enable_sv "$svc"; done
 
 # Login on the virtio console (hvc0) -- this is the serial console Apple's
 # framework presents. Without it `Open serial` in UTM shows a dead terminal.
 mkdir -p "$ROOTFS/etc/sv/agetty-ttyS0"
+rm -f "$ROOTFS/etc/sv/agetty-ttyS0/run"
 cat > "$ROOTFS/etc/sv/agetty-ttyS0/run" <<'EOF'
 #!/bin/sh
 exec 2>&1
@@ -159,6 +189,23 @@ add_drivers+=" virtio_pci virtio_blk virtio_net virtio_console virtio_gpu virtio
 filesystems+=" btrfs "
 EOF
 
+if [ -n "$OTA_KERNEL_PKG" ]; then
+  echo "==> staging OTA kernel $OTA_KERNEL_PKG outside the image"
+  before="$(ls -1 "$ROOTFS/usr/lib/modules")"
+  inchroot "xbps-install -Sy $OTA_KERNEL_PKG"
+  OKVER="$(ls -1 "$ROOTFS/usr/lib/modules" | grep -vxF -e "$before" | sort -V | tail -n1)"
+  [ -n "$OKVER" ] || { echo "$OTA_KERNEL_PKG installed no new kernel" >&2; exit 1; }
+  inchroot "dracut --force --no-hostonly /boot/initramfs-$OKVER.img $OKVER"
+  rm -rf "$OTA_STAGE/kernel"
+  mkdir -p "$OTA_STAGE/kernel/boot" "$OTA_STAGE/kernel/usr/lib/modules"
+  cp -a "$ROOTFS/boot/vmlinuz-$OKVER" "$ROOTFS/boot/initramfs-$OKVER.img" "$OTA_STAGE/kernel/boot/"
+  cp -a "$ROOTFS/usr/lib/modules/$OKVER" "$OTA_STAGE/kernel/usr/lib/modules/"
+  inchroot "xbps-remove -Ry $OTA_KERNEL_PKG"
+  rm -rf "$ROOTFS/boot/vmlinuz-$OKVER" "$ROOTFS/boot/initramfs-$OKVER.img" \
+    "$ROOTFS/boot/System.map-$OKVER" "$ROOTFS/boot/config-$OKVER" "$ROOTFS/usr/lib/modules/$OKVER"
+  echo "$OKVER" > "$OTA_STAGE/kernel-release"
+fi
+
 echo "==> locating kernel"
 KVER="$(ls -1 "$ROOTFS/usr/lib/modules" 2>/dev/null | sort -V | tail -n1 || true)"
 [ -n "$KVER" ] || { echo "no kernel modules found" >&2; exit 1; }
@@ -180,14 +227,34 @@ done
 # emergency shell. The ESP only holds GRUB + the kernel, so skipping its
 # boot-time fsck is safe and standard.
 cat > "$ROOTFS/etc/fstab" <<EOF
-LABEL=$ROOT_LABEL  /         btrfs  defaults,subvol=@,compress=zstd:1  0 0
-LABEL=saltos-esp   /boot/efi vfat   defaults                          0 0
+LABEL=$ROOT_LABEL  /           btrfs  defaults,subvol=@,compress=zstd:1           0 0
+LABEL=$ROOT_LABEL  /.snapshots btrfs  defaults,subvol=@snapshots,compress=zstd:1  0 0
+LABEL=saltos-esp   /boot/efi   vfat   defaults                                    0 0
 EOF
 
 echo "==> unmounting chroot pseudo-fs"
 umount -R "$ROOTFS/dev" "$ROOTFS/proc" "$ROOTFS/sys" 2>/dev/null || true
 trap - EXIT INT TERM
 rm -f "$ROOTFS/etc/resolv.conf"
+
+if [ -n "$OTA_SIGNING_KEY" ]; then
+  echo "==> registering salt and the kernel as base grains"
+  mkdir -p "$OTA_STAGE"
+  echo "$KVER" > "$OTA_STAGE/factory-kernel-release"
+  SALT="$SALT_BIN" SEC_KEY="$(head -1 "$OTA_SIGNING_KEY")" ARCH="$ARCH" VERSION="$VERSION" \
+    OUT="$OTA_STAGE/base-repo" WORK="$WORK/base-grains" \
+    KERNEL_TREE="$ROOTFS" KERNEL_RELEASE="$KVER" \
+    sh "$REPO/os/selfhost/build-base-grains.sh"
+  cp "$ROOTFS/etc/salt/repo.conf" "$WORK/repo.conf"
+  printf 'repo = "current"\nsource = "file://%s"\nkey = "%s"\n' "$OTA_STAGE/base-repo" "${OTA_KEY:-}" \
+    > "$ROOTFS/etc/salt/repo.conf"
+  rm -rf "$ROOTFS/usr/bin/salt" "$ROOTFS/boot/vmlinuz-$KVER" "$ROOTFS/boot/initramfs-$KVER.img" \
+    "$ROOTFS/usr/lib/modules/$KVER"
+  "$SALT_BIN" --root "$ROOTFS" sync
+  "$SALT_BIN" --root "$ROOTFS" --yes install salt linux-saltos
+  cp "$WORK/repo.conf" "$ROOTFS/etc/salt/repo.conf"
+  rm -rf "$ROOTFS/var/lib/salt/cache" "$ROOTFS/var/cache/salt"
+fi
 
 # ---------------------------------------------------------------------------
 # Assemble the raw EFI disk image: GPT = ESP (fat32) + btrfs root (subvol @).
@@ -217,33 +284,14 @@ umount "$WORK/mnt"
 mount -o subvol=@,compress=zstd:1 "$ROOTP" "$WORK/mnt"
 mkdir -p "$WORK/mnt/.snapshots" "$WORK/mnt/boot/efi"
 cp -aT "$ROOTFS" "$WORK/mnt"
+mount -o subvol=@snapshots "$ROOTP" "$WORK/mnt/.snapshots"
 mount "$ESPP" "$WORK/mnt/boot/efi"
 
 # GRUB cmdline: console=hvc0 (virtio serial) for the text/serial console, plus
 # console=tty0 for the virtio-gpu framebuffer. The last console= owns /dev/console.
-ROOTFLAGS="rootflags=subvol=@ rootfstype=btrfs"
-KCMDLINE="root=LABEL=$ROOT_LABEL $ROOTFLAGS rootwait rw console=tty0 console=ttyS0,115200 loglevel=4 net.ifnames=0"
-
-mkdir -p "$WORK/mnt/boot/efi/EFI/BOOT" "$WORK/mnt/boot/grub"
-cat > "$WORK/mnt/boot/grub/grub.cfg" <<EOF
-set default=0
-set timeout=3
-insmod all_video
-insmod gfxterm
-serial --unit=0 --speed=115200
-terminal_input console serial
-terminal_output console serial
-menuentry "saltOS $VERSION (x86_64 UEFI VM)" {
-  search --no-floppy --set=root --label $ROOT_LABEL
-  linux /@$VMLINUZ $KCMDLINE
-  initrd /@/boot/initramfs-$KVER.img
-}
-menuentry "saltOS $VERSION (safe graphics, nomodeset)" {
-  search --no-floppy --set=root --label $ROOT_LABEL
-  linux /@$VMLINUZ $KCMDLINE nomodeset
-  initrd /@/boot/initramfs-$KVER.img
-}
-EOF
+mkdir -p "$WORK/mnt/boot/efi/EFI/BOOT" "$WORK/mnt/boot/efi/EFI/saltos" "$WORK/mnt/boot/grub"
+"$SALT_BIN" --root "$WORK/mnt" boot update
+grep -q "$VMLINUZ" "$WORK/mnt/boot/grub/grub.cfg"
 
 # Standalone GRUB EFI binary that Apple's EFI loader picks up at the default path.
 EARLY_CFG="$WORK/grub-early.cfg"
@@ -252,10 +300,14 @@ search --no-floppy --set=root --label $ROOT_LABEL
 set prefix=(\$root)/@/boot/grub
 configfile (\$root)/@/boot/grub/grub.cfg
 EOF
+GRUB_MODULES="part_gpt fat btrfs normal search search_label configfile linux all_video gfxterm serial loadenv test echo"
+for d in /usr/lib/grub/x86_64-efi /usr/share/grub/x86_64-efi; do
+  if [ -f "$d/linuxefi.mod" ]; then GRUB_MODULES="$GRUB_MODULES linuxefi"; break; fi
+done
 grub-mkstandalone \
   --format=x86_64-efi \
   --output="$WORK/mnt/boot/efi/EFI/BOOT/$EFI_BOOT_NAME" \
-  --modules="part_gpt fat btrfs normal search search_label configfile linux all_video gfxterm serial" \
+  --modules="$GRUB_MODULES" \
   "boot/grub/grub.cfg=$EARLY_CFG"
 
 sync
@@ -266,7 +318,7 @@ trap - EXIT
 echo "wrote $IMG"
 ls -lh "$IMG"
 
-if command -v zstd >/dev/null 2>&1; then
+if [ "$COMPRESS" != 0 ] && command -v zstd >/dev/null 2>&1; then
   zstd -19 -T0 -f "$IMG" -o "$IMG.zst"
   echo "wrote $IMG.zst"
   ls -lh "$IMG.zst"
