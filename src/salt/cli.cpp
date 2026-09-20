@@ -162,7 +162,8 @@ static void usage() {
           "  update [stratum...]  upgrade the host, or named strata\n"
           "      [--download-only] [--allow-unverified] [--dry-run]\n"
           "  rollback [N]         undo the latest transaction (or N and everything after it)\n"
-          "  history              list deployments (date, kernel, package changes; alias: deployments)\n"
+          "  history              list deployments (date, kernel, package changes; alias: "
+          "deployments)\n"
           "  pin [--unpin] <N>    keep deployment N's snapshot from being pruned\n"
           "  boot [status|update|try|confirm]  manage the boot menu and kernel trial\n"
           "  verify [pkg]         compare installed files against the package manifest\n"
@@ -272,9 +273,9 @@ static bool cmd_needs_root(const std::string &cmd) {
   // here genuinely needs real root (writes the stratum rootfs / system db /
   // services).
   static const char *root_cmds[] = {
-      "pkg",        "pm",      "stratum", "expose", "unexpose", "expose-desktop",
-      "expose-all", "service", "install", "remove", "update",   "sync",
-      "rollback",   "pin",     "boot",    "lock",   "clean",    "gc",     nullptr};
+      "pkg",     "pm",      "stratum", "expose", "unexpose", "expose-desktop", "expose-all",
+      "service", "install", "remove",  "update", "sync",     "rollback",       "pin",
+      "boot",    "lock",    "clean",   "gc",     nullptr};
   for (int i = 0; root_cmds[i]; i++)
     if (cmd == root_cmds[i]) return true;
   return false;

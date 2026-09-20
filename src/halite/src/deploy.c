@@ -287,7 +287,8 @@ int salt_deploy_pick_rollback(salt_db *db, int64_t *id_out) {
   return rc;
 }
 
-int salt_deploy_root_changed(const salt_ctx *ctx, int64_t txn_id, const char *prefix, bool *changed) {
+int salt_deploy_root_changed(const salt_ctx *ctx, int64_t txn_id, const char *prefix,
+                             bool *changed) {
   *changed = false;
   char *sdir = txn_state_dir(ctx, txn_id);
   char *backup = salt_join_path(sdir, "backup");
@@ -453,8 +454,9 @@ int salt_btrfs_umount_toplevel(const char *mountpoint) {
 static int mark_undone(salt_db *db, int64_t from, int64_t to) {
   salt_buf sql;
   salt_buf_init(&sql);
-  salt_buf_printf(&sql, "UPDATE transactions SET status='undone' WHERE id>=%lld AND id<%lld AND status='ok';",
-                  (long long)from, (long long)to);
+  salt_buf_printf(
+      &sql, "UPDATE transactions SET status='undone' WHERE id>=%lld AND id<%lld AND status='ok';",
+      (long long)from, (long long)to);
   int rc = exec_sql(db, sql.data);
   salt_buf_free(&sql);
   return rc;
@@ -554,7 +556,8 @@ static int rollback_btrfs(salt_ctx *ctx, salt_db *db, int64_t target, const char
     rc = SALT_ERR_NOTFOUND;
     goto out;
   }
-  if (salt_path_exists(next.data)) run_cmd("btrfs subvolume delete '%s' >/dev/null 2>&1", next.data);
+  if (salt_path_exists(next.data))
+    run_cmd("btrfs subvolume delete '%s' >/dev/null 2>&1", next.data);
   rc = run_cmd("btrfs subvolume snapshot '%s' '%s' >/dev/null", src.data, next.data);
   if (rc != SALT_OK) {
     salt_set_error("btrfs snapshot %s -> %s failed", src.data, next.data);
@@ -584,14 +587,15 @@ static int rollback_btrfs(salt_ctx *ctx, salt_db *db, int64_t target, const char
     }
     salt_buf sql;
     salt_buf_init(&sql);
-    salt_buf_printf(&sql,
-                    "BEGIN IMMEDIATE;"
-                    "INSERT OR REPLACE INTO transactions SELECT * FROM cur.transactions WHERE id>=%lld;"
-                    "INSERT OR REPLACE INTO txn_meta SELECT * FROM cur.txn_meta WHERE txn_id>=%lld;"
-                    "DELETE FROM txn_changes WHERE txn_id>=%lld;"
-                    "INSERT INTO txn_changes SELECT * FROM cur.txn_changes WHERE txn_id>=%lld;"
-                    "COMMIT;",
-                    (long long)target, (long long)target, (long long)target, (long long)target);
+    salt_buf_printf(
+        &sql,
+        "BEGIN IMMEDIATE;"
+        "INSERT OR REPLACE INTO transactions SELECT * FROM cur.transactions WHERE id>=%lld;"
+        "INSERT OR REPLACE INTO txn_meta SELECT * FROM cur.txn_meta WHERE txn_id>=%lld;"
+        "DELETE FROM txn_changes WHERE txn_id>=%lld;"
+        "INSERT INTO txn_changes SELECT * FROM cur.txn_changes WHERE txn_id>=%lld;"
+        "COMMIT;",
+        (long long)target, (long long)target, (long long)target, (long long)target);
     rc = exec_sql(ndb, sql.data);
     salt_buf_free(&sql);
     exec_sql(ndb, "DETACH cur;");

@@ -350,8 +350,8 @@ static void test_repo(void) {
   CHECK(salt_repo_index_find(&loaded, "x") != NULL, "repo index find");
   CHECK(loaded.items[0].url == NULL, "repo index url absent");
 
-  CHECK(salt_repo_publish(d, "current", "x86_64",
-                          "https://example.invalid/releases/download/v1/", "") == SALT_OK,
+  CHECK(salt_repo_publish(d, "current", "x86_64", "https://example.invalid/releases/download/v1/",
+                          "") == SALT_OK,
         "repo publish with url base");
   salt_repo_index withurl;
   CHECK(salt_repo_index_load(idxpath, &withurl) == SALT_OK, "repo index load (url)");

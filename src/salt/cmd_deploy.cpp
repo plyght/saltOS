@@ -229,15 +229,17 @@ int write_grub_cfg(const BootConf &c, salt_db *db, const std::string &rootdir,
   int64_t cur = current_deployment(db);
   std::string s;
   s += "set timeout=" + std::to_string(c.timeout) + "\n";
-  s += "insmod all_video\ninsmod gfxterm\ninsmod part_gpt\ninsmod btrfs\ninsmod fat\ninsmod loadenv\n";
+  s += "insmod all_video\ninsmod gfxterm\ninsmod part_gpt\ninsmod btrfs\ninsmod fat\ninsmod "
+       "loadenv\n";
   if (!c.serial.empty())
     s += "serial " + c.serial + "\nterminal_input console serial\nterminal_output console serial\n";
   s += "set saltos_default=\"" + entry_id(default_kernel) + "\"\n";
-  s += "set saltos_try=0\nset saltos_try_entry=\"" + (try_kernel.empty() ? std::string() : entry_id(try_kernel)) +
-       "\"\n";
+  s += "set saltos_try=0\nset saltos_try_entry=\"" +
+       (try_kernel.empty() ? std::string() : entry_id(try_kernel)) + "\"\n";
   std::string envrel = c.grubenv;
   std::string esp_prefix = "/boot/efi";
-  if (envrel.compare(0, esp_prefix.size(), esp_prefix) == 0) envrel = envrel.substr(esp_prefix.size());
+  if (envrel.compare(0, esp_prefix.size(), esp_prefix) == 0)
+    envrel = envrel.substr(esp_prefix.size());
   s += "search --no-floppy --set=saltos_env --label " + c.grubenv_label + "\n";
   s += "if [ -n \"$saltos_env\" ]; then\n";
   s += "  load_env -f ($saltos_env)" + envrel + " saltos_default saltos_try saltos_try_entry\n";
@@ -276,7 +278,8 @@ int write_grub_cfg(const BootConf &c, salt_db *db, const std::string &rootdir,
   return 0;
 }
 
-int tryboot_tool(const BootConf &c, const std::string &root, const char *verb, const std::string &arg) {
+int tryboot_tool(const BootConf &c, const std::string &root, const char *verb,
+                 const std::string &arg) {
   std::string cmd = "'" + c.tryboot_tool + "' " + verb;
   if (!arg.empty()) cmd += " '" + arg + "'";
   if (root != "/") cmd = "SALTOS_STAGE_ROOT='" + root + "' " + cmd;
@@ -350,7 +353,8 @@ void retain_running_kernel(const Options &o, salt_ctx *ctx, salt_db *db, int64_t
       if (system(rm.c_str()) != 0) fprintf(stderr, "salt: cannot replace %s\n", to.c_str());
     }
     std::string cmd = "cp -a --reflink=auto '" + from + "' '" + to + "'";
-    if (system(cmd.c_str()) != 0) fprintf(stderr, "salt: cannot keep %s as a fallback\n", r.c_str());
+    if (system(cmd.c_str()) != 0)
+      fprintf(stderr, "salt: cannot keep %s as a fallback\n", r.c_str());
   }
   printf("boot: kept running kernel %s as a fallback\n", u.release);
 }
@@ -434,8 +438,10 @@ int grub_update(const Options &o, const BootConf &c, salt_db *db, const std::str
   rc = grubenv_write(envp, kv);
   if (rc) return rc;
   if (!pending.empty() && try_armed)
-    printf("boot: kernel %s will be tried once on next boot (fallback %s); run `salt-ota confirm` after booting\n",
-           kernel_release(pending).c_str(), kernel_release(def).c_str());
+    printf(
+        "boot: kernel %s will be tried once on next boot (fallback %s); run `salt-ota confirm` "
+        "after booting\n",
+        kernel_release(pending).c_str(), kernel_release(def).c_str());
   else if (rearm)
     printf("boot: default kernel %s\n", kernel_release(def).c_str());
   return 0;
@@ -445,7 +451,8 @@ int grub_confirm(const Options &o, const BootConf &c, salt_db *db) {
   std::string bootdir = path_join(o.root, "boot");
   BootState st = grub_state(o, c, bootdir);
   if (st.pending_kernel.empty()) {
-    printf("boot: nothing to confirm (default kernel %s)\n", kernel_release(st.default_kernel).c_str());
+    printf("boot: nothing to confirm (default kernel %s)\n",
+           kernel_release(st.default_kernel).c_str());
     return 0;
   }
   std::string running = running_kernel(bootdir);
@@ -455,7 +462,9 @@ int grub_confirm(const Options &o, const BootConf &c, salt_db *db) {
               kernel_release(st.pending_kernel).c_str());
       return 1;
     }
-    fprintf(stderr, "salt: trial boot of kernel %s fell back to %s; keeping %s as default (re-arm with `salt boot try`)\n",
+    fprintf(stderr,
+            "salt: trial boot of kernel %s fell back to %s; keeping %s as default (re-arm with "
+            "`salt boot try`)\n",
             kernel_release(st.pending_kernel).c_str(),
             running.empty() ? "(unknown)" : kernel_release(running).c_str(),
             kernel_release(st.default_kernel).c_str());
@@ -488,7 +497,8 @@ int grub_try(const Options &o, const BootConf &c, salt_db *db) {
   std::string newest = newest_c ? newest_c : "";
   free(newest_c);
   if (newest.empty() || newest == st.default_kernel) {
-    printf("boot: no newer kernel to try (default %s)\n", kernel_release(st.default_kernel).c_str());
+    printf("boot: no newer kernel to try (default %s)\n",
+           kernel_release(st.default_kernel).c_str());
     return 0;
   }
   std::map<std::string, std::string> kv;
@@ -511,9 +521,13 @@ int grub_status(const Options &o, const BootConf &c) {
   std::string running = running_kernel(bootdir);
   printf("loader:   grub\n");
   printf("running:  %s\n", running.empty() ? "(unknown)" : kernel_release(running).c_str());
-  printf("default:  %s\n", st.default_kernel.empty() ? "(unset)" : kernel_release(st.default_kernel).c_str());
-  printf("pending:  %s%s\n", st.pending_kernel.empty() ? "none" : kernel_release(st.pending_kernel).c_str(),
-         st.pending_kernel.empty() ? "" : (st.try_armed ? " (armed for next boot)" : " (booted, awaiting confirm)"));
+  printf("default:  %s\n",
+         st.default_kernel.empty() ? "(unset)" : kernel_release(st.default_kernel).c_str());
+  printf("pending:  %s%s\n",
+         st.pending_kernel.empty() ? "none" : kernel_release(st.pending_kernel).c_str(),
+         st.pending_kernel.empty()
+             ? ""
+             : (st.try_armed ? " (armed for next boot)" : " (booted, awaiting confirm)"));
   return st.pending_kernel.empty() ? 0 : 3;
 }
 
@@ -529,13 +543,14 @@ salt_db *open_db_at(const std::string &db_path) {
 int boot_update_root(const Options &o, salt_db *db, const std::string &rootdir,
                      const std::string &snapdir, bool after_rollback, bool boot_changed) {
   BootConf c = load_boot_conf(rootdir);
-  if (c.loader == "grub") return grub_update(o, c, db, rootdir, snapdir, after_rollback, boot_changed);
+  if (c.loader == "grub")
+    return grub_update(o, c, db, rootdir, snapdir, after_rollback, boot_changed);
   if (c.loader == "tryboot" && boot_changed)
     return tryboot_tool(c, rootdir, "kernel-update", after_rollback ? "rollback" : "");
   return 0;
 }
 
-}
+}  // namespace
 
 int deploy_post_txn(const Options &o, salt_ctx *ctx, salt_db *db, int64_t txn_id) {
   salt_deploy_record(ctx, db, txn_id);
@@ -651,7 +666,8 @@ int cmd_rollback(const Options &o, const std::vector<std::string> &args) {
   char *new_root = nullptr;
   bool reboot = false;
   BootConf bc = load_boot_conf(o.root);
-  int rc = salt_rollback_to(&ctx, db, target, bc.root_subvol.c_str(), &target, &rb, &new_root, &reboot);
+  int rc =
+      salt_rollback_to(&ctx, db, target, bc.root_subvol.c_str(), &target, &rb, &new_root, &reboot);
   if (rc != SALT_OK) {
     fprintf(stderr, "salt: %s\n", salt_last_error());
     salt_db_close(db);

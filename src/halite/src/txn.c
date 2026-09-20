@@ -29,7 +29,8 @@ int salt_ctx_init(salt_ctx *ctx, const char *root) {
   if (force && force[0])
     ctx->use_btrfs = force[0] == '1';
   else
-    ctx->use_btrfs = is_btrfs(ctx->root) && salt_is_dir(ctx->snapshot_dir) && is_btrfs(ctx->snapshot_dir);
+    ctx->use_btrfs =
+        is_btrfs(ctx->root) && salt_is_dir(ctx->snapshot_dir) && is_btrfs(ctx->snapshot_dir);
   return SALT_OK;
 }
 

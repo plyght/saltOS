@@ -302,7 +302,8 @@ int salt_repo_publish(const char *out_dir, const char *repo_name, const char *ar
     for (size_t i = 0; i < idx.len; i++) {
       salt_buf u;
       salt_buf_init(&u);
-      salt_buf_printf(&u, "%s%s%s", url_base, url_base[bl - 1] == '/' ? "" : "/", idx.items[i].filename);
+      salt_buf_printf(&u, "%s%s%s", url_base, url_base[bl - 1] == '/' ? "" : "/",
+                      idx.items[i].filename);
       idx.items[i].url = salt_strdup(u.data);
       salt_buf_free(&u);
     }

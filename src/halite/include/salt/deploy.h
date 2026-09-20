@@ -44,7 +44,8 @@ void salt_txn_meta_free(salt_txn_meta *m);
 int salt_deploy_pin(salt_db *db, int64_t txn_id, bool pinned);
 int salt_deploy_prune(const salt_ctx *ctx, salt_db *db, int keep, salt_strlist *removed);
 int salt_deploy_pick_rollback(salt_db *db, int64_t *id_out);
-int salt_deploy_root_changed(const salt_ctx *ctx, int64_t txn_id, const char *prefix, bool *changed);
+int salt_deploy_root_changed(const salt_ctx *ctx, int64_t txn_id, const char *prefix,
+                             bool *changed);
 
 char *salt_boot_newest_kernel(const char *bootdir);
 int salt_boot_list_kernels(const char *bootdir, salt_strlist *out);

@@ -562,7 +562,8 @@ int cmd_install(const Options &o, const std::vector<std::string> &in_args) {
 }
 
 static const char *UPDATE_USAGE =
-    "usage: salt update [--check] [--download-only] [--allow-unverified] [--dry-run] [stratum...]\n";
+    "usage: salt update [--check] [--download-only] [--allow-unverified] [--dry-run] "
+    "[stratum...]\n";
 
 int cmd_update(const Options &o, const std::vector<std::string> &in_args) {
   std::vector<std::string> args = in_args;
