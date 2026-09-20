@@ -1,6 +1,6 @@
 name = "ncurses"
 version = "6.5"
-release = 2
+release = 3
 summary = "Library for terminal-independent text user interfaces"
 license = "MIT"
 arch = ["x86_64", "aarch64"]
@@ -30,6 +30,10 @@ for lib in ncurses form panel menu; do
     ln -sf ${lib}w.pc "$SALT_DEST/usr/lib/pkgconfig/${lib}.pc"
 done
 ln -sf libncursesw.so "$SALT_DEST/usr/lib/libcurses.so"
+mkdir -p "$SALT_DEST/usr/include/ncursesw"
+for h in "$SALT_DEST"/usr/include/*.h; do
+    ln -sf "../$(basename "$h")" "$SALT_DEST/usr/include/ncursesw/$(basename "$h")"
+done
 """
 
 [package]
