@@ -228,8 +228,19 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
       return 1;
     }
     printf("==> source hash verified\n");
-    std::string ex = "tar -C '" + src + "' -xf '" + tarball + "' 2>/dev/null || true";
-    system(ex.c_str());
+    std::string ex = "tar -C '" + src + "' -xf '" + tarball + "' 2>/dev/null";
+    if (system(ex.c_str()) != 0) {
+      std::string base = url.substr(url.find_last_of('/') + 1);
+      size_t q = base.find_first_of("?#");
+      if (q != std::string::npos) base.erase(q);
+      if (base.empty()) base = "source";
+      std::string cp = "cp -f '" + tarball + "' '" + path_join(src, base) + "'";
+      if (system(cp.c_str()) != 0) {
+        fprintf(stderr, "salt: failed to place source file %s\n", base.c_str());
+        salt_toml_free(t);
+        return 1;
+      }
+    }
     std::string strip = "set -- '" + src +
                         "'/*; if [ $# -eq 1 ] && [ -d \"$1\" ]; then mv \"$1\"/* \"$1\"/.[!.]* '" +
                         src + "'/ 2>/dev/null; rmdir \"$1\" 2>/dev/null; fi";
