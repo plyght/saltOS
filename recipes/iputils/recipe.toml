@@ -1,6 +1,6 @@
 name = "iputils"
 version = "20240117"
-release = 2
+release = 3
 summary = "Network monitoring tools including ping"
 license = "GPL-2.0-or-later"
 arch = ["x86_64", "aarch64"]
@@ -20,7 +20,9 @@ meson setup build \\
     -DSKIP_TESTS=true \\
     -DBUILD_HTML_MANS=false \\
     -DBUILD_MANS=false \\
-    -DNO_SETCAP_OR_SUID=true
+    -DNO_SETCAP_OR_SUID=true \\
+    -DUSE_CAP=false \\
+    -DUSE_IDN=false
 ninja -C build
 DESTDIR="$SALT_DEST" ninja -C build install
 """
