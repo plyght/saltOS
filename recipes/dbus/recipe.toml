@@ -1,6 +1,6 @@
 name = "dbus"
 version = "1.14.10"
-release = 1
+release = 2
 summary = "Message bus system for interprocess communication"
 license = "GPL-2.0-or-later"
 arch = ["x86_64", "aarch64"]
@@ -10,17 +10,23 @@ url = "https://dbus.freedesktop.org/releases/dbus/dbus-1.14.10.tar.xz"
 sha256 = "ba1f21d2bd9d339da2d4aa8780c09df32fea87998b73da24f49ab9df1e36a50f"
 
 [build]
-system = "meson"
-deps = ["gcc", "make", "meson", "ninja", "expat"]
+system = "autotools"
+deps = ["gcc", "make", "pkgconf", "expat"]
 script = """
 #!/bin/sh
-meson setup build \\
-    --prefix=/usr --libdir=lib \\
-    --buildtype=release \\
-    -Dsystemd=disabled \\
-    -Dx11_autolaunch=disabled
-ninja -C build
-DESTDIR="$SALT_DEST" ninja -C build install
+./configure --prefix=/usr \\
+    --sysconfdir=/etc \\
+    --localstatedir=/var \\
+    --runstatedir=/run \\
+    --disable-static \\
+    --disable-doxygen-docs \\
+    --disable-xml-docs \\
+    --disable-systemd \\
+    --without-x \\
+    --with-system-socket=/run/dbus/system_bus_socket \\
+    --with-system-pid-file=/run/dbus/pid
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
 """
 
 [package]
