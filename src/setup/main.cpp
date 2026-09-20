@@ -31,7 +31,9 @@ void fail(const std::string &msg) {
   exit(1);
 }
 
-void info(const std::string &msg) { printf("==> %s\n", msg.c_str()); }
+void info(const std::string &msg) {
+  printf("==> %s\n", msg.c_str());
+}
 
 int run(const std::vector<std::string> &args) {
   std::vector<char *> argv;
@@ -191,7 +193,7 @@ std::string prompt(const std::string &q, const std::string &def) {
 std::string prompt_secret(const std::string &q) {
   printf("%s: ", q.c_str());
   fflush(stdout);
-  struct termios old{};
+  struct termios old {};
   bool restored = false;
   if (tcgetattr(STDIN_FILENO, &old) == 0) {
     struct termios noecho = old;
@@ -332,12 +334,12 @@ std::string sh_quote(const std::string &s) {
 }
 
 bool is_dir(const std::string &p) {
-  struct stat st{};
+  struct stat st {};
   return stat(p.c_str(), &st) == 0 && S_ISDIR(st.st_mode);
 }
 
 bool is_blockdev(const std::string &p) {
-  struct stat st{};
+  struct stat st {};
   return stat(p.c_str(), &st) == 0 && S_ISBLK(st.st_mode);
 }
 
@@ -368,7 +370,8 @@ std::vector<Disk> list_disks() {
     disks.push_back(d);
   }
   closedir(dh);
-  std::sort(disks.begin(), disks.end(), [](const Disk &a, const Disk &b) { return a.node < b.node; });
+  std::sort(disks.begin(), disks.end(),
+            [](const Disk &a, const Disk &b) { return a.node < b.node; });
   return disks;
 }
 
@@ -396,7 +399,9 @@ std::string blkid_value(const std::string &dev, const std::string &tag) {
   return trim(out);
 }
 
-std::string blkid_uuid(const std::string &dev) { return blkid_value(dev, "UUID"); }
+std::string blkid_uuid(const std::string &dev) {
+  return blkid_value(dev, "UUID");
+}
 
 std::string partnode(const std::string &disk, int n) {
   char last = disk.empty() ? 0 : disk.back();
@@ -557,15 +562,15 @@ void delive(const std::string &mnt, const setup::Config &cfg) {
           " tty1 38400 linux\n";
     salt_write_file(getty.c_str(), g.data(), g.size(), 0755);
   }
-  for (const char *f : {"home/salt/.bash_profile", "home/salt/.xsession-errors",
-                        "home/salt/Desktop/Install-saltOS.desktop", "etc/sudoers.d/salt",
-                        "etc/sudoers.d/calamares", "etc/xdg/autostart/saltos-installer.desktop",
-                        "etc/xdg/autostart/saltos-setup.desktop", "usr/local/bin/saltos-installer",
-                        "usr/local/bin/saltos-setup-terminal", "usr/lib/saltos/autoinstall.sh",
-                        "usr/lib/saltos/autoinstall-calamares.sh",
-                        "usr/share/applications/saltos-installer.desktop",
-                        "usr/share/applications/saltos-setup.desktop", "etc/calamares",
-                        "etc/salt/live-profile.toml", "etc/motd"})
+  for (const char *f :
+       {"home/salt/.bash_profile", "home/salt/.xsession-errors",
+        "home/salt/Desktop/Install-saltOS.desktop", "etc/sudoers.d/salt", "etc/sudoers.d/calamares",
+        "etc/xdg/autostart/saltos-installer.desktop", "etc/xdg/autostart/saltos-setup.desktop",
+        "usr/local/bin/saltos-installer", "usr/local/bin/saltos-setup-terminal",
+        "usr/lib/saltos/autoinstall.sh", "usr/lib/saltos/autoinstall-calamares.sh",
+        "usr/share/applications/saltos-installer.desktop",
+        "usr/share/applications/saltos-setup.desktop", "etc/calamares",
+        "etc/salt/live-profile.toml", "etc/motd"})
     run_quiet({"rm", "-rf", mnt + "/" + f});
   std::vector<std::string> drop = {"agetty-serial", "stratum-e2e", "installer-check",
                                    "desktop-check", "saltos-autoinstall"};
@@ -627,9 +632,9 @@ std::string luks_key(const setup::Config &cfg) {
 
 void luks_format_open(const std::string &part, const std::string &name, const std::string &key,
                       Layout &lay) {
-  if (run_stdin({"cryptsetup", "luksFormat", "--type", "luks2", "--batch-mode", "--key-file",
-                 "-", part},
-                key) != 0)
+  if (run_stdin(
+          {"cryptsetup", "luksFormat", "--type", "luks2", "--batch-mode", "--key-file", "-", part},
+          key) != 0)
     fail("cryptsetup luksFormat " + part);
   if (run_stdin({"cryptsetup", "open", "--key-file", "-", part, name}, key) != 0)
     fail("cryptsetup open " + part);
@@ -789,8 +794,8 @@ std::string luks_backing(const std::string &mapper) {
 void discover_mounted(const setup::Config &cfg, const std::string &fw, Layout &lay) {
   std::string mnt = cfg.target;
   while (mnt.size() > 1 && mnt.back() == '/') mnt.pop_back();
-  static const std::set<std::string> real = {"btrfs", "ext4", "ext3", "ext2", "xfs", "vfat",
-                                             "f2fs"};
+  static const std::set<std::string> real = {"btrfs", "ext4", "ext3", "ext2",
+                                             "xfs",   "vfat", "f2fs"};
   std::vector<Layout::Mount> found;
   for (const auto &line : split_lines(read_file("/proc/self/mounts"))) {
     std::vector<std::string> f = split_ws(line);
@@ -804,8 +809,7 @@ void discover_mounted(const setup::Config &cfg, const std::string &fw, Layout &l
     std::string optlist = f[3];
     std::replace(optlist.begin(), optlist.end(), ',', '\n');
     for (const auto &o : split_lines(optlist)) {
-      if (o == "rw" || o == "relatime" || o.rfind("subvolid=", 0) == 0 || o == "seclabel")
-        continue;
+      if (o == "rw" || o == "relatime" || o.rfind("subvolid=", 0) == 0 || o == "seclabel") continue;
       if (!opts.empty()) opts += ",";
       opts += o;
     }
@@ -828,7 +832,8 @@ void discover_mounted(const setup::Config &cfg, const std::string &fw, Layout &l
   lay.disk = parent_disk(lay.root_part);
   if (cfg.swap == "partition") {
     lay.swap_part = cfg.swap_device;
-    if (!is_blockdev(lay.swap_part)) fail("install.swap_device " + lay.swap_part + " is not a block device");
+    if (!is_blockdev(lay.swap_part))
+      fail("install.swap_device " + lay.swap_part + " is not a block device");
     if (!cfg.encrypt && blkid_value(lay.swap_part, "TYPE") != "swap")
       must({"mkswap", "-L", "saltOS-swap", lay.swap_part}, "mkswap");
   }
@@ -875,10 +880,10 @@ void lay_down_base(const std::string &mnt) {
   if (!squashfs.empty()) {
     must({"unsquashfs", "-f", "-d", mnt, squashfs}, "unsquashfs");
   } else {
-    must({"rsync", "-aHAXx", "--numeric-ids", "--exclude=/proc", "--exclude=/sys",
-          "--exclude=/dev", "--exclude=/run", "--exclude=/tmp", "--exclude=/mnt",
-          "--exclude=/media", "--exclude=/strata", "--exclude=/run/live", "--exclude=/lib/live",
-          "--exclude=/boot/efi", "--exclude=" + mnt, "/", mnt + "/"},
+    must({"rsync", "-aHAXx", "--numeric-ids", "--exclude=/proc", "--exclude=/sys", "--exclude=/dev",
+          "--exclude=/run", "--exclude=/tmp", "--exclude=/mnt", "--exclude=/media",
+          "--exclude=/strata", "--exclude=/run/live", "--exclude=/lib/live", "--exclude=/boot/efi",
+          "--exclude=" + mnt, "/", mnt + "/"},
          "rsync base");
   }
   for (const char *d : {"proc", "sys", "dev", "run", "tmp", "mnt", "media", "strata", "boot/efi"})
@@ -954,7 +959,9 @@ void setup_swap(const std::string &mnt, const setup::Config &cfg, const Layout &
   } else if (cfg.swap == "zram") {
     std::string script =
         "#!/bin/sh\nexec 2>&1\nmodprobe zram\n"
-        "dev=$(zramctl --find --size " + std::to_string(mib) + "M --algorithm zstd) || exit 1\n"
+        "dev=$(zramctl --find --size " +
+        std::to_string(mib) +
+        "M --algorithm zstd) || exit 1\n"
         "mkswap \"$dev\" >/dev/null && swapon -p 100 \"$dev\"\n"
         "trap 'swapoff \"$dev\"; zramctl --reset \"$dev\"; exit 0' TERM INT\n"
         "while :; do sleep 86400 & wait $!; done\n";
@@ -964,7 +971,9 @@ void setup_swap(const std::string &mnt, const setup::Config &cfg, const Layout &
     std::string puuid = blkid_value(lay.swap_part, "PARTUUID");
     std::string script =
         "#!/bin/sh\nexec 2>&1\n"
-        "dev=/dev/disk/by-partuuid/" + puuid + "\n"
+        "dev=/dev/disk/by-partuuid/" +
+        puuid +
+        "\n"
         "if [ ! -e /dev/mapper/saltos-swap ]; then\n"
         "  cryptsetup open --type plain --cipher aes-xts-plain64 --key-size 512 "
         "--key-file /dev/urandom \"$dev\" saltos-swap || exit 1\n"
@@ -984,7 +993,8 @@ void create_user(const std::string &mnt, const setup::Config &cfg) {
   if (chroot_run(mnt, {"useradd", "-m", "-s", cfg.shell, cfg.username}) != 0)
     chroot_must(mnt, {"usermod", "-s", cfg.shell, cfg.username}, "user account " + cfg.username);
   if (!cfg.password_hash.empty()) {
-    if (run_stdin({"chroot", mnt, "chpasswd", "-e"}, cfg.username + ":" + cfg.password_hash + "\n") != 0)
+    if (run_stdin({"chroot", mnt, "chpasswd", "-e"},
+                  cfg.username + ":" + cfg.password_hash + "\n") != 0)
       fail("setting password hash");
   } else {
     if (run_stdin({"chroot", mnt, "chpasswd"}, cfg.username + ":" + cfg.password + "\n") != 0)
@@ -996,8 +1006,8 @@ void create_user(const std::string &mnt, const setup::Config &cfg) {
   if (cfg.sudo) {
     if (chroot_run(mnt, {"usermod", "-aG", "sudo", cfg.username}) != 0)
       chroot_run(mnt, {"usermod", "-aG", "wheel", cfg.username});
-    write_file(mnt + "/etc/sudoers.d/10-" + cfg.username,
-               cfg.username + " ALL=(ALL:ALL) ALL\n", 0440);
+    write_file(mnt + "/etc/sudoers.d/10-" + cfg.username, cfg.username + " ALL=(ALL:ALL) ALL\n",
+               0440);
   }
 }
 
@@ -1029,8 +1039,7 @@ void configure_locale(const std::string &mnt, const setup::Config &cfg) {
   std::string charset = cfg.locale.find("UTF-8") != std::string::npos ? "UTF-8" : "ISO-8859-1";
   if (salt_path_exists((mnt + "/etc/locale.gen").c_str()) || chroot_has(mnt, "locale-gen")) {
     std::string lg = read_file(mnt + "/etc/locale.gen");
-    if (lg.find("\n" + cfg.locale + " ") == std::string::npos &&
-        lg.rfind(cfg.locale + " ", 0) != 0)
+    if (lg.find("\n" + cfg.locale + " ") == std::string::npos && lg.rfind(cfg.locale + " ", 0) != 0)
       append_file(mnt + "/etc/locale.gen", cfg.locale + " " + charset + "\n");
     chroot_run(mnt, {"locale-gen"});
   }
@@ -1042,9 +1051,10 @@ void configure_locale(const std::string &mnt, const setup::Config &cfg) {
   write_file(mnt + "/etc/default/locale", "LANG=" + cfg.locale + "\n", 0644);
 
   std::string xkb = cfg.xkb_layout.empty() ? xkb_from_keymap(cfg.keymap) : cfg.xkb_layout;
-  write_file(mnt + "/etc/vconsole.conf",
-             "KEYMAP=" + cfg.keymap + "\nXKBLAYOUT=" + xkb + "\nXKBVARIANT=" + cfg.xkb_variant + "\n",
-             0644);
+  write_file(
+      mnt + "/etc/vconsole.conf",
+      "KEYMAP=" + cfg.keymap + "\nXKBLAYOUT=" + xkb + "\nXKBVARIANT=" + cfg.xkb_variant + "\n",
+      0644);
   if (salt_path_exists((mnt + "/etc/default/keyboard").c_str())) {
     set_kv(mnt + "/etc/default/keyboard", "XKBLAYOUT", sh_quote(xkb));
     set_kv(mnt + "/etc/default/keyboard", "XKBVARIANT", sh_quote(cfg.xkb_variant));
@@ -1058,8 +1068,11 @@ void configure_locale(const std::string &mnt, const setup::Config &cfg) {
     set_kv(mnt + "/etc/rc.conf", "KEYMAP", sh_quote(cfg.keymap));
   write_file(mnt + "/etc/X11/xorg.conf.d/00-keyboard.conf",
              "Section \"InputClass\"\n    Identifier \"system-keyboard\"\n"
-             "    MatchIsKeyboard \"on\"\n    Option \"XkbLayout\" " + sh_quote(xkb) + "\n"
-             "    Option \"XkbVariant\" " + sh_quote(cfg.xkb_variant) + "\nEndSection\n",
+             "    MatchIsKeyboard \"on\"\n    Option \"XkbLayout\" " +
+                 sh_quote(xkb) +
+                 "\n"
+                 "    Option \"XkbVariant\" " +
+                 sh_quote(cfg.xkb_variant) + "\nEndSection\n",
              0644);
   write_file(mnt + "/etc/hostname", cfg.hostname + "\n", 0644);
   write_file(mnt + "/etc/hosts",
@@ -1069,7 +1082,9 @@ void configure_locale(const std::string &mnt, const setup::Config &cfg) {
              0644);
 }
 
-bool has_cmd(const std::string &cmd) { return run_quiet({"sh", "-c", "command -v " + cmd}) == 0; }
+bool has_cmd(const std::string &cmd) {
+  return run_quiet({"sh", "-c", "command -v " + cmd}) == 0;
+}
 
 std::string wifi_device() {
   DIR *dh = opendir("/sys/class/net");
@@ -1170,17 +1185,18 @@ void configure_network(const std::string &mnt, const setup::Config &cfg) {
   if (cfg.network != "wifi") return;
   if (nm && is_dir("/etc/NetworkManager/system-connections")) {
     run_quiet({"mkdir", "-p", mnt + "/etc/NetworkManager/system-connections"});
-    run({"sh", "-c", "cp -a /etc/NetworkManager/system-connections/. " +
-                         sh_quote(mnt + "/etc/NetworkManager/system-connections/")});
+    run({"sh", "-c",
+         "cp -a /etc/NetworkManager/system-connections/. " +
+             sh_quote(mnt + "/etc/NetworkManager/system-connections/")});
     run_quiet({"chmod", "600", "-R", mnt + "/etc/NetworkManager/system-connections"});
   }
   if (salt_path_exists("/etc/wpa_supplicant.conf")) {
     write_file(mnt + "/etc/wpa_supplicant.conf", read_file("/etc/wpa_supplicant.conf"), 0600);
     std::string dev = wifi_device();
     if (!dev.empty() && !nm) {
-      sv_write(mnt, "wpa_supplicant",
-               "#!/bin/sh\nexec 2>&1\nexec wpa_supplicant -i " + dev +
-                   " -c /etc/wpa_supplicant.conf\n");
+      sv_write(
+          mnt, "wpa_supplicant",
+          "#!/bin/sh\nexec 2>&1\nexec wpa_supplicant -i " + dev + " -c /etc/wpa_supplicant.conf\n");
       sv_enable(mnt, "wpa_supplicant");
     }
   }
@@ -1209,8 +1225,9 @@ void configure_desktop(const std::string &mnt, const setup::Config &cfg) {
   info("enabling the graphical session");
   if (sddm) {
     if (!is_dir(mnt + sv_dir(mnt) + "/sddm"))
-      sv_write(mnt, "sddm", "#!/bin/sh\nexec 2>&1\n[ -x /usr/bin/dbus-daemon ] && sv start dbus "
-                            ">/dev/null 2>&1\nexec sddm\n");
+      sv_write(mnt, "sddm",
+               "#!/bin/sh\nexec 2>&1\n[ -x /usr/bin/dbus-daemon ] && sv start dbus "
+               ">/dev/null 2>&1\nexec sddm\n");
     sv_enable(mnt, "dbus");
     sv_enable(mnt, "elogind");
     sv_enable(mnt, "sddm");
@@ -1269,9 +1286,9 @@ void install_boot(const std::string &mnt, const setup::Config &cfg, const Layout
   std::string kver = highest_kver(mnt);
   if (kver.empty()) fail("no kernel modules in target");
   std::string kimg;
-  for (const std::string &c : std::vector<std::string>{"/boot/vmlinuz-" + kver, "/boot/vmlinux-" + kver,
-                                                       "/boot/Image-" + kver, "/boot/vmlinuz",
-                                                       "/boot/Image"})
+  for (const std::string &c :
+       std::vector<std::string>{"/boot/vmlinuz-" + kver, "/boot/vmlinux-" + kver,
+                                "/boot/Image-" + kver, "/boot/vmlinuz", "/boot/Image"})
     if (salt_path_exists((mnt + c).c_str())) {
       kimg = c;
       break;
@@ -1297,7 +1314,8 @@ void install_boot(const std::string &mnt, const setup::Config &cfg, const Layout
   std::string cmdline = cfg.cmdline;
   if (!lay.luks_uuid.empty()) {
     if (!cmdline.empty()) cmdline += " ";
-    cmdline += "rd.luks.uuid=" + lay.luks_uuid + " rd.luks.name=" + lay.luks_uuid + "=" + lay.luks_name;
+    cmdline +=
+        "rd.luks.uuid=" + lay.luks_uuid + " rd.luks.name=" + lay.luks_uuid + "=" + lay.luks_name;
   }
   if (cfg.filesystem == "btrfs" || lay.mopts.find("subvol") != std::string::npos) {
     std::string rootflags = "rootflags=subvol=@";
@@ -1322,7 +1340,8 @@ void install_boot(const std::string &mnt, const setup::Config &cfg, const Layout
     set_kv(grub_def, "GRUB_TERMINAL", "\"console serial\"");
     set_kv(grub_def, "GRUB_SERIAL_COMMAND", "\"serial --speed=115200\"");
   }
-  if (!lay.luks_uuid.empty()) set_kv(grub_def, "GRUB_ENABLE_CRYPTODISK", lay.boot.empty() ? "y" : "n");
+  if (!lay.luks_uuid.empty())
+    set_kv(grub_def, "GRUB_ENABLE_CRYPTODISK", lay.boot.empty() ? "y" : "n");
 
   bool signed_grub = salt_path_exists((mnt + "/usr/lib/grub/x86_64-efi-signed").c_str()) ||
                      salt_path_exists((mnt + "/usr/lib/grub/arm64-efi-signed").c_str());
@@ -1331,8 +1350,8 @@ void install_boot(const std::string &mnt, const setup::Config &cfg, const Layout
   if (cfg.shim == "yes" && !(signed_grub && shim))
     fail("boot.shim = \"yes\" but shim-signed / signed GRUB are not present in the target");
   std::vector<std::string> efi_flags;
-  if (signed_grub) efi_flags.push_back(cfg.shim == "no" || !shim ? "--no-uefi-secure-boot"
-                                                                 : "--uefi-secure-boot");
+  if (signed_grub)
+    efi_flags.push_back(cfg.shim == "no" || !shim ? "--no-uefi-secure-boot" : "--uefi-secure-boot");
   std::string efi_target = arch == "aarch64" ? "arm64-efi" : "x86_64-efi";
   if (fw == "bios" || fw == "both") {
     if (lay.disk.empty()) fail("cannot determine the disk holding the root filesystem");
@@ -1340,9 +1359,13 @@ void install_boot(const std::string &mnt, const setup::Config &cfg, const Layout
                 "grub-install (BIOS)");
   }
   if (fw == "uefi" || fw == "both") {
-    std::vector<std::string> g = {"grub-install", "--target=" + efi_target,
-                                  "--efi-directory=/boot/efi", "--bootloader-id=saltOS",
-                                  "--recheck", "--removable", "--no-nvram"};
+    std::vector<std::string> g = {"grub-install",
+                                  "--target=" + efi_target,
+                                  "--efi-directory=/boot/efi",
+                                  "--bootloader-id=saltOS",
+                                  "--recheck",
+                                  "--removable",
+                                  "--no-nvram"};
     g.insert(g.end(), efi_flags.begin(), efi_flags.end());
     chroot_must(mnt, g, "grub-install (UEFI removable path)");
     if (booted_efi) {
@@ -1351,8 +1374,9 @@ void install_boot(const std::string &mnt, const setup::Config &cfg, const Layout
                                     "--recheck"};
       n.insert(n.end(), efi_flags.begin(), efi_flags.end());
       if (chroot_run(mnt, n) != 0)
-        info("firmware boot entry not registered (NVRAM unavailable); the removable path "
-             "/EFI/BOOT will be used");
+        info(
+            "firmware boot entry not registered (NVRAM unavailable); the removable path "
+            "/EFI/BOOT will be used");
     }
   }
   chroot_must(mnt, {"grub-mkconfig", "-o", "/boot/grub/grub.cfg"}, "grub-mkconfig");
@@ -1400,8 +1424,8 @@ void ask_interactive(setup::Config &cfg, const std::string &arch, bool booted_ef
                             {"alongside", "keep existing partitions, use free space" + free_note}},
                            cfg.mode == "mounted" ? "erase" : cfg.mode);
   if (cfg.mode == "alongside") {
-    std::string rs = prompt("Size of the new saltOS root (e.g. 40G, empty = all free space)",
-                            cfg.root_size);
+    std::string rs =
+        prompt("Size of the new saltOS root (e.g. 40G, empty = all free space)", cfg.root_size);
     cfg.root_size = rs;
   } else {
     cfg.root_size.clear();
@@ -1410,14 +1434,14 @@ void ask_interactive(setup::Config &cfg, const std::string &arch, bool booted_ef
   if (arch == "aarch64") {
     cfg.firmware = "uefi";
   } else {
-    cfg.firmware = prompt_choice(
-        std::string("Firmware / boot mode (this machine booted via ") +
-            (booted_efi ? "UEFI" : "legacy BIOS") + ")",
-        {{"auto", booted_efi ? "UEFI + BIOS fallback" : "legacy BIOS only"},
-         {"uefi", "UEFI only"},
-         {"bios", "legacy BIOS only"},
-         {"both", "UEFI and legacy BIOS"}},
-        cfg.firmware);
+    cfg.firmware =
+        prompt_choice(std::string("Firmware / boot mode (this machine booted via ") +
+                          (booted_efi ? "UEFI" : "legacy BIOS") + ")",
+                      {{"auto", booted_efi ? "UEFI + BIOS fallback" : "legacy BIOS only"},
+                       {"uefi", "UEFI only"},
+                       {"bios", "legacy BIOS only"},
+                       {"both", "UEFI and legacy BIOS"}},
+                      cfg.firmware);
   }
   cfg.filesystem = prompt_choice("Root filesystem",
                                  {{"btrfs", "snapshots and rollback (recommended)"},
@@ -1448,8 +1472,8 @@ void ask_interactive(setup::Config &cfg, const std::string &arch, bool booted_ef
     cfg.password = prompt_secret_twice("password for " + cfg.username);
   cfg.sudo = prompt_yesno("Grant " + cfg.username + " administrative (sudo) rights", cfg.sudo);
   if (cfg.root_password.empty() && cfg.root_password_hash.empty()) {
-    bool want_root = prompt_yesno("Set a separate root password (no = root login disabled)",
-                                  !cfg.sudo);
+    bool want_root =
+        prompt_yesno("Set a separate root password (no = root login disabled)", !cfg.sudo);
     if (want_root) cfg.root_password = prompt_secret_twice("root password");
   }
   cfg.autologin = prompt_yesno("Log " + cfg.username + " in automatically", cfg.autologin);
@@ -1471,16 +1495,16 @@ void ask_interactive(setup::Config &cfg, const std::string &arch, bool booted_ef
   }
 
   if (live_has_desktop())
-    cfg.desktop = prompt_choice("Graphical desktop on the installed system",
-                                {{"keep", "keep the live desktop (LXQt)"},
-                                 {"none", "console only"}},
-                                cfg.desktop == "auto" ? "keep" : cfg.desktop);
+    cfg.desktop =
+        prompt_choice("Graphical desktop on the installed system",
+                      {{"keep", "keep the live desktop (LXQt)"}, {"none", "console only"}},
+                      cfg.desktop == "auto" ? "keep" : cfg.desktop);
   else
     cfg.desktop = "none";
 
   if (cfg.mode == "alongside")
-    cfg.os_prober = prompt_yesno("Add other installed operating systems to the boot menu",
-                                 cfg.os_prober);
+    cfg.os_prober =
+        prompt_yesno("Add other installed operating systems to the boot menu", cfg.os_prober);
   cfg.cmdline = prompt("Extra kernel command line (empty for none)", cfg.cmdline);
   cfg.kernel = prompt("Kernel source", cfg.kernel);
 }
@@ -1491,9 +1515,10 @@ void print_summary(const setup::Config &cfg, const std::string &fw) {
     printf("About to ERASE %s and install saltOS with the %s stratum.\n", cfg.disk.c_str(),
            cfg.distro.c_str());
   else if (cfg.mode == "alongside")
-    printf("About to install saltOS into the free space of %s (existing partitions are kept) "
-           "with the %s stratum.\n",
-           cfg.disk.c_str(), cfg.distro.c_str());
+    printf(
+        "About to install saltOS into the free space of %s (existing partitions are kept) "
+        "with the %s stratum.\n",
+        cfg.disk.c_str(), cfg.distro.c_str());
   else
     printf("About to install saltOS into the prepared target %s with the %s stratum.\n",
            cfg.target.c_str(), cfg.distro.c_str());
@@ -1507,7 +1532,7 @@ void print_summary(const setup::Config &cfg, const std::string &fw) {
          cfg.os_prober ? "yes" : "no", cfg.cmdline.c_str());
 }
 
-}
+}  // namespace
 
 int main(int argc, char **argv) {
   setup::CliOptions opts;
@@ -1541,7 +1566,7 @@ int main(int argc, char **argv) {
 
   if (geteuid() != 0) fail("must run as root");
 
-  struct utsname un{};
+  struct utsname un {};
   uname(&un);
   std::string arch = un.machine;
   bool booted_efi = salt_path_exists("/sys/firmware/efi");

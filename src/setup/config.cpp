@@ -75,11 +75,20 @@ std::string quote(const std::string &s) {
   std::string out = "\"";
   for (char c : s) {
     switch (c) {
-    case '"': out += "\\\""; break;
-    case '\\': out += "\\\\"; break;
-    case '\n': out += "\\n"; break;
-    case '\t': out += "\\t"; break;
-    default: out.push_back(c);
+      case '"':
+        out += "\\\"";
+        break;
+      case '\\':
+        out += "\\\\";
+        break;
+      case '\n':
+        out += "\\n";
+        break;
+      case '\t':
+        out += "\\t";
+        break;
+      default:
+        out.push_back(c);
     }
   }
   out += "\"";
@@ -101,16 +110,16 @@ std::string join(std::initializer_list<const char *> allowed) {
   return out;
 }
 
-#define ENUM_CHECK(field, value, ...)                                                        \
-  do {                                                                                       \
-    if (!one_of(value, {__VA_ARGS__})) {                                                     \
+#define ENUM_CHECK(field, value, ...)                                                           \
+  do {                                                                                          \
+    if (!one_of(value, {__VA_ARGS__})) {                                                        \
       err = std::string(field) + " must be one of " + join({__VA_ARGS__}) + " (got '" + value + \
-            "')";                                                                            \
-      return false;                                                                          \
-    }                                                                                        \
+            "')";                                                                               \
+      return false;                                                                             \
+    }                                                                                           \
   } while (0)
 
-}
+}  // namespace
 
 std::string usage_text() {
   return "usage: salt-setup [options]\n"
@@ -331,18 +340,21 @@ bool validate(const Config &cfg, bool interactive, std::string &err) {
     return false;
   }
   if (cfg.mode == "mounted" && cfg.swap == "partition" && cfg.swap_device.empty()) {
-    err = "install.swap_device is required for install.swap = \"partition\" with "
-          "install.mode = \"mounted\"";
+    err =
+        "install.swap_device is required for install.swap = \"partition\" with "
+        "install.mode = \"mounted\"";
     return false;
   }
   if (!cfg.swap_device.empty() && (cfg.mode != "mounted" || cfg.swap != "partition")) {
-    err = "install.swap_device only applies to install.mode = \"mounted\" with "
-          "install.swap = \"partition\"";
+    err =
+        "install.swap_device only applies to install.mode = \"mounted\" with "
+        "install.swap = \"partition\"";
     return false;
   }
   if (!cfg.sudo && cfg.root_password.empty() && cfg.root_password_hash.empty()) {
-    err = "user.root_password (or user.root_password_hash) is required when user.sudo = false, "
-          "otherwise no account can administer the system";
+    err =
+        "user.root_password (or user.root_password_hash) is required when user.sudo = false, "
+        "otherwise no account can administer the system";
     return false;
   }
   if (cfg.distro.empty()) {
@@ -430,4 +442,4 @@ std::string to_toml(const Config &cfg, bool include_secrets) {
   return out;
 }
 
-}
+}  // namespace setup

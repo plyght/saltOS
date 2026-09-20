@@ -214,9 +214,10 @@ static void test_set_and_validate(void) {
 static void test_cli(void) {
   setup::CliOptions o;
   std::string err;
-  const char *argv1[] = {"salt-setup", "--from", "/x.toml", "--disk", "/dev/vdb", "--user",
-                         "bob", "--mnt", "/m", "--set", "boot.firmware=bios", "--profile",
-                         "/p.toml", "--yes", "--dump-config"};
+  const char *argv1[] = {
+      "salt-setup", "--from", "/x.toml",      "--disk", "/dev/vdb",           "--user",
+      "bob",        "--mnt",  "/m",           "--set",  "boot.firmware=bios", "--profile",
+      "/p.toml",    "--yes",  "--dump-config"};
   CHECK(setup::parse_cli(15, (char **)argv1, o, err) == 0, "cli parses");
   CHECK(o.from == "/x.toml", "from");
   CHECK(o.mnt == "/m", "mnt");

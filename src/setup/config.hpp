@@ -72,4 +72,4 @@ bool parse_size_mib(const std::string &s, unsigned long long &mib);
 bool parse_bool(const std::string &s, bool &out);
 std::string default_swap_size(unsigned long long mem_kib);
 
-}
+}  // namespace setup
