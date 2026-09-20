@@ -1,6 +1,6 @@
 name = "runit"
 version = "2.1.2"
-release = 1
+release = 2
 summary = "UNIX init scheme with service supervision"
 license = "BSD-3-Clause"
 arch = ["x86_64", "aarch64"]
@@ -14,7 +14,7 @@ system = "custom"
 deps = ["gcc", "make"]
 script = """
 #!/bin/sh
-cd admin/runit-2.1.2
+cd "$(find . -maxdepth 2 -type d -name runit-2.1.2 | head -n 1)"
 sed -i 's/ -static$//' src/Makefile
 cd src
 make -j"$SALT_JOBS"
