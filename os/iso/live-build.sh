@@ -595,7 +595,14 @@ EOF
 ISO_PATH="$OUT/saltos-$VERSION-$EDITION-$ARCH.iso"
 MKRESCUE_OPTS=()
 if [ "$ARCH" = aarch64 ]; then
-  MKRESCUE_OPTS=(-d "$ROOTFS/usr/lib/grub/arm64-efi")
+  if [ -f /usr/lib/grub/arm64-efi/modinfo.sh ]; then
+    MKRESCUE_OPTS=(-d /usr/lib/grub/arm64-efi)
+  elif [ -f "$ROOTFS/usr/lib/grub/arm64-efi/modinfo.sh" ]; then
+    MKRESCUE_OPTS=(-d "$ROOTFS/usr/lib/grub/arm64-efi")
+  else
+    echo "no arm64-efi GRUB modules on the host or in the rootfs; install grub-efi-arm64-bin" >&2
+    exit 1
+  fi
 fi
 grub-mkrescue "${MKRESCUE_OPTS[@]}" -o "$ISO_PATH" "$ISODIR" \
   -- -volid "SALTOS_LIVE"
