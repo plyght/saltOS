@@ -21,10 +21,9 @@ cd build
     --enable-ld=default \\
     --enable-plugins \\
     --enable-64-bit-bfd \\
-    --disable-werror \\
-    MAKEINFO=true
-make -j"$SALT_JOBS" tooldir=/usr
-make DESTDIR="$SALT_DEST" tooldir=/usr install
+    --disable-werror
+make -j"$SALT_JOBS" tooldir=/usr MAKEINFO=true
+make DESTDIR="$SALT_DEST" tooldir=/usr MAKEINFO=true install
 """
 
 [package]
