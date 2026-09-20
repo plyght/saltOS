@@ -11,7 +11,7 @@ sha256 = "8da4319102f24abbf7fff5ce9c416af848df163b29590e666d334cc1927f006f"
 
 [build]
 system = "autotools"
-deps = ["gcc", "make", "kmod"]
+deps = ["gcc", "make", "gperf", "kmod"]
 script = """
 #!/bin/sh
 ./configure --prefix=/usr \\

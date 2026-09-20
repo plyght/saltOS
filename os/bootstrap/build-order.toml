@@ -82,6 +82,7 @@ packages = [
   "libsodium",
   "elfutils",
   "kmod",
+  "gperf",
   "eudev",
   "dbus",
   "e2fsprogs",
