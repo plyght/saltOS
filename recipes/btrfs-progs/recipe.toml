@@ -1,6 +1,6 @@
 name = "btrfs-progs"
 version = "6.9.2"
-release = 1
+release = 2
 summary = "Userspace utilities for the btrfs filesystem"
 license = "GPL-2.0-only"
 arch = ["x86_64", "aarch64"]
@@ -16,7 +16,8 @@ script = """
 #!/bin/sh
 ./configure --prefix=/usr \\
     --disable-static \\
-    --disable-documentation
+    --disable-documentation \\
+    --disable-python
 make -j"$SALT_JOBS"
 make DESTDIR="$SALT_DEST" install
 """

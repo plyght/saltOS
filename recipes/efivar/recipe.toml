@@ -1,6 +1,6 @@
 name = "efivar"
 version = "39"
-release = 1
+release = 2
 summary = "Library and tools to manipulate UEFI variables"
 license = "LGPL-2.1-or-later"
 arch = ["x86_64", "aarch64"]
@@ -14,8 +14,8 @@ system = "make"
 deps = ["gcc", "make", "pkgconf"]
 script = """
 #!/bin/sh
-make -j"$SALT_JOBS"
-make DESTDIR="$SALT_DEST" libdir=/usr/lib bindir=/usr/bin install
+make ENABLE_DOCS=0 -j"$SALT_JOBS"
+make ENABLE_DOCS=0 DESTDIR="$SALT_DEST" libdir=/usr/lib bindir=/usr/bin install
 """
 
 [package]
