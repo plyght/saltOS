@@ -138,6 +138,19 @@ Always install into `$SALT_DEST` (never directly into the live system), and use
 `--prefix=/usr` so files land in the standard Unix-like layout when the package
 is later installed.
 
+The builder itself honours a few variables from its caller:
+
+| Variable | Meaning |
+| --- | --- |
+| `SALT_WORK` | Directory holding the per-package `src/`, `dest/` and `dl/` trees (default `work/`). |
+| `SALT_OUT` | Output directory; grains land in `$SALT_OUT/<arch>/packages/` (default `out/`). |
+| `SALT_JOBS` | Parallelism handed to the recipe (default `4`). |
+| `SALT_BUILD_ROOT` | If set, the recipe script runs inside `chroot "$SALT_BUILD_ROOT"`; `SALT_WORK` must then lie within that root so `SALT_SRC`/`SALT_DEST` can be expressed relative to it. Fetching, hash verification, extraction and packaging still happen outside the chroot. The bootstrap uses this to build the `base` and `desktop` stages natively inside the sysroot. |
+
+Local `file://` sources that point at a git checkout are copied with
+`git ls-files --cached --others --exclude-standard`, so ignored build outputs
+never end up in `SALT_SRC`.
+
 ## Build systems
 
 - **`make`** — a plain `Makefile`. `salt build` runs the build and a
