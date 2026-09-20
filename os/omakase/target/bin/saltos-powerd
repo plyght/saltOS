@@ -1,0 +1,16 @@
+#!/bin/sh
+user="$1"
+[ -n "$user" ] || { echo "usage: saltos-powerd <user>" >&2; exit 2; }
+mkdir -p /run/saltos
+rm -f /run/saltos/power
+mkfifo -m 0620 /run/saltos/power
+chown "root:$user" /run/saltos/power
+while :; do
+  if read -r action </run/saltos/power; then
+    case "$action" in
+      poweroff) poweroff ;;
+      reboot) reboot ;;
+      suspend) zzz 2>/dev/null || echo mem >/sys/power/state ;;
+    esac
+  fi
+done

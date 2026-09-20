@@ -1,0 +1,4 @@
+#!/bin/sh
+rt="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+mkdir -p "$rt"
+printf 'sway=%s wayland=%s at=%s\n' "${SWAYSOCK:-none}" "${WAYLAND_DISPLAY:-none}" "$(date -u +%FT%TZ)" >"$rt/saltos-session.ok"

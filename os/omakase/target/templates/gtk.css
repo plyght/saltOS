@@ -1,0 +1,12 @@
+@define-color accent_color #${ACCENT};
+@define-color accent_bg_color #${ACCENT};
+@define-color accent_fg_color #${BG};
+@define-color window_bg_color #${BG};
+@define-color window_fg_color #${FG};
+@define-color view_bg_color #${BG_ALT};
+@define-color view_fg_color #${FG};
+@define-color headerbar_bg_color #${BG_ALT};
+@define-color headerbar_fg_color #${FG};
+@define-color card_bg_color #${BG_ALT};
+@define-color popover_bg_color #${BG_ALT};
+@define-color dialog_bg_color #${BG_ALT};

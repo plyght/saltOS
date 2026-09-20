@@ -1,0 +1,22 @@
+#!/bin/bash
+set -uo pipefail
+
+request() {
+  [ -p /run/saltos/power ] || { echo "saltos-power: /run/saltos/power is not available" >&2; exit 1; }
+  printf '%s\n' "$1" >/run/saltos/power
+}
+
+action="${1:-}"
+if [ -z "$action" ]; then
+  action="$(printf '%s\n' "Lock" "Suspend" "Reboot" "Power off" "Log out" \
+    | gum choose --header "Power" --cursor "▶ " 2>/dev/tty)" || exit 0
+fi
+
+case "${action,,}" in
+  lock) exec swaylock -f ;;
+  suspend) swaylock -f; sleep 0.3; request suspend ;;
+  reboot) request reboot ;;
+  "power off"|poweroff|shutdown) request poweroff ;;
+  "log out"|logout) swaymsg exit ;;
+  *) echo "usage: saltos-power [lock|suspend|reboot|poweroff|logout]" >&2; exit 2 ;;
+esac

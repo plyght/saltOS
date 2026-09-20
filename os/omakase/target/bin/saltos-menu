@@ -1,0 +1,114 @@
+#!/bin/bash
+set -uo pipefail
+
+distro="$(cat /etc/saltos-omakase-stratum 2>/dev/null || echo unknown)"
+
+pm_install() {
+  local -a pkgs
+  read -r -a pkgs <<<"$1"
+  [ ${#pkgs[@]} -gt 0 ] || return 0
+  salt pkg "$distro" install "${pkgs[@]}"
+}
+
+pm_remove() {
+  local -a pkgs
+  read -r -a pkgs <<<"$1"
+  [ ${#pkgs[@]} -gt 0 ] || return 0
+  salt pkg "$distro" remove "${pkgs[@]}"
+}
+
+pm_search() {
+  local q="$1"
+  [ -n "$q" ] || return 0
+  salt pkg "$distro" search "$q"
+}
+
+pause() { gum style --faint "press Enter to continue"; read -r; }
+
+menu_theme() {
+  local cur pick
+  cur="$(saltos-theme current)"
+  pick="$(saltos-theme list | gum choose --header "Theme (current: $cur)" --cursor "▶ ")" || return 0
+  saltos-theme set "$pick"
+}
+
+menu_update() {
+  local pick
+  pick="$(printf '%s\n' "Everything" "saltOS core (salt-ota)" "$distro packages" "Neovim plugins" | gum choose --header "Update" --cursor "▶ ")" || return 0
+  case "$pick" in
+    Everything) saltos-update all ;;
+    "saltOS core"*) saltos-update host ;;
+    "$distro packages") saltos-update stratum ;;
+    "Neovim plugins") saltos-update neovim ;;
+  esac
+  pause
+}
+
+menu_install() {
+  local pick pkgs
+  pick="$(printf '%s\n' "Search $distro packages" "Install package(s)" "Remove package(s)" "Add another stratum" | gum choose --header "Install" --cursor "▶ ")" || return 0
+  case "$pick" in
+    "Search"*) pm_search "$(gum input --placeholder "search term")"; pause ;;
+    "Install"*) pkgs="$(gum input --placeholder "package names")"; pm_install "$pkgs"; pause ;;
+    "Remove"*) pkgs="$(gum input --placeholder "package names")"; pm_remove "$pkgs"; pause ;;
+    "Add another stratum")
+      pick="$(find /usr/share/salt/strata -name '*.toml' -printf '%f\n' 2>/dev/null | sed 's/\.toml$//' | gum choose --header "Stratum recipe" --cursor "▶ ")" || return 0
+      salt stratum add "$pick"; pause ;;
+  esac
+}
+
+menu_setup() {
+  local pick
+  pick="$(printf '%s\n' "Wi-Fi (nmtui)" "Bluetooth (bluetui)" "Audio (pavucontrol)" "Keyboard layout" "Change password" | gum choose --header "Setup" --cursor "▶ ")" || return 0
+  case "$pick" in
+    "Wi-Fi"*) nmtui ;;
+    "Bluetooth"*) bluetui ;;
+    "Audio"*) pavucontrol ;;
+    "Keyboard layout")
+      local km
+      km="$(localectl list-keymaps 2>/dev/null || find /usr/share/kbd/keymaps /usr/share/keymaps -name '*.map*' -printf '%f\n' 2>/dev/null | sed 's/\.map.*//' | sort -u)"
+      km="$(printf '%s\n' "$km" | gum filter --placeholder "keymap")" || return 0
+      swaymsg input type:keyboard xkb_layout "${km%%-*}" >/dev/null
+      mkdir -p "$HOME/.config/sway/config.d"
+      printf 'input type:keyboard xkb_layout %s\n' "${km%%-*}" >"$HOME/.config/sway/config.d/keyboard.conf"
+      ;;
+    "Change password") passwd; pause ;;
+  esac
+}
+
+menu_system() {
+  local pick
+  pick="$(printf '%s\n' "About" "Stratum snapshots" "Keybindings" "Power" | gum choose --header "System" --cursor "▶ ")" || return 0
+  case "$pick" in
+    About)
+      gum style --border rounded --padding "1 2" \
+        "$(cat /etc/saltos-edition 2>/dev/null || echo saltOS)" \
+        "stratum: $distro" \
+        "theme: $(saltos-theme current)" \
+        "kernel: $(uname -r)"
+      pause ;;
+    "Stratum snapshots")
+      pick="$(printf '%s\n' "Snapshot $distro now" "Roll $distro back to last snapshot" | gum choose --cursor "▶ ")" || return 0
+      case "$pick" in
+        Snapshot*) salt stratum snapshot "$distro" ;;
+        Roll*) gum confirm "Roll back $distro packages to the last snapshot?" && salt stratum rollback "$distro" ;;
+      esac
+      pause ;;
+    Keybindings) sed -n 's/^bindsym \([^ ]*\) \(.*\)$/\1\t\2/p' "$HOME/.config/sway/config" | column -t -s $'\t' | gum pager ;;
+    Power) saltos-power ;;
+  esac
+}
+
+while :; do
+  clear
+  gum style --foreground 5 --bold "saltOS  ·  $distro stratum"
+  pick="$(printf '%s\n' "Theme" "Update" "Install" "Setup" "System" "Quit" | gum choose --cursor "▶ ")" || exit 0
+  case "$pick" in
+    Theme) menu_theme ;;
+    Update) menu_update ;;
+    Install) menu_install ;;
+    Setup) menu_setup ;;
+    System) menu_system ;;
+    Quit|"") exit 0 ;;
+  esac
+done

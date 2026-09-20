@@ -1,0 +1,45 @@
+#!/bin/bash
+set -uo pipefail
+
+distro="$(cat /etc/saltos-omakase-stratum 2>/dev/null)"
+what="${1:-all}"
+rc=0
+
+section() { printf '\n\033[1;34m== %s ==\033[0m\n' "$1"; }
+
+update_host() {
+  section "saltOS core"
+  if command -v salt-ota >/dev/null 2>&1; then
+    sudo -n salt-ota run || rc=1
+  else
+    salt sync && salt update || rc=1
+  fi
+}
+
+update_stratum() {
+  [ -n "$distro" ] || { echo "saltos-update: no omakase stratum recorded" >&2; rc=1; return; }
+  section "$distro stratum packages"
+  salt pkg "$distro" update || rc=1
+}
+
+update_neovim() {
+  section "Neovim plugins"
+  nvim --headless "+Lazy! sync" +qa 2>/dev/null || rc=1
+}
+
+case "$what" in
+  all) update_host; update_stratum; update_neovim ;;
+  host|core) update_host ;;
+  stratum|packages) update_stratum ;;
+  neovim|nvim) update_neovim ;;
+  *) echo "usage: saltos-update [all|host|stratum|neovim]" >&2; exit 2 ;;
+esac
+
+if [ $rc -eq 0 ]; then
+  echo
+  echo "saltOS is up to date."
+else
+  echo
+  echo "saltos-update: some steps failed (see above)" >&2
+fi
+exit $rc

@@ -1,0 +1,7 @@
+@define-color background #${BG};
+@define-color foreground #${FG};
+@define-color accent #${ACCENT};
+@define-color muted #${MUTED};
+@define-color urgent #${COLOR1};
+@define-color warning #${COLOR3};
+@define-color good #${COLOR2};

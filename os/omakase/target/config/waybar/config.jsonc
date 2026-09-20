@@ -1,0 +1,60 @@
+{
+  "layer": "top",
+  "position": "top",
+  "height": 28,
+  "spacing": 4,
+  "modules-left": ["sway/workspaces", "sway/mode", "sway/window"],
+  "modules-center": ["clock"],
+  "modules-right": ["tray", "network", "bluetooth", "wireplumber", "backlight", "battery", "custom/saltos"],
+  "sway/workspaces": {
+    "disable-scroll": true,
+    "all-outputs": true,
+    "format": "{name}"
+  },
+  "sway/window": {
+    "max-length": 60
+  },
+  "clock": {
+    "format": "{:%a %d %b  %H:%M}",
+    "tooltip-format": "<tt>{calendar}</tt>"
+  },
+  "network": {
+    "format-wifi": "  {essid}",
+    "format-ethernet": "  {ipaddr}",
+    "format-disconnected": "  offline",
+    "tooltip-format": "{ifname}: {ipaddr}/{cidr}",
+    "on-click": "foot -e nmtui"
+  },
+  "bluetooth": {
+    "format": "",
+    "format-connected": "  {num_connections}",
+    "format-disabled": "",
+    "on-click": "foot -e bluetui"
+  },
+  "wireplumber": {
+    "format": "  {volume}%",
+    "format-muted": "  muted",
+    "on-click": "pamixer -t",
+    "on-click-right": "pavucontrol",
+    "max-volume": 100
+  },
+  "backlight": {
+    "format": "  {percent}%",
+    "on-scroll-up": "brightnessctl set +5%",
+    "on-scroll-down": "brightnessctl set 5%-"
+  },
+  "battery": {
+    "states": { "warning": 25, "critical": 10 },
+    "format": "{icon}  {capacity}%",
+    "format-charging": "  {capacity}%",
+    "format-icons": ["", "", "", "", ""]
+  },
+  "tray": {
+    "spacing": 8
+  },
+  "custom/saltos": {
+    "format": "",
+    "tooltip-format": "saltOS menu",
+    "on-click": "foot -e saltos-menu"
+  }
+}

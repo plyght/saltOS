@@ -1,0 +1,37 @@
+#!/bin/bash
+set -u
+
+distro="$(cat /etc/saltos-omakase-stratum 2>/dev/null)"
+[ -n "$distro" ] || { echo "saltos-session: /etc/saltos-omakase-stratum missing" >&2; exit 1; }
+
+rt="/run/user/$(id -u)"
+[ -d "$rt" ] || mkdir -p "$rt"
+rm -f "$rt/saltos-session.ok"
+
+export XDG_RUNTIME_DIR="$rt"
+export XDG_SESSION_TYPE=wayland
+export XDG_CURRENT_DESKTOP=sway
+export XDG_SESSION_DESKTOP=sway
+export MOZ_ENABLE_WAYLAND=1
+export QT_QPA_PLATFORM=wayland
+export QT_QPA_PLATFORMTHEME=gtk3
+export SDL_VIDEODRIVER=wayland
+export _JAVA_AWT_WM_NONREPARENTING=1
+GTK_THEME="$(sed -n 's/^GTK_THEME="\(.*\)"/\1/p' "/opt/saltos/share/themes/$(cat "$HOME/.config/saltos/current-theme" 2>/dev/null || echo tokyo-night)/theme.sh" 2>/dev/null)"
+export GTK_THEME
+export XCURSOR_THEME=Adwaita
+export XCURSOR_SIZE=24
+export EDITOR=nvim
+export TERMINAL=foot
+export BROWSER=helium
+export WLR_RENDERER_ALLOW_SOFTWARE=1
+if [ -z "${LANG:-}" ]; then
+  [ -r /etc/locale.conf ] && . /etc/locale.conf
+  export LANG="${LANG:-C.UTF-8}"
+fi
+[ -n "${SALTOS_SESSION_LOG:-}" ] || SALTOS_SESSION_LOG="$HOME/.local/state/saltos/session.log"
+mkdir -p "$(dirname "$SALTOS_SESSION_LOG")"
+
+[ -f "$HOME/.config/saltos/current-theme" ] || saltos-theme render tokyo-night >/dev/null 2>&1
+
+exec salt run "$distro" dbus-run-session -- sway >>"$SALTOS_SESSION_LOG" 2>&1

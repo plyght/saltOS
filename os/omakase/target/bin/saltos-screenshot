@@ -1,0 +1,32 @@
+#!/bin/bash
+set -uo pipefail
+
+mode="${1:-region}"
+dir="${XDG_PICTURES_DIR:-$HOME/Pictures}/Screenshots"
+mkdir -p "$dir"
+file="$dir/$(date +%Y-%m-%d_%H-%M-%S).png"
+
+case "$mode" in
+  region)
+    geom="$(slurp)" || exit 0
+    grim -g "$geom" "$file"
+    ;;
+  window)
+    geom="$(swaymsg -t get_tree | jq -r '.. | select(.focused? == true and .pid? != null) | .rect | "\(.x),\(.y) \(.width)x\(.height)"' | head -n1)"
+    [ -n "$geom" ] || exit 1
+    grim -g "$geom" "$file"
+    ;;
+  output)
+    out="$(swaymsg -t get_outputs | jq -r '.[] | select(.focused) | .name')"
+    grim -o "$out" "$file"
+    ;;
+  *) echo "usage: saltos-screenshot [region|window|output]" >&2; exit 2 ;;
+esac
+
+[ -s "$file" ] || exit 1
+wl-copy <"$file"
+if command -v satty >/dev/null 2>&1; then
+  satty --filename "$file" --output-filename "$file" --early-exit --copy-command wl-copy
+else
+  notify-send -a saltos-screenshot "Screenshot saved" "$file"
+fi

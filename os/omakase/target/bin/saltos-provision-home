@@ -1,0 +1,63 @@
+#!/bin/bash
+set -euo pipefail
+
+home="$1"
+distro="$3"
+full_name="${4:-}"
+email="${5:-}"
+share="${OMAKASE_SHARE:-/opt/saltos}/share"
+
+[ -d "$home" ] || mkdir -p "$home"
+mkdir -p "$home/.config" "$home/.local/bin" "$home/.local/share" "$home/.cache" \
+  "$home/Desktop" "$home/Documents" "$home/Downloads" "$home/Music" "$home/Pictures/Screenshots" "$home/Videos"
+
+cp -a "$share/config/." "$home/.config/"
+mkdir -p "$home/.config/sway/config.d" "$home/.config/saltos"
+printf '%s\n' "$distro" >"$home/.config/saltos/stratum"
+
+cat >"$home/.config/user-dirs.dirs" <<EOF
+XDG_DESKTOP_DIR="\$HOME/Desktop"
+XDG_DOCUMENTS_DIR="\$HOME/Documents"
+XDG_DOWNLOAD_DIR="\$HOME/Downloads"
+XDG_MUSIC_DIR="\$HOME/Music"
+XDG_PICTURES_DIR="\$HOME/Pictures"
+XDG_VIDEOS_DIR="\$HOME/Videos"
+EOF
+
+cat >"$home/.bash_profile" <<'EOF'
+[ -f ~/.bashrc ] && . ~/.bashrc
+if [ -z "${WAYLAND_DISPLAY:-}" ] && [ "$(tty)" = /dev/tty1 ]; then
+  exec saltos-session
+fi
+EOF
+
+cat >"$home/.bashrc" <<'EOF'
+[[ $- != *i* ]] && return
+export EDITOR=nvim VISUAL=nvim
+export PATH="$HOME/.local/bin:$PATH"
+PS1='\[\e[1;35m\]\u\[\e[0m\]@\[\e[1;34m\]\h\[\e[0m\] \w \$ '
+alias ls='ls --color=auto'
+alias ll='ls -lah --color=auto'
+alias grep='grep --color=auto'
+alias n='nvim'
+alias theme='saltos-theme'
+alias update='saltos-update'
+alias menu='saltos-menu'
+EOF
+
+cp "$home/.bash_profile" "$home/.profile"
+
+if [ -n "$full_name" ] || [ -n "$email" ]; then
+  {
+    echo "[user]"
+    [ -n "$full_name" ] && printf '\tname = %s\n' "$full_name"
+    [ -n "$email" ] && printf '\temail = %s\n' "$email"
+    echo "[init]"
+    printf '\tdefaultBranch = main\n'
+  } >"$home/.gitconfig"
+fi
+
+HOME="$home" XDG_CONFIG_HOME="$home/.config" SALTOS_SHARE="$share" \
+  "${OMAKASE_SHARE:-/opt/saltos}/bin/saltos-theme" render tokyo-night
+
+chmod 0700 "$home"

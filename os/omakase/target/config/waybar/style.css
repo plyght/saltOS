@@ -1,0 +1,66 @@
+@import url("../saltos/theme/waybar.css");
+
+* {
+  font-family: "JetBrainsMono Nerd Font", "Font Awesome 6 Free", sans-serif;
+  font-size: 13px;
+  min-height: 0;
+}
+
+window#waybar {
+  background: @background;
+  color: @foreground;
+  border-bottom: 2px solid @accent;
+}
+
+#workspaces button {
+  padding: 0 8px;
+  color: @muted;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
+#workspaces button.focused {
+  color: @background;
+  background: @accent;
+}
+
+#workspaces button.urgent {
+  color: @background;
+  background: @urgent;
+}
+
+#mode {
+  color: @background;
+  background: @warning;
+  padding: 0 8px;
+}
+
+#window,
+#clock,
+#network,
+#bluetooth,
+#wireplumber,
+#backlight,
+#battery,
+#tray,
+#custom-saltos {
+  padding: 0 10px;
+  color: @foreground;
+}
+
+#custom-saltos {
+  color: @accent;
+}
+
+#battery.warning {
+  color: @warning;
+}
+
+#battery.critical {
+  color: @urgent;
+}
+
+#network.disconnected {
+  color: @muted;
+}

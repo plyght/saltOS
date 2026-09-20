@@ -1,0 +1,99 @@
+#!/bin/bash
+set -uo pipefail
+
+old_user="${1:-saltos}"
+export PATH="/opt/saltos/bin:$PATH"
+export GUM_INPUT_CURSOR_FOREGROUND=4 GUM_INPUT_PROMPT_FOREGROUND=5
+export GUM_CONFIRM_SELECTED_BACKGROUND=4 GUM_FILTER_INDICATOR_FOREGROUND=4
+export GUM_FILTER_MATCH_FOREGROUND=4
+
+[ -x /opt/saltos/bin/saltos-vt-palette ] && /opt/saltos/bin/saltos-vt-palette
+printf '\e[?25h'
+
+header() {
+  clear
+  gum style --foreground 5 --bold "Welcome to saltOS  ·  first boot setup"
+  gum style --foreground 4 --bold "$1"
+  [ -n "${2:-}" ] && gum style --faint "$2"
+  echo
+}
+
+header "Keyboard layout" "Type to filter, Return to accept"
+layouts="$(find /usr/share/kbd/keymaps /usr/share/keymaps \( -name '*.map.gz' -o -name '*.kmap.gz' \) 2>/dev/null | sed 's|.*/||; s|\.k\?map\.gz$||; s|\.inc$||' | grep -v '^include' | sort -u)"
+[ -n "$layouts" ] || layouts="us"
+keymap="$(printf '%s\n' "$layouts" | grep -vx us | sed '1i us' | gum filter --height 12 --placeholder "us")" || exit 1
+[ -n "$keymap" ] || keymap=us
+loadkeys "$keymap" 2>/dev/null || true
+
+header "Your account"
+while :; do
+  username="$(gum input --placeholder "username (lowercase, letters/digits/-/_)")" || exit 1
+  if printf '%s' "$username" | grep -Eq '^[a-z_][a-z0-9_-]{0,31}$' && [ "$username" != root ]; then
+    if [ "$username" = "$old_user" ] || ! getent passwd "$username" >/dev/null; then break; fi
+    gum style --foreground 1 "That user already exists."
+    continue
+  fi
+  gum style --foreground 1 "Invalid username."
+done
+while :; do
+  password="$(gum input --password --placeholder "password")" || exit 1
+  confirm="$(gum input --password --placeholder "confirm password")" || exit 1
+  if [ -z "$password" ]; then gum style --foreground 1 "Password cannot be empty."; continue; fi
+  if [ "$password" != "$confirm" ]; then gum style --foreground 1 "Passwords do not match."; continue; fi
+  break
+done
+full_name="$(gum input --placeholder "full name (optional, used for git)")" || exit 1
+email="$(gum input --placeholder "email (optional, used for git)")" || exit 1
+
+header "Hostname"
+while :; do
+  hostname="$(gum input --placeholder "hostname" --value "$(cat /etc/hostname 2>/dev/null || echo saltos)")" || exit 1
+  if printf '%s' "$hostname" | grep -Eq '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'; then break; fi
+  gum style --foreground 1 "Invalid hostname."
+done
+
+header "Applying"
+old_home="$(getent passwd "$old_user" | cut -d: -f6)"
+new_home="/home/$username"
+if [ "$username" != "$old_user" ]; then
+  usermod -l "$username" -d "$new_home" -m "$old_user" || exit 1
+  groupmod -n "$username" "$old_user" 2>/dev/null || true
+  for etc in /strata/*/etc; do
+    [ -f "$etc/passwd" ] || continue
+    sed -i "s|^$old_user:\(.*\):$old_home:|$username:\1:$new_home:|; s|^$old_user:|$username:|" "$etc/passwd"
+    [ -f "$etc/shadow" ] && sed -i "s|^$old_user:|$username:|" "$etc/shadow"
+    [ -f "$etc/group" ] && sed -i "s|^$old_user:|$username:|; s|\([:,]\)$old_user\(,\|$\)|\1$username\2|g" "$etc/group"
+  done
+  for f in /etc/sudoers.d/91-saltos-omakase /strata/*/etc/sudoers.d/91-saltos-omakase /etc/sv/saltos-serial-console/run; do
+    [ -f "$f" ] && sed -i "s|\b$old_user\b|$username|g" "$f"
+  done
+fi
+printf '%s:%s\n' "$username" "$password" | chpasswd || exit 1
+passwd -u "$username" >/dev/null 2>&1 || true
+printf '%s\n' "$username" >/etc/saltos-omakase-user
+
+printf '%s\n' "$hostname" >/etc/hostname
+hostname "$hostname" 2>/dev/null || true
+sed -i "s|^127\.0\.1\.1.*|127.0.1.1\t$hostname|" /etc/hosts
+grep -q '^127\.0\.1\.1' /etc/hosts || printf '127.0.1.1\t%s\n' "$hostname" >>/etc/hosts
+
+printf 'KEYMAP=%s\n' "$keymap" >/etc/vconsole.conf
+mkdir -p "$new_home/.config/sway/config.d"
+printf 'input type:keyboard xkb_layout %s\n' "${keymap%%-*}" >"$new_home/.config/sway/config.d/keyboard.conf"
+
+if [ -n "$full_name" ] || [ -n "$email" ]; then
+  {
+    echo "[user]"
+    [ -n "$full_name" ] && printf '\tname = %s\n' "$full_name"
+    [ -n "$email" ] && printf '\temail = %s\n' "$email"
+    echo "[init]"
+    printf '\tdefaultBranch = main\n'
+  } >"$new_home/.gitconfig"
+fi
+chown -R "$username:$username" "$new_home"
+
+rm -f /etc/saltos-firstboot-pending
+clear
+gum style --foreground 2 --bold "All set, $username. Starting your desktop..."
+sleep 1
+exit 0

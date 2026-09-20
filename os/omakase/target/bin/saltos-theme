@@ -1,0 +1,146 @@
+#!/bin/bash
+set -euo pipefail
+
+SHARE="${SALTOS_SHARE:-/opt/saltos/share}"
+THEMES="$SHARE/themes"
+TEMPLATES="$SHARE/templates"
+CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}"
+OUT="$CONFIG/saltos/theme"
+CURRENT="$CONFIG/saltos/current-theme"
+
+usage() {
+  cat <<EOF
+usage: saltos-theme <command>
+
+  list            list available themes
+  current         print the active theme
+  set <name>      apply a theme to sway, foot, waybar, mako, swaylock, neovim and GTK
+  next            cycle to the next theme
+  render <name>   render a theme's files without reloading anything
+EOF
+}
+
+list_themes() {
+  find "$THEMES" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort
+}
+
+current_theme() {
+  if [ -s "$CURRENT" ]; then cat "$CURRENT"; else echo tokyo-night; fi
+}
+
+render_template() {
+  local src="$1" dst="$2" expr=() v
+  for v in THEME_NAME THEME_LABEL BG BG_ALT FG ACCENT SELECTION MUTED \
+           COLOR0 COLOR1 COLOR2 COLOR3 COLOR4 COLOR5 COLOR6 COLOR7 \
+           COLOR8 COLOR9 COLOR10 COLOR11 COLOR12 COLOR13 COLOR14 COLOR15 \
+           NVIM_COLORSCHEME NVIM_PLUGIN GTK_THEME ICON_THEME CURSOR_THEME CURSOR_SIZE WALLPAPER FOOT_COLORS; do
+    expr+=(-e "s|\${$v}|${!v}|g")
+  done
+  sed "${expr[@]}" "$src" >"$dst.tmp"
+  mv -f "$dst.tmp" "$dst"
+}
+
+foot_colors_section() {
+  local ver major minor
+  ver="$(desktop_cmd foot --version 2>/dev/null | sed -n 's/^foot version: \([0-9]*\.[0-9]*\).*/\1/p')"
+  major="${ver%%.*}"
+  minor="${ver#*.}"
+  if [ -n "$ver" ] && { [ "$major" -gt 1 ] || [ "$minor" -ge 26 ]; }; then
+    echo colors-dark
+  else
+    echo colors
+  fi
+}
+
+render() {
+  local name="$1" dir="$THEMES/$1"
+  [ -f "$dir/theme.sh" ] || { echo "saltos-theme: unknown theme '$name'" >&2; echo "available: $(list_themes | tr '\n' ' ')" >&2; return 1; }
+  . "$dir/theme.sh"
+  if [ -f "$dir/background.png" ]; then
+    WALLPAPER="$dir/background.png fill"
+  elif [ -f "$dir/background.jpg" ]; then
+    WALLPAPER="$dir/background.jpg fill"
+  else
+    WALLPAPER="#$BG solid_color"
+  fi
+  FOOT_COLORS="$(foot_colors_section)"
+  export THEME_NAME THEME_LABEL BG BG_ALT FG ACCENT SELECTION MUTED \
+         COLOR0 COLOR1 COLOR2 COLOR3 COLOR4 COLOR5 COLOR6 COLOR7 \
+         COLOR8 COLOR9 COLOR10 COLOR11 COLOR12 COLOR13 COLOR14 COLOR15 \
+         NVIM_COLORSCHEME NVIM_PLUGIN GTK_THEME ICON_THEME CURSOR_THEME CURSOR_SIZE WALLPAPER FOOT_COLORS
+  mkdir -p "$OUT" "$CONFIG/gtk-3.0" "$CONFIG/gtk-4.0" "$CONFIG/mako" "$CONFIG/swaylock" "$CONFIG/nvim/lua"
+  render_template "$TEMPLATES/sway.conf" "$OUT/sway.conf"
+  render_template "$TEMPLATES/foot.ini" "$OUT/foot.ini"
+  render_template "$TEMPLATES/waybar.css" "$OUT/waybar.css"
+  render_template "$TEMPLATES/mako.ini" "$CONFIG/mako/config"
+  render_template "$TEMPLATES/swaylock.conf" "$CONFIG/swaylock/config"
+  render_template "$TEMPLATES/theme.lua" "$CONFIG/nvim/lua/saltos_theme.lua"
+  render_template "$TEMPLATES/gtk-settings.ini" "$CONFIG/gtk-3.0/settings.ini"
+  render_template "$TEMPLATES/gtk-settings.ini" "$CONFIG/gtk-4.0/settings.ini"
+  render_template "$TEMPLATES/gtk.css" "$CONFIG/gtk-3.0/gtk.css"
+  render_template "$TEMPLATES/gtk.css" "$CONFIG/gtk-4.0/gtk.css"
+  mkdir -p "$HOME/.icons/default"
+  printf '[Icon Theme]\nInherits=%s\n' "$CURSOR_THEME" >"$HOME/.icons/default/index.theme"
+  printf '%s\n' "$name" >"$CURRENT"
+}
+
+sway_socket() {
+  [ -n "${SWAYSOCK:-}" ] && [ -S "$SWAYSOCK" ] && { echo "$SWAYSOCK"; return 0; }
+  local rt="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" s
+  for s in "$rt"/sway-ipc.*.sock; do
+    [ -S "$s" ] && { echo "$s"; return 0; }
+  done
+  return 1
+}
+
+desktop_cmd() {
+  if command -v "$1" >/dev/null 2>&1; then
+    "$@"
+  elif [ -r /etc/saltos-omakase-stratum ] && command -v salt >/dev/null 2>&1; then
+    salt run "$(cat /etc/saltos-omakase-stratum)" "$@"
+  else
+    return 127
+  fi
+}
+
+reload() {
+  local sock
+  if sock="$(sway_socket)"; then
+    SWAYSOCK="$sock" desktop_cmd swaymsg reload >/dev/null 2>&1 || true
+    pkill -USR2 -x waybar 2>/dev/null || true
+    desktop_cmd makoctl reload >/dev/null 2>&1 || true
+    desktop_cmd gsettings set org.gnome.desktop.interface gtk-theme "$GTK_THEME" 2>/dev/null || true
+    desktop_cmd gsettings set org.gnome.desktop.interface icon-theme "$ICON_THEME" 2>/dev/null || true
+    desktop_cmd gsettings set org.gnome.desktop.interface cursor-theme "$CURSOR_THEME" 2>/dev/null || true
+    desktop_cmd gsettings set org.gnome.desktop.interface color-scheme prefer-dark 2>/dev/null || true
+    SWAYSOCK="$sock" desktop_cmd notify-send -a saltos-theme "Theme" "$THEME_LABEL" 2>/dev/null || true
+  fi
+}
+
+case "${1:-}" in
+  list) list_themes ;;
+  current) current_theme ;;
+  render) [ -n "${2:-}" ] || { usage >&2; exit 2; }; render "$2" ;;
+  set)
+    [ -n "${2:-}" ] || { usage >&2; exit 2; }
+    render "$2"
+    reload
+    echo "theme set to $2"
+    ;;
+  next)
+    cur="$(current_theme)"
+    mapfile -t all < <(list_themes)
+    nxt="${all[0]}"
+    for i in "${!all[@]}"; do
+      if [ "${all[$i]}" = "$cur" ]; then
+        nxt="${all[$(( (i + 1) % ${#all[@]} ))]}"
+        break
+      fi
+    done
+    render "$nxt"
+    reload
+    echo "theme set to $nxt"
+    ;;
+  -h|--help|help|"") usage ;;
+  *) usage >&2; exit 2 ;;
+esac
