@@ -63,11 +63,17 @@ jobs:
         with:
           path: saltos-build
           key: native-base-x86_64-tc-${{ hashFiles('recipes/**', 'os/bootstrap/build-order.toml') }}
+      - name: Pack stage output
+        run: |
+          sudo tar -C saltos-build --zstd -cf saltos-build-x86_64.tar.zst .
+          sudo chown "$USER" saltos-build-x86_64.tar.zst
+          df -h /
       - name: Upload stage output
         uses: actions/upload-artifact@v4
         with:
           name: saltos-build-x86_64
-          path: saltos-build
+          path: saltos-build-x86_64.tar.zst
+          compression-level: 0
           retention-days: 1
 
   base:
@@ -98,14 +104,18 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: saltos-build-x86_64
-          path: saltos-build
+      - name: Unpack toolchain output
+        run: |
+          mkdir -p saltos-build
+          sudo tar -C saltos-build --zstd -xf saltos-build-x86_64.tar.zst
+          rm -f saltos-build-x86_64.tar.zst
+          df -h /
       - name: Build base stage
         run: |
           export PATH="$PWD/build/src/salt:$PATH"
           export SALT_ARCH=x86_64 OUT="$PWD/saltos-build"
           export STAGES="base"
           sudo --preserve-env=PATH,SALT_ARCH,OUT,STAGES os/bootstrap/bootstrap.sh
-          sudo chown -R "$USER" saltos-build 2>/dev/null || true
       - name: Upload bootstrap logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -113,11 +123,18 @@ jobs:
           name: native-base-logs-base
           path: saltos-build/x86_64/logs/*.log
           if-no-files-found: ignore
+      - name: Pack base output
+        run: |
+          sudo rm -rf saltos-build/x86_64/sysroot/var/tmp/salt-build
+          sudo tar -C saltos-build --zstd -cf saltos-build-x86_64.tar.zst .
+          sudo chown "$USER" saltos-build-x86_64.tar.zst
+          df -h /
       - name: Upload base output
         uses: actions/upload-artifact@v4
         with:
           name: saltos-build-x86_64
-          path: saltos-build
+          path: saltos-build-x86_64.tar.zst
+          compression-level: 0
           overwrite: true
           retention-days: 1
 
@@ -125,7 +142,6 @@ jobs:
     name: assemble + boot-test native ISO (x86_64)
     needs: base
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Free up disk space
@@ -150,7 +166,11 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: saltos-build-x86_64
-          path: saltos-build
+      - name: Unpack base output
+        run: |
+          mkdir -p saltos-build
+          sudo tar -C saltos-build --zstd -xf saltos-build-x86_64.tar.zst
+          rm -f saltos-build-x86_64.tar.zst
       - name: Assemble rootfs and ISO
         run: |
           SYSROOT="$PWD/saltos-build/x86_64/sysroot"
