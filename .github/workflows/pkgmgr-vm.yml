@@ -1,0 +1,90 @@
+name: pkgmgr-vm
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "src/halite/**"
+      - "src/salt/**"
+      - "tests/qemu_pkg_smoke.sh"
+      - "tests/qemu_pkg_drive.py"
+      - "os/ota/qemu-drive.py"
+      - "os/build/vm-x86.sh"
+      - "os/build/common.sh"
+      - ".github/workflows/pkgmgr-vm.yml"
+  pull_request:
+    paths:
+      - "src/halite/**"
+      - "src/salt/**"
+      - "tests/qemu_pkg_smoke.sh"
+      - "tests/qemu_pkg_drive.py"
+      - "os/ota/qemu-drive.py"
+      - "os/build/vm-x86.sh"
+      - "os/build/common.sh"
+      - ".github/workflows/pkgmgr-vm.yml"
+
+concurrency:
+  group: pkgmgr-vm-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  qemu:
+    name: package manager on a booted btrfs root (x86_64 UEFI, QEMU)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      OUT: ${{ github.workspace }}/out-pkg
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet \
+            /opt/hostedtoolcache/CodeQL /usr/local/.ghcup 2>/dev/null || true
+          df -h /
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config \
+            libzstd-dev libsodium-dev libsqlite3-dev build-essential \
+            gdisk dosfstools btrfs-progs grub-efi-amd64-bin grub-common \
+            zstd curl ca-certificates fdisk mount python3 \
+            qemu-system-x86 qemu-utils ovmf
+          if [ -e /dev/kvm ]; then
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+              | sudo tee /etc/udev/rules.d/99-kvm4all.rules > /dev/null
+            sudo udevadm control --reload-rules
+            sudo udevadm trigger --name-match=kvm
+          fi
+          ls -l /dev/kvm || echo "no /dev/kvm; qemu will use tcg"
+
+      - name: Build salt
+        run: |
+          cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+
+      - name: Build image, publish test repos, drive QEMU
+        run: |
+          sudo env OUT="$OUT" SALT_BIN="$PWD/build/src/salt/salt" \
+            SALTSETUP_BIN="$PWD/build/src/setup/salt-setup" \
+            sh tests/qemu_pkg_smoke.sh
+          sudo chown -R "$USER" "$OUT"
+
+      - name: Serial log summary
+        if: always()
+        run: |
+          [ -f "$OUT/driver.log" ] && cat "$OUT/driver.log" || true
+          [ -f "$OUT/serial.log" ] && tr -d '\033' < "$OUT/serial.log" | grep -a -E '^(ok|FAIL|boot |###|\+ sudo -n salt|SALTOS_PKG)' || true
+
+      - name: Upload serial + driver logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkgmgr-vm-logs
+          path: |
+            out-pkg/serial.log
+            out-pkg/driver.log
+            out-pkg/http.log
+          if-no-files-found: warn
