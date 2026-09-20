@@ -1,0 +1,28 @@
+role	arch	debian	fedora	void	alpine	opensuse
+compositor	sway swaybg swaylock swayidle	sway swaybg swaylock swayidle	sway swaybg swaylock swayidle	sway swaybg swaylock swayidle	sway swaybg swaylock swayidle	sway swaybg swaylock swayidle
+bar	waybar	waybar	waybar	Waybar	waybar	waybar
+notifications	mako libnotify	mako-notifier libnotify-bin	mako libnotify	mako libnotify	mako libnotify	mako libnotify-tools
+terminal	foot	foot	foot	foot	foot	foot
+xwayland	xorg-xwayland	xwayland	xorg-x11-server-Xwayland	xorg-server-xwayland	xwayland	xwayland
+portals	xdg-desktop-portal-wlr xdg-desktop-portal-gtk	xdg-desktop-portal-wlr xdg-desktop-portal-gtk	xdg-desktop-portal-wlr xdg-desktop-portal-gtk	xdg-desktop-portal-wlr xdg-desktop-portal-gtk	xdg-desktop-portal-wlr xdg-desktop-portal-gtk	xdg-desktop-portal-wlr xdg-desktop-portal-gtk
+polkit-agent	mate-polkit	mate-polkit	mate-polkit	mate-polkit	mate-polkit	mate-polkit
+audio	pipewire pipewire-pulse wireplumber pamixer pavucontrol	pipewire pipewire-pulse wireplumber pamixer pavucontrol	pipewire pipewire-pulseaudio wireplumber pamixer pavucontrol	pipewire wireplumber pamixer pavucontrol	pipewire wireplumber pamixer pavucontrol	pipewire pipewire-pulseaudio wireplumber pamixer pavucontrol
+media-keys	playerctl brightnessctl	playerctl brightnessctl	playerctl brightnessctl	playerctl brightnessctl	playerctl brightnessctl	playerctl brightnessctl
+clipboard	wl-clipboard cliphist	wl-clipboard cliphist	wl-clipboard	wl-clipboard cliphist	wl-clipboard	wl-clipboard
+screenshot	grim slurp satty	grim slurp	grim slurp	grim slurp satty	grim slurp	grim slurp
+files	thunar thunar-volman gvfs	thunar thunar-volman gvfs	thunar thunar-volman gvfs	Thunar thunar-volman gvfs	thunar thunar-volman gvfs	thunar thunar-volman gvfs
+image	imv	imv	imv	imv	imv	imv
+video	mpv	mpv	mpv	mpv	mpv	mpv
+pdf	zathura zathura-pdf-mupdf	zathura zathura-pdf-poppler	zathura zathura-pdf-mupdf	zathura zathura-pdf-mupdf	zathura zathura-pdf-mupdf	zathura zathura-plugin-pdf-poppler
+editor	neovim ripgrep fd fzf git	neovim ripgrep fd-find fzf git	neovim ripgrep fd-find fzf git	neovim ripgrep fd fzf git	neovim ripgrep fd fzf git	neovim ripgrep fd fzf git
+cli	btop fastfetch lazygit	btop fastfetch	btop fastfetch	btop fastfetch lazygit	btop fastfetch lazygit	btop fastfetch lazygit
+bluetooth-tui	bluetui	-	-	-	-	-
+fonts	ttf-jetbrains-mono-nerd noto-fonts noto-fonts-emoji otf-font-awesome	fonts-jetbrains-mono fonts-noto-core fonts-noto-color-emoji fonts-font-awesome	jetbrains-mono-fonts google-noto-sans-fonts google-noto-color-emoji-fonts fontawesome-fonts-all	dejavu-fonts-ttf nerd-fonts-symbols-ttf noto-fonts-ttf noto-fonts-emoji font-awesome6	font-jetbrains-mono-nerd font-noto font-noto-emoji font-awesome	jetbrains-mono-fonts noto-sans-fonts noto-coloremoji-fonts fontawesome-fonts
+gtk	gtk3 gtk4 adw-gtk-theme papirus-icon-theme adwaita-cursors	libgtk-3-0 libgtk-4-1 gnome-themes-extra papirus-icon-theme adwaita-icon-theme	gtk3 gtk4 adw-gtk3-theme papirus-icon-theme adwaita-cursor-theme	gtk+3 gtk4 gnome-themes-extra papirus-icon-theme adwaita-icon-theme	gtk+3.0 gtk4.0 adw-gtk3 papirus-icon-theme adwaita-icon-theme	gtk3 gtk4 gtk3-metatheme-adwaita papirus-icon-theme adwaita-icon-theme
+xdg	xdg-utils xdg-user-dirs	xdg-utils xdg-user-dirs	xdg-utils xdg-user-dirs	xdg-utils xdg-user-dirs	xdg-utils xdg-user-dirs	xdg-utils xdg-user-dirs
+gum	gum	gum	gum	gum	gum	-
+helium-runtime	nss gtk3 alsa-lib libxkbcommon libcups mesa libxcomposite libxrandr libxdamage	libnss3 libgtk-3-0 libasound2 libxkbcommon0 libcups2 libgl1 libxcomposite1 libxrandr2 libxdamage1	nss gtk3 alsa-lib libxkbcommon cups-libs mesa-libGL libXcomposite libXrandr libXdamage	nss gtk+3 alsa-lib libxkbcommon libcups libGL libXcomposite libXrandr libXdamage	nss gtk+3.0 alsa-lib libxkbcommon cups-libs mesa-gl libxcomposite libxrandr libxdamage	mozilla-nss gtk3 alsa libxkbcommon0 libcups2 Mesa-libGL1 libXcomposite1 libXrandr2 libXdamage1
+vicinae-runtime	bash fontconfig freetype2 libglvnd libxkbcommon wayland	bash fontconfig libfreetype6 libgl1 libxkbcommon0 libwayland-client0	bash fontconfig freetype libglvnd libxkbcommon libwayland-client	bash fontconfig freetype libglvnd libxkbcommon wayland	bash fontconfig freetype mesa-gl libxkbcommon wayland-libs-client	bash fontconfig libfreetype6 libglvnd libxkbcommon0 libwayland-client0
+network-tui	networkmanager	network-manager	NetworkManager-tui	NetworkManager	networkmanager-tui	NetworkManager-tui
+bluetooth-cli	bluez-utils	bluez	bluez	bluez	bluez	bluez
+session	dbus bash sudo	dbus dbus-bin bash sudo	dbus dbus-daemon bash sudo	dbus bash sudo	dbus bash sudo	dbus-1 bash sudo
