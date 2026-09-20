@@ -1051,7 +1051,7 @@ Design goal:
 | `base`    | `os/iso/live-build.sh` (`EDITION=base`) | Console live ISO; `salt-setup` installs the native core and a chosen primary stratum. Unopinionated.                                                                          |
 | `installer` | `os/iso/live-build.sh` (`EDITION=installer`) | LXQt live session with the Calamares GUI installer and the text installer; both drive `salt-setup`. Unopinionated.                                                    |
 | `desktop` | `os/iso/live-build.sh` (`EDITION=desktop`) | Graphical live ISO with the unopinionated desktop from section 17.                                                                                                        |
-| `omakase` | `os/omakase/build/iso.sh`               | Opinionated Sway desktop: gum wizard on the ISO, offline Arch mirror (online for other strata), Tokyo Night and six more themes, `saltos-theme`, `saltos-menu`, `saltos-update`. |
+| `omakase` | `os/omakase/build/iso.sh`               | Opinionated Sway desktop: gum wizard on the ISO, offline Arch mirror (online for other strata), Tokyo Night and six more themes, `saltos-theme`, `saltos-menu`, `saltos-update`. x86_64 and aarch64 (Arch Linux ARM). |
 
 The omakase edition never builds desktop software as native `.grain` packages: Sway, foot, Waybar, Neovim, fonts, and the curated apps come from the stratum picked in the wizard, mapped per distribution in `os/omakase/packages/packages.tsv`. It reuses `salt-setup --from` for partitioning, base, stratum bootstrap, and boot. See `docs/omakase.md`.
 

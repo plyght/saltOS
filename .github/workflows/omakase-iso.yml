@@ -139,6 +139,135 @@ jobs:
           path: build-iso/src/salt/salt
           retention-days: 1
 
+  build-aarch64:
+    name: omakase ISO (aarch64)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet \
+            /opt/hostedtoolcache/CodeQL /usr/local/.ghcup 2>/dev/null || true
+          df -h /
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            mtools dosfstools qemu-system-arm qemu-system-data qemu-efi-aarch64 qemu-utils \
+            socat netpbm imagemagick zstd curl gpg gpgv squashfs-tools binutils
+          if [ -e /dev/kvm ]; then
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+              | sudo tee /etc/udev/rules.d/99-kvm4all.rules > /dev/null
+            sudo udevadm control --reload-rules
+            sudo udevadm trigger --name-match=kvm
+          fi
+          if [ -w /dev/kvm ]; then
+            echo "KVM available"
+            echo "INSTALL_TIMEOUT=1500" >> "$GITHUB_ENV"
+            echo "BOOT_TIMEOUT=420" >> "$GITHUB_ENV"
+          else
+            echo "no writable /dev/kvm: running under TCG"
+            echo "INSTALL_TIMEOUT=7200" >> "$GITHUB_ENV"
+            echo "BOOT_TIMEOUT=2400" >> "$GITHUB_ENV"
+            echo "WALLPAPER_TIMEOUT=600" >> "$GITHUB_ENV"
+          fi
+
+      - name: Cache Arch Linux ARM offline mirror
+        uses: actions/cache@v4
+        with:
+          path: out-omakase/mirror/arch
+          key: omakase-alarm-mirror-${{ hashFiles('os/omakase/packages/packages.tsv', 'os/omakase/build/arch-mirror.sh') }}-${{ github.run_id }}
+          restore-keys: |
+            omakase-alarm-mirror-${{ hashFiles('os/omakase/packages/packages.tsv', 'os/omakase/build/arch-mirror.sh') }}-
+
+      - name: Cache vendor bundles
+        uses: actions/cache@v4
+        with:
+          path: .omakase-vendor-cache
+          key: omakase-vendor-aarch64-${{ hashFiles('os/omakase/build/vendor.sh') }}
+
+      - name: Cache wallpapers
+        uses: actions/cache@v4
+        with:
+          path: .omakase-wallpaper-cache
+          key: omakase-wallpapers-${{ hashFiles('os/omakase/wallpapers/*.toml') }}
+
+      - name: Download + verify Unsplash wallpapers
+        run: |
+          WALLPAPER_CACHE="$PWD/.omakase-wallpaper-cache" OUT="$PWD/out-omakase/wallpapers" bash os/omakase/build/wallpapers.sh
+
+      - name: Build Arch Linux ARM offline mirror
+        run: |
+          [ -f out-omakase/mirror/arch/offline.db ] && [ -f out-omakase/mirror/arch/ArchLinuxARM-aarch64-latest.tar.gz ] \
+            && [ -s out-omakase/mirror/arch/bootstrap.sha256 ] \
+            || OUT="$PWD/out-omakase/mirror/arch" bash os/omakase/build/arch-mirror.sh aarch64
+
+      - name: Stage vendor bundles
+        run: |
+          VENDOR_CACHE="$PWD/.omakase-vendor-cache" OUT="$PWD/out-omakase/vendor" bash os/omakase/build/vendor.sh aarch64
+
+      - name: Build salt + salt-setup against the Debian base (arm64)
+        run: |
+          docker run --rm -v "$PWD":/src -w /src debian:bookworm bash -c '
+            set -e
+            apt-get update
+            apt-get install -y --no-install-recommends \
+              cmake ninja-build pkg-config g++ ca-certificates \
+              libzstd-dev libsodium-dev libsqlite3-dev
+            cmake -G Ninja -B build-iso -DCMAKE_BUILD_TYPE=Release
+            cmake --build build-iso --target salt salt-setup'
+
+      - name: Build omakase ISO (in a clean Debian container)
+        run: |
+          docker run --rm --privileged -v "$PWD":/src -w /src debian:bookworm bash -c '
+            set -e
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update
+            apt-get install -y --no-install-recommends \
+              mmdebstrap debian-archive-keyring squashfs-tools xorriso mtools \
+              grub-efi-arm64-bin grub-common ca-certificates curl zstd
+            WORK=/src/out-omakase/work OUT=/src/out-omakase \
+              MIRROR_DIR=/src/out-omakase/mirror/arch VENDOR_DIR=/src/out-omakase/vendor \
+              WALLPAPER_DIR=/src/out-omakase/wallpapers \
+              REPO_DIR=/src SALT_BIN=/src/build-iso/src/salt/salt \
+              SALTSETUP_BIN=/src/build-iso/src/setup/salt-setup \
+              bash os/omakase/build/iso.sh aarch64'
+          sudo rm -rf out-omakase/work
+          sudo chown -R "$USER" out-omakase
+          ls -lh out-omakase/*.iso
+
+      - name: Unattended install + reboot + Sway + theme (QEMU aarch64)
+        run: |
+          ARCH=aarch64 bash os/omakase/build/test-vm.sh out-omakase/saltos-omakase-aarch64.iso "$PWD/omakase-test"
+
+      - name: Collect logs
+        if: always()
+        run: |
+          mkdir -p omakase-logs
+          cp omakase-test/*.log omakase-logs/ 2>/dev/null || true
+          cp omakase-test/desktop.png omakase-test/wallpaper.png omakase-logs/ 2>/dev/null || true
+          cp omakase-test/install.toml omakase-logs/ 2>/dev/null || true
+          echo "----- install serial tail -----"; tail -n 60 omakase-logs/install-serial.log 2>/dev/null || true
+          echo "----- boot serial tail -----"; tail -n 60 omakase-logs/boot-serial.log 2>/dev/null || true
+
+      - name: Upload ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: saltos-omakase-aarch64
+          path: out-omakase/saltos-omakase-aarch64.iso
+          retention-days: 14
+
+      - name: Upload test logs and screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: omakase-qemu-logs-aarch64
+          path: omakase-logs
+          retention-days: 14
+
   install-paths:
     name: ${{ matrix.mode }} install (QEMU)
     needs: build

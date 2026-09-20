@@ -9,6 +9,7 @@ CPUS="${CPUS:-2}"
 DISK_SIZE="${DISK_SIZE:-24G}"
 INSTALL_TIMEOUT="${INSTALL_TIMEOUT:-1500}"
 BOOT_TIMEOUT="${BOOT_TIMEOUT:-420}"
+WALLPAPER_TIMEOUT="${WALLPAPER_TIMEOUT:-120}"
 THEME="${THEME:-gruvbox}"
 USERNAME="${OMAKASE_USER:-salt}"
 PASSWORD="${OMAKASE_PASSWORD:-saltos}"
@@ -51,12 +52,25 @@ case "$ARCH" in
     done
     [ -n "${CODE:-}" ] && [ -n "${VARS_SRC:-}" ] || { echo "test-vm: OVMF firmware not found" >&2; exit 1; }
     MACHINE=(-machine "q35,accel=kvm:tcg" -cpu max)
+    VGA_DEV=(-device virtio-vga)
+    CDROM_DEV=(-device "ide-cd,drive=cd,bootindex=0")
     ;;
   aarch64)
     QEMU=qemu-system-aarch64
-    CODE=/usr/share/AAVMF/AAVMF_CODE.fd
-    VARS_SRC=/usr/share/AAVMF/AAVMF_VARS.fd
-    MACHINE=(-machine "virt,accel=kvm:tcg" -cpu max)
+    for c in /usr/share/AAVMF/AAVMF_CODE.fd /usr/share/qemu-efi-aarch64/QEMU_EFI.fd /usr/share/edk2/aarch64/QEMU_EFI-pflash.raw; do
+      [ -f "$c" ] && { CODE="$c"; break; }
+    done
+    for v in /usr/share/AAVMF/AAVMF_VARS.fd /usr/share/edk2/aarch64/vars-template-pflash.raw; do
+      [ -f "$v" ] && { VARS_SRC="$v"; break; }
+    done
+    [ -n "${CODE:-}" ] && [ -n "${VARS_SRC:-}" ] || { echo "test-vm: AAVMF firmware not found" >&2; exit 1; }
+    if [ "$(uname -m)" = aarch64 ] && [ -w /dev/kvm ]; then
+      MACHINE=(-machine "virt,accel=kvm,gic-version=max" -cpu host)
+    else
+      MACHINE=(-machine virt -accel "tcg,thread=multi" -cpu cortex-a72)
+    fi
+    VGA_DEV=(-device virtio-gpu-pci)
+    CDROM_DEV=(-device "virtio-scsi-pci,id=scsi0" -device "scsi-cd,bus=scsi0.0,drive=cd,bootindex=0")
     ;;
   *) echo "test-vm: unsupported arch $ARCH" >&2; exit 1 ;;
 esac
@@ -235,10 +249,10 @@ rm -f install-serial.log serial.sock qmon
 "$QEMU" "${MACHINE[@]}" -m "$MEM" -smp "$CPUS" -no-reboot -display none \
   -drive if=pflash,format=raw,readonly=on,file="$CODE" \
   -drive if=pflash,format=raw,file=ovmf-vars.fd \
-  -device virtio-vga -device virtio-rng-pci \
+  "${VGA_DEV[@]}" -device virtio-rng-pci \
   -drive file=target.qcow2,if=virtio,format=qcow2 \
   ${CIDATA_DRIVE[@]+"${CIDATA_DRIVE[@]}"} \
-  -drive file="$ISO",media=cdrom,if=none,id=cd -device ide-cd,drive=cd,bootindex=0 \
+  -drive file="$ISO",media=cdrom,if=none,id=cd "${CDROM_DEV[@]}" \
   -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
   -chardev socket,id=ser0,path=serial.sock,server=on,wait=off,logfile=install-serial.log \
   -serial chardev:ser0 -monitor unix:qmon,server,nowait &
@@ -333,7 +347,7 @@ boot_installed() {
   "$QEMU" "${MACHINE[@]}" -m "$MEM" -smp "$CPUS" -no-reboot -display none \
     -drive if=pflash,format=raw,readonly=on,file="$CODE" \
     -drive if=pflash,format=raw,file=ovmf-vars.fd \
-    -device virtio-vga -device virtio-rng-pci -device virtio-keyboard-pci -device virtio-mouse-pci \
+    "${VGA_DEV[@]}" -device virtio-rng-pci -device virtio-keyboard-pci -device virtio-mouse-pci \
     -drive file=target.qcow2,if=virtio,format=qcow2 \
     -drive file=cidata.img,if=virtio,format=raw,readonly=on \
     -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
@@ -383,20 +397,27 @@ run_checked "saltos-theme set $THEME && echo SALTOS_THEME_OK \$(saltos-theme cur
 run_checked "sleep 3; pgrep -a swaybg | grep -q -- \"-i /usr/share/saltos/wallpapers/$THEME/01-\" && echo SALTOS_SWAYBG_PHOTO_OK" SALTOS_SWAYBG_PHOTO_OK 60 "swaybg shows the theme's first Unsplash photo"
 run_checked "saltos-wallpaper next && sleep 3 && pgrep -a swaybg | grep -q -- \"-i /usr/share/saltos/wallpapers/$THEME/\$(saltos-wallpaper current)\" && [ \"\$(saltos-wallpaper current)\" != \"\$(saltos-wallpaper list | head -1)\" ] && echo SALTOS_WALLPAPER_NEXT_OK" SALTOS_WALLPAPER_NEXT_OK 60 "saltos-wallpaper next cycles swaybg to the second photo"
 run_checked "[ -s /usr/share/saltos/wallpapers/CREDITS ] && salt run $DISTRO grep -q unsplash.com /usr/share/saltos/wallpapers/CREDITS && echo SALTOS_WALLPAPER_CREDITS_OK" SALTOS_WALLPAPER_CREDITS_OK 60 "wallpaper CREDITS shipped on host and visible in the stratum"
-sleep 2
-printf 'screendump wallpaper.ppm\n' | socat -T 2 - UNIX-CONNECT:qmon >/dev/null 2>&1 || true
-sleep 3
-if [ -f wallpaper.ppm ] && command -v pnmtopng >/dev/null; then
-  pnmtopng wallpaper.ppm >wallpaper.png 2>/dev/null && echo "screenshot: $OUT/wallpaper.png"
-  if command -v identify >/dev/null; then
+if command -v pnmtopng >/dev/null && command -v identify >/dev/null; then
+  colors=0 n=0
+  while [ $n -lt "$WALLPAPER_TIMEOUT" ]; do
+    sleep 5
+    n=$((n + 5))
+    rm -f wallpaper.ppm
+    printf 'screendump wallpaper.ppm\n' | socat -T 2 - UNIX-CONNECT:qmon >/dev/null 2>&1 || true
+    sleep 3
+    [ -f wallpaper.ppm ] || continue
+    pnmtopng wallpaper.ppm >wallpaper.png 2>/dev/null || continue
     colors="$(identify -format '%k' wallpaper.png 2>/dev/null || echo 0)"
-    if [ "$colors" -lt 2000 ]; then
-      echo "wallpaper screenshot has only $colors distinct colours: swaybg is not showing a photo FAILED"; stop_vm; exit 1
-    fi
-    echo "wallpaper screenshot has $colors distinct colours (a photo, not a solid fill) OK"
+    [ "$colors" -ge 2000 ] && break
+  done
+  [ -f wallpaper.png ] && echo "screenshot: $OUT/wallpaper.png"
+  if [ "$colors" -lt 2000 ]; then
+    echo "wallpaper screenshot has only $colors distinct colours after ${n}s: swaybg is not showing a photo FAILED"; stop_vm; exit 1
   fi
+  echo "wallpaper screenshot has $colors distinct colours (a photo, not a solid fill) OK"
 fi
 run_checked "ps -o user=,supgrp= -C sway | grep -q '^$USERNAME .*seat' && echo SALTOS_SESSION_IDENTITY_OK" SALTOS_SESSION_IDENTITY_OK 60 "sway runs as $USERNAME with host groups (real uid, not a userns)"
+run_checked "[ \"\$(salt run $DISTRO id -un)\" = $USERNAME ] && [ \"\$(salt run $DISTRO getent passwd \$(id -u) | cut -d: -f1)\" = $USERNAME ] && echo SALTOS_STRATUM_IDENTITY_OK" SALTOS_STRATUM_IDENTITY_OK 60 "$USERNAME's uid resolves to $USERNAME inside the $DISTRO stratum (no stock rootfs account)"
 run_checked "SWAYSOCK=\$(ls /run/user/\$(id -u)/sway-ipc.*.sock | head -n1) salt run $DISTRO swaymsg exec \"sh -c 'sudo -n salt stratum list >/tmp/saltos-sudo-test 2>&1; echo rc=\\\$? >>/tmp/saltos-sudo-test'\" && sleep 6 && grep -q '^rc=0' /tmp/saltos-sudo-test && grep -q '^$DISTRO ' /tmp/saltos-sudo-test && echo SALTOS_SESSION_SUDO_OK" SALTOS_SESSION_SUDO_OK 90 "sudo salt works from inside the desktop session"
 serial_send "$(sudo_cmd "sv status /etc/runit/runsvdir/current/*") 2>/dev/null | sed 's/^/SALTOS_SV /'"
 sleep 5

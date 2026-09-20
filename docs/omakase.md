@@ -75,6 +75,52 @@ Vicinae, Helium, and gum are not packaged by every stratum; `build/vendor.sh`
 pins their upstream releases with SHA-256 checksums and the installer places
 them under `/opt/saltos/vendor` with wrappers on `PATH`, running against the
 stratum's runtime libraries (`helium-runtime` / `vicinae-runtime` rows).
+Helium's tarball is additionally checked against its detached `.asc`
+signature with the pinned upstream signing key
+(`build/helium-signing-key.asc`); Vicinae's AppImage is unpacked at build
+time with `unsquashfs`, so nothing needs FUSE at runtime.
+
+### aarch64 edition
+
+`iso.sh aarch64` produces `saltos-omakase-aarch64.iso`, a UEFI-only image for
+64-bit ARM machines and VMs (`qemu-system-aarch64 -machine virt` under
+AAVMF/`QEMU_EFI`). It is the same live system and installer built from the
+arm64 Debian base; the differences are all in what gets staged:
+
+- `build/vendor.sh aarch64` pins `Vicinae-aarch64.AppImage`,
+  `helium-<ver>-arm64_linux.tar.xz` and `gum_<ver>_Linux_arm64.tar.gz`.
+- The default stratum is **Arch Linux ARM**: `strata/arch-aarch64.toml`
+  (picked over `arch.toml` whenever an `<name>-<arch>.toml` recipe exists)
+  bootstraps from `ArchLinuxARM-aarch64-latest.tar.gz` and pulls from the
+  `core`/`extra`/`alarm`/`aur` ALARM repositories. `build/arch-mirror.sh
+  aarch64` imports that rootfs as a Docker image and runs its own `pacman` to
+  build the offline mirror, so the ISO installs Arch fully offline on ARM too.
+- The serial console is `ttyAMA0` (installer, dashboard markers and the Sway
+  session marker all follow `uname -m`).
+
+Stratum support on aarch64, checked with `VERIFY_ARCH=aarch64
+build/verify-packages.sh` against each distro's arm64 repositories:
+
+| Stratum  | aarch64 | Notes                                                        |
+|----------|---------|--------------------------------------------------------------|
+| arch     | yes     | Arch Linux ARM, offline by default; every curated package (incl. `bluetui`, `lazygit`, `satty`, `cliphist`) resolves |
+| debian   | yes     | same package map as x86_64                                   |
+| fedora   | yes     | same package map as x86_64                                   |
+| alpine   | yes     | same package map as x86_64                                   |
+| opensuse | yes     | same package map as x86_64                                   |
+| void     | yes     | same package map as x86_64                                   |
+
+All six resolve with 0 missing packages (the per-distro gaps listed under
+[Package maps](#package-maps) are the same on both architectures). The
+unattended `erase` install has been run end to end on aarch64
+(`ARCH=aarch64 build/test-vm.sh` under AAVMF, TCG on an x86_64 host: ~42 min
+install, then `SALTOS_SWAY_SESSION_OK`, theme switch, wallpaper cycle).
+
+Not supported / not tested on aarch64: legacy BIOS boot (the ISO is
+UEFI-only); the `encrypt`, `alongside` and `interactive` harness modes only
+run in the x86_64 CI matrix (the installer code path is identical, but there
+is no Windows boot manager to preserve on the ARM VMs and the TCG runtime of
+three more installs is prohibitive without KVM).
 
 ## Unattended installs (`cidata`)
 
@@ -109,7 +155,7 @@ containing:
   disk = "/dev/vda"
   mode = "disk"          # or "free" for dual boot into unallocated space
   encrypt = false
-  serial_console = true  # optional: autologin getty on ttyS0 + GRUB serial
+  serial_console = true  # optional: autologin getty on ttyS0 (ttyAMA0 on aarch64) + GRUB serial
   ```
 
 - `credentials` — `password=<plain text>` (mode 0600 on the target; omit when
@@ -136,7 +182,11 @@ existing partitions are byte-identical afterwards and GRUB lists `Windows Boot
 Manager`), and `interactive` (no cidata; drives the gum configurator over the
 serial console, toggling encryption on). `.github/workflows/omakase-iso.yml`
 runs `erase` in the build job and the other three as a matrix on the built ISO
-on every push touching `os/omakase/`.
+on every push touching `os/omakase/`. A separate `build-aarch64` job on an
+`ubuntu-24.04-arm` runner builds the ARM ISO and runs the `erase` path under
+`qemu-system-aarch64` (KVM when `/dev/kvm` is writable, otherwise TCG with
+`INSTALL_TIMEOUT`/`BOOT_TIMEOUT` raised accordingly; `ARCH=aarch64
+build/test-vm.sh` picks AAVMF, `virtio-gpu-pci` and a `virtio-scsi` CD-ROM).
 
 ## Desktop
 
