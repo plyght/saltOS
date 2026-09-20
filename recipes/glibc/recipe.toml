@@ -1,6 +1,6 @@
 name = "glibc"
 version = "2.41"
-release = 2
+release = 3
 summary = "GNU C Library"
 license = "LGPL-2.1-or-later"
 arch = ["x86_64", "aarch64"]
@@ -23,6 +23,8 @@ cd build
     libc_cv_slibdir=/usr/lib
 make -j"$SALT_JOBS"
 make DESTDIR="$SALT_DEST" install
+make DESTDIR="$SALT_DEST" localedata/install-locales \\
+    SUPPORTED-LOCALES="C.UTF-8/UTF-8 en_US.UTF-8/UTF-8"
 case "$SALT_ARCH" in
     x86_64)
         mkdir -p "$SALT_DEST/lib64"
