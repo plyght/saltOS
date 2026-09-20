@@ -5,7 +5,7 @@ on:
   push:
     paths:
       - "os/build/iso.sh"
-      - "os/iso/build-iso.sh"
+      - "os/iso/qemu-boot-test.sh"
       - "src/**"
       - "strata/**"
       - ".github/workflows/void-iso.yml"
@@ -14,7 +14,6 @@ jobs:
   build:
     name: Void-base ISO (x86_64)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -66,28 +65,9 @@ jobs:
         run: |
           ISO=$(ls out-iso/*.iso | head -1)
           echo "boot-testing Void ISO $ISO (boot + foreign-distro package install via salt)"
-          OK="SALTOS_PKG_E2E_OK"; FAIL="SALTOS_PKG_E2E_FAIL"; MEM=4096; TMO=1000; TRIES=95
-          set +e
-          timeout "$TMO" qemu-system-x86_64 \
-            -machine pc -m "$MEM" -vga std -display none -no-reboot \
-            -serial file:qemu.log \
-            -cdrom "$ISO" -boot d &
-          QPID=$!
-          for i in $(seq 1 "$TRIES"); do
-            sleep 10
-            grep -qE "$OK|$FAIL" qemu.log 2>/dev/null && break
-          done
-          kill $QPID 2>/dev/null || true
-          set -e
-          echo "----- qemu serial tail -----"
-          tail -n 200 qemu.log || true
-          grep -q "SALTOS_BOOT_OK" qemu.log && echo "boot: OK" || echo "boot: marker missing"
-          if grep -q "$OK" qemu.log; then
-            echo "VOID PKG E2E OK: bootstrapped a foreign distro and installed+ran a package via salt"
-          else
-            echo "VOID PKG E2E FAILED: $OK not found"
-            exit 1
-          fi
+          bash os/iso/qemu-boot-test.sh --iso "$ISO" --arch x86_64 --mem 4096 --timeout 1000 --net \
+            --ok SALTOS_PKG_E2E_OK --fail SALTOS_PKG_E2E_FAIL --also SALTOS_BOOT_OK --log qemu.log
+          echo "VOID PKG E2E OK: bootstrapped a foreign distro and installed+ran a package via salt"
 
       - name: Upload serial log
         if: always()

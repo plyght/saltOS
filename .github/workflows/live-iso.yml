@@ -75,53 +75,16 @@ jobs:
         run: |
           ISO=$(ls out-iso/*.iso | head -1)
           echo "boot-testing $ISO (edition=$EDITION e2e=$SALTOS_E2E)"
-          rm -f /tmp/qmon
-          NET=""
           if [ "$SALTOS_E2E" = "1" ]; then
-            MARKER="SALTOS_STRATUM_E2E_OK"; MEM=2560; TMO=540; TRIES=53; NET="-nic user,model=e1000"
+            bash os/iso/qemu-boot-test.sh --iso "$ISO" --arch x86_64 --mem 2560 --timeout 600 --net \
+              --ok SALTOS_STRATUM_E2E_OK --fail SALTOS_STRATUM_E2E_FAIL --also SALTOS_BOOT_OK --log qemu.log
           elif [ "$EDITION" = "desktop" ]; then
-            MARKER="SALTOS_DESKTOP_OK"; MEM=4096; TMO=420; TRIES=33
+            bash os/iso/qemu-boot-test.sh --iso "$ISO" --arch x86_64 --mem 4096 --timeout 600 \
+              --ok SALTOS_DESKTOP_OK --also SALTOS_BOOT_OK \
+              --log qemu.log --screenshot saltos-desktop.png
           else
-            MARKER="SALTOS_BOOT_OK"; MEM=2560; TMO=420; TRIES=40
-          fi
-          ACCEL="-accel tcg,thread=multi"
-          [ -w /dev/kvm ] && ACCEL="-accel kvm -cpu host"
-          set +e
-          timeout "$TMO" qemu-system-x86_64 $ACCEL \
-            -machine pc -m "$MEM" -vga std -display none -no-reboot $NET \
-            -serial file:qemu.log -monitor unix:/tmp/qmon,server,nowait \
-            -cdrom "$ISO" -boot d &
-          QPID=$!
-          for i in $(seq 1 "$TRIES"); do
-            sleep 10
-            grep -q "$MARKER" qemu.log 2>/dev/null && break
-            grep -q "SALTOS_STRATUM_E2E_FAIL" qemu.log 2>/dev/null && break
-          done
-          if [ "$EDITION" = "desktop" ]; then
-            sleep 15
-            printf 'screendump /tmp/screen.ppm\n' | socat - unix-connect:/tmp/qmon || true
-            sleep 3
-            [ -f /tmp/screen.ppm ] && pnmtopng /tmp/screen.ppm > saltos-desktop.png || echo "no screendump"
-          else
-            sleep 3
-          fi
-          kill $QPID 2>/dev/null
-          set -e
-          echo "----- qemu serial tail -----"
-          tail -n 80 qemu.log
-          if grep -q "$MARKER" qemu.log; then
-            echo "BOOT OK: found $MARKER"
-          else
-            echo "BOOT FAILED: $MARKER not found"
-            exit 1
-          fi
-          if [ "$EDITION" != "desktop" ]; then
-            if grep -q "SALTOS_STRATUM_OK" qemu.log; then
-              echo "STRATUM PLANE OK: found SALTOS_STRATUM_OK"
-            else
-              echo "STRATUM PLANE FAILED: SALTOS_STRATUM_OK not found"
-              exit 1
-            fi
+            bash os/iso/qemu-boot-test.sh --iso "$ISO" --arch x86_64 --mem 2560 --timeout 480 \
+              --ok SALTOS_BOOT_OK --also SALTOS_STRATUM_OK --log qemu.log
           fi
 
       - name: Upload screenshot

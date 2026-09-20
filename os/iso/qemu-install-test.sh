@@ -55,7 +55,8 @@ find_ovmf() {
 }
 
 ACCEL="tcg"
-[ -w /dev/kvm ] && [ "$ARCH" = "$(uname -m)" ] && ACCEL="kvm"
+ACCEL_OPTS=(-accel tcg,thread=multi)
+if [ -w /dev/kvm ] && [ "$ARCH" = "$(uname -m)" ]; then ACCEL="kvm"; ACCEL_OPTS=(-accel kvm); fi
 case "$ARCH" in
   x86_64)
     QEMU=qemu-system-x86_64
@@ -64,9 +65,9 @@ case "$ARCH" in
       CODE="$(find_ovmf /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd /usr/share/edk2/x64/OVMF_CODE.4m.fd /usr/share/qemu/OVMF.fd)" || { echo "OVMF firmware not found" >&2; exit 1; }
       VARS_SRC="${CODE%CODE*}VARS${CODE##*CODE}"
       cp "$VARS_SRC" "$OUT/OVMF_VARS.fd" 2>/dev/null || cp "$CODE" "$OUT/OVMF_VARS.fd"
-      MACHINE=(-machine q35,accel="$ACCEL" -drive if=pflash,format=raw,readonly=on,file="$CODE" -drive if=pflash,format=raw,file="$OUT/OVMF_VARS.fd")
+      MACHINE=(-machine q35 -drive if=pflash,format=raw,readonly=on,file="$CODE" -drive if=pflash,format=raw,file="$OUT/OVMF_VARS.fd")
     else
-      MACHINE=(-machine pc,accel="$ACCEL")
+      MACHINE=(-machine pc)
     fi
     CPU=(-cpu max -smp 2)
     [ "$ACCEL" = kvm ] && CPU=(-cpu host -smp 2)
@@ -78,7 +79,7 @@ case "$ARCH" in
     CODE="$(find_ovmf /usr/share/AAVMF/AAVMF_CODE.fd /usr/share/qemu-efi-aarch64/QEMU_EFI.fd /usr/share/edk2/aarch64/QEMU_EFI.fd)" || { echo "AAVMF firmware not found" >&2; exit 1; }
     truncate -s 64M "$OUT/AAVMF_CODE.fd"; dd if="$CODE" of="$OUT/AAVMF_CODE.fd" conv=notrunc status=none
     truncate -s 64M "$OUT/AAVMF_VARS.fd"
-    MACHINE=(-machine virt,accel="$ACCEL" -drive if=pflash,format=raw,readonly=on,file="$OUT/AAVMF_CODE.fd" -drive if=pflash,format=raw,file="$OUT/AAVMF_VARS.fd")
+    MACHINE=(-machine virt -drive if=pflash,format=raw,readonly=on,file="$OUT/AAVMF_CODE.fd" -drive if=pflash,format=raw,file="$OUT/AAVMF_VARS.fd")
     CPU=(-cpu max -smp 2)
     [ "$ACCEL" = kvm ] && CPU=(-cpu host -smp 2)
     VIDEO=(-device virtio-gpu-pci -device qemu-xhci -device usb-kbd -device usb-tablet)
@@ -86,8 +87,8 @@ case "$ARCH" in
   *) usage ;;
 esac
 
-COMMON=("${MACHINE[@]}" "${CPU[@]}" -m "$MEM" "${VIDEO[@]}" -display none -no-reboot
-  -monitor unix:"$MON",server,nowait -nic user,model=virtio-net-pci -rtc base=utc)
+COMMON=("${MACHINE[@]}" "${ACCEL_OPTS[@]}" "${CPU[@]}" -m "$MEM" "${VIDEO[@]}" -display none -no-reboot
+  -monitor unix:"$MON",server,nowait -netdev user,id=n0 -device virtio-net-pci,netdev=n0,romfile= -rtc base=utc)
 
 screendump() {
   [ -S "$MON" ] || return 0

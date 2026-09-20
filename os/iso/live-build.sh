@@ -108,6 +108,7 @@ EOF
 install -Dm755 "$REPO/os/runit/stages/1" "$ROOTFS/etc/runit/1"
 install -Dm755 "$REPO/os/runit/stages/2" "$ROOTFS/etc/runit/2"
 install -Dm755 "$REPO/os/runit/stages/3" "$ROOTFS/etc/runit/3"
+[ -e "$ROOTFS/usr/sbin/runit-init" ] || [ -L "$ROOTFS/usr/sbin/runit-init" ] || ln -s /lib/runit/runit-init "$ROOTFS/usr/sbin/runit-init"
 rm -rf "$ROOTFS/etc/runit/runsvdir/current"
 mkdir -p "$ROOTFS/etc/runit/sv" "$ROOTFS/etc/runit/runsvdir/current"
 cp -a "$REPO/os/runit/sv/." "$ROOTFS/etc/runit/sv/"

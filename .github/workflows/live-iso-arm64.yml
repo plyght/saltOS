@@ -41,7 +41,7 @@ jobs:
             libzstd-dev libsodium-dev libsqlite3-dev build-essential \
             mmdebstrap debian-archive-keyring squashfs-tools xorriso mtools \
             grub-efi-arm64-bin grub-common \
-            qemu-system-arm qemu-system-data qemu-efi-aarch64
+            qemu-system-arm qemu-system-data qemu-efi-aarch64 socat netpbm
 
       - name: Build salt against the Debian base (arm64)
         run: |
@@ -52,12 +52,13 @@ jobs:
               cmake ninja-build pkg-config g++ ca-certificates \
               libzstd-dev libsodium-dev libsqlite3-dev
             cmake -G Ninja -B build-iso -DCMAKE_BUILD_TYPE=Release
-            cmake --build build-iso --target salt'
+            cmake --build build-iso --target salt salt-setup'
 
       - name: Build live ISO (aarch64)
         run: |
           sudo env \
             SALT_BIN="$PWD/build-iso/src/salt/salt" \
+            SALTSETUP_BIN="$PWD/build-iso/src/setup/salt-setup" \
             REPO_DIR="$PWD" \
             EDITION="$EDITION" \
             SALTOS_E2E="$SALTOS_E2E" \
@@ -66,55 +67,16 @@ jobs:
             bash os/iso/live-build.sh aarch64
           sudo chown -R "$USER" out-iso
 
-      - name: Boot test (QEMU aarch64, UEFI, best-effort)
-        continue-on-error: true
+      - name: Boot test (QEMU aarch64, UEFI)
         run: |
           ISO=$(ls out-iso/*.iso | head -1)
           echo "boot-testing $ISO (e2e=$SALTOS_E2E)"
-          echo "note: GitHub arm64 runners lack nested KVM; aarch64 falls back to slow TCG."
-          echo "this boot test is best-effort; native HVF boot is the real validation."
-          CODE=""
-          for f in /usr/share/AAVMF/AAVMF_CODE.fd /usr/share/qemu-efi-aarch64/QEMU_EFI.fd; do
-            [ -f "$f" ] && CODE="$f" && break
-          done
-          test -n "$CODE"
-          VARS=""
-          for f in /usr/share/AAVMF/AAVMF_VARS.fd; do
-            [ -f "$f" ] && VARS="$f" && break
-          done
-          if [ -n "$VARS" ]; then cp "$VARS" /tmp/vars.fd; else
-            truncate -s 64m /tmp/vars.fd; fi
-          truncate -s 64m /tmp/code.fd
-          dd if="$CODE" of=/tmp/code.fd conv=notrunc 2>/dev/null
-          NET=""
           if [ "$SALTOS_E2E" = "1" ]; then
-            MARKER="SALTOS_STRATUM_E2E_OK"; MEM=2560; TRIES=60; TMO=600; NET="-nic user,model=virtio-net-pci"
+            bash os/iso/qemu-boot-test.sh --iso "$ISO" --arch aarch64 --mem 2560 --timeout 1500 --net \
+              --ok SALTOS_STRATUM_E2E_OK --fail SALTOS_STRATUM_E2E_FAIL --also SALTOS_BOOT_OK --log qemu.log
           else
-            MARKER="SALTOS_BOOT_OK"; MEM=2560; TRIES=48; TMO=480
-          fi
-          set +e
-          timeout "$TMO" qemu-system-aarch64 \
-            -machine virt,accel=kvm:tcg -cpu max -m "$MEM" -smp 2 \
-            -drive if=pflash,format=raw,readonly=on,file=/tmp/code.fd \
-            -drive if=pflash,format=raw,file=/tmp/vars.fd \
-            -drive file="$ISO",if=virtio,format=raw,media=disk \
-            -display none -no-reboot $NET \
-            -serial file:qemu.log &
-          QPID=$!
-          for i in $(seq 1 "$TRIES"); do
-            sleep 10
-            grep -q "$MARKER" qemu.log 2>/dev/null && break
-            grep -q "SALTOS_STRATUM_E2E_FAIL" qemu.log 2>/dev/null && break
-          done
-          kill $QPID 2>/dev/null || true
-          set -e
-          echo "----- qemu serial tail -----"
-          tail -n 80 qemu.log || true
-          if grep -q "$MARKER" qemu.log; then
-            echo "BOOT OK: found $MARKER"
-          else
-            echo "BOOT FAILED: $MARKER not found"
-            exit 1
+            bash os/iso/qemu-boot-test.sh --iso "$ISO" --arch aarch64 --mem 2560 --timeout 1200 \
+              --ok SALTOS_BOOT_OK --also SALTOS_STRATUM_OK --log qemu.log
           fi
 
       - name: Upload serial log

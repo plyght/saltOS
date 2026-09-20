@@ -5,7 +5,12 @@ on:
   push:
     paths:
       - "os/iso/live-build.sh"
+      - "os/iso/live/**"
+      - "os/iso/tests/**"
+      - "os/iso/qemu-install-test.sh"
+      - "os/iso/qemu-boot-test.sh"
       - "os/installer/**"
+      - "src/setup/**"
       - ".github/workflows/installer-iso-arm64.yml"
 
 concurrency:
@@ -16,7 +21,7 @@ jobs:
   build:
     name: installer ISO (aarch64)
     runs-on: ubuntu-24.04-arm
-    continue-on-error: true
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
 
@@ -34,9 +39,9 @@ jobs:
             libzstd-dev libsodium-dev libsqlite3-dev build-essential \
             mmdebstrap debian-archive-keyring squashfs-tools xorriso mtools \
             grub-efi-arm64-bin grub-common \
-            qemu-system-arm qemu-system-data qemu-efi-aarch64
+            qemu-system-arm qemu-system-data qemu-efi-aarch64 qemu-utils socat netpbm
 
-      - name: Build salt against the Debian base (arm64)
+      - name: Build salt and salt-setup against the Debian base (arm64)
         run: |
           docker run --rm -v "$PWD":/src -w /src debian:bookworm bash -c '
             set -e
@@ -45,12 +50,13 @@ jobs:
               cmake ninja-build pkg-config g++ ca-certificates \
               libzstd-dev libsodium-dev libsqlite3-dev
             cmake -G Ninja -B build-iso -DCMAKE_BUILD_TYPE=Release
-            cmake --build build-iso --target salt'
+            cmake --build build-iso --target salt salt-setup'
 
       - name: Build installer ISO (aarch64)
         run: |
           sudo env \
             SALT_BIN="$PWD/build-iso/src/salt/salt" \
+            SALTSETUP_BIN="$PWD/build-iso/src/setup/salt-setup" \
             REPO_DIR="$PWD" \
             EDITION="installer" \
             VERSION="0.1.0" \
@@ -58,46 +64,34 @@ jobs:
             bash os/iso/live-build.sh aarch64
           sudo chown -R "$USER" out-iso
 
-      - name: Boot test (QEMU aarch64, UEFI, best-effort)
-        continue-on-error: true
+      - name: Live boot test (QEMU aarch64, UEFI)
         run: |
           ISO=$(ls out-iso/*.iso | head -1)
-          echo "boot-testing installer ISO $ISO"
-          echo "note: GitHub arm64 runners lack nested KVM and have no GPU; a graphical"
-          echo "installer cannot be validated headlessly here. native UTM/HVF boot is the"
-          echo "real validation. this step only confirms the ISO reaches early userspace."
-          CODE=""
-          for f in /usr/share/AAVMF/AAVMF_CODE.fd /usr/share/qemu-efi-aarch64/QEMU_EFI.fd; do
-            [ -f "$f" ] && CODE="$f" && break
-          done
-          test -n "$CODE"
-          if [ -f /usr/share/AAVMF/AAVMF_VARS.fd ]; then cp /usr/share/AAVMF/AAVMF_VARS.fd /tmp/vars.fd; else truncate -s 64m /tmp/vars.fd; fi
-          truncate -s 64m /tmp/code.fd
-          dd if="$CODE" of=/tmp/code.fd conv=notrunc 2>/dev/null
-          set +e
-          timeout 300 qemu-system-aarch64 \
-            -machine virt,accel=kvm:tcg -cpu max -m 3072 -smp 2 \
-            -drive if=pflash,format=raw,readonly=on,file=/tmp/code.fd \
-            -drive if=pflash,format=raw,file=/tmp/vars.fd \
-            -drive file="$ISO",if=virtio,format=raw,media=disk \
-            -display none -no-reboot \
-            -serial file:qemu.log &
-          QPID=$!
-          for i in $(seq 1 28); do
-            sleep 10
-            grep -q "saltOS" qemu.log 2>/dev/null && break
-          done
-          kill $QPID 2>/dev/null || true
-          set -e
-          echo "----- qemu serial tail -----"
-          tail -n 80 qemu.log || true
+          bash os/iso/qemu-boot-test.sh --iso "$ISO" --arch aarch64 --mem 3072 --timeout 1200 \
+            --ok SALTOS_BOOT_OK --also SALTOS_STRATUM_OK --log qemu.log
 
-      - name: Upload serial log
+      - name: Text install and reboot (QEMU aarch64, UEFI)
+        run: |
+          ISO=$(ls out-iso/*.iso | head -1)
+          bash os/iso/qemu-install-test.sh \
+            --iso "$ISO" \
+            --config os/iso/tests/text-erase-btrfs-aarch64.toml \
+            --mode text \
+            --firmware uefi \
+            --arch aarch64 \
+            --install-timeout 4800 \
+            --boot-timeout 1200 \
+            --out "$PWD/qemu-test"
+
+      - name: Upload serial logs and screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: installer-arm64-serial-log
-          path: qemu.log
+          name: installer-arm64-logs
+          path: |
+            qemu.log
+            qemu-test/*.log
+            qemu-test/shots/*
           if-no-files-found: ignore
 
       - name: Upload ISO
