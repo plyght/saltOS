@@ -30,6 +30,9 @@ for d in dev proc sys run tmp \
   mkdir -p "$ROOTFS/$d"
 done
 chmod 1777 "$ROOTFS/tmp" "$ROOTFS/var/tmp"
+for d in bin sbin lib; do
+  [ -e "$ROOTFS/$d" ] || ln -s "usr/$d" "$ROOTFS/$d"
+done
 
 stage_packages() {
   awk -v stage="[$1]" '
@@ -155,9 +158,5 @@ fi
 if [ -d "$REPO_ROOT/strata" ]; then
   cp "$REPO_ROOT"/strata/*.toml "$ROOTFS/etc/salt/strata/" 2>/dev/null || true
 fi
-
-ln -sf usr/bin "$ROOTFS/bin" 2>/dev/null || true
-ln -sf usr/sbin "$ROOTFS/sbin" 2>/dev/null || true
-ln -sf usr/lib "$ROOTFS/lib" 2>/dev/null || true
 
 log "rootfs ready at $ROOTFS"
