@@ -862,7 +862,7 @@ void discover_mounted(const setup::Config &cfg, const std::string &fw, Layout &l
 }
 
 void unmount_pseudo(const std::string &mnt) {
-  for (const char *d : {"/sys/firmware/efi/efivars", "/dev/pts", "/dev", "/proc", "/sys", "/run"})
+  for (const char *d : {"/sys/firmware/efi/efivars", "/dev/pts", "/dev", "/proc", "/sys", "/run/udev", "/run"})
     run_quiet({"umount", "-l", mnt + d});
 }
 
@@ -901,6 +901,10 @@ void bind_pseudo(const std::string &mnt, bool efi) {
   if (!mounted(mnt + "/proc")) must({"mount", "-t", "proc", "proc", mnt + "/proc"}, "mount proc");
   if (!mounted(mnt + "/sys")) must({"mount", "-t", "sysfs", "sys", mnt + "/sys"}, "mount sys");
   if (!mounted(mnt + "/run")) must({"mount", "-t", "tmpfs", "tmpfs", mnt + "/run"}, "mount run");
+  if (salt_path_exists("/run/udev/data") && !mounted(mnt + "/run/udev")) {
+    run_quiet({"mkdir", "-p", mnt + "/run/udev"});
+    run_quiet({"mount", "--bind", "-o", "ro", "/run/udev", mnt + "/run/udev"});
+  }
   if (efi && !mounted(mnt + "/sys/firmware/efi/efivars"))
     run_quiet({"mount", "-t", "efivarfs", "efivarfs", mnt + "/sys/firmware/efi/efivars"});
   std::string resolv = read_file("/etc/resolv.conf");
