@@ -1,6 +1,6 @@
 name = "busybox"
 version = "1.36.1"
-release = 1
+release = 2
 summary = "Combined small versions of many common UNIX utilities into a single executable"
 license = "GPL-2.0-only"
 arch = ["x86_64", "aarch64"]
@@ -15,6 +15,7 @@ deps = ["gcc", "make", "glibc"]
 script = """
 #!/bin/sh
 make defconfig
+sed -i 's/^CONFIG_TC=y/# CONFIG_TC is not set/' .config
 make -j"$SALT_JOBS"
 install -D -m 0755 busybox "$SALT_DEST/usr/bin/busybox"
 """
