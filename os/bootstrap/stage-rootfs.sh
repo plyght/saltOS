@@ -58,6 +58,7 @@ for stage in $STAGES; do
     "$SALT" --root "$ROOTFS" --repo "$OUT" --yes install "$pkg"
   done
 done
+"$SALT" --root "$ROOTFS" --yes clean --all
 
 log "installing runit stages and service tree"
 for stage in 1 2 3; do
