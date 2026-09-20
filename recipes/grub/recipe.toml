@@ -1,6 +1,6 @@
 name = "grub"
 version = "2.12"
-release = 1
+release = 2
 summary = "GRand Unified Bootloader with Btrfs snapshot boot support"
 license = "GPL-3.0-or-later"
 arch = ["x86_64", "aarch64"]
@@ -21,6 +21,7 @@ else
   platform=efi
   target=x86_64-efi
 fi
+echo depends bli part_gpt > grub-core/extra_deps.lst
 ./configure --prefix=/usr --sysconfdir=/etc --disable-werror --with-platform="$platform"
 make -j"$SALT_JOBS"
 make DESTDIR="$SALT_DEST" install

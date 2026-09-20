@@ -1,6 +1,6 @@
 name = "kmod"
 version = "33"
-release = 1
+release = 2
 summary = "Tools to handle Linux kernel modules"
 license = "GPL-2.0-or-later"
 arch = ["x86_64", "aarch64"]
@@ -16,6 +16,7 @@ script = """
 #!/bin/sh
 ./configure --prefix=/usr \\
     --sysconfdir=/etc \\
+    --disable-manpages \\
     --with-openssl \\
     --with-xz \\
     --with-zstd \\

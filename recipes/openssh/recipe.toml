@@ -1,6 +1,6 @@
 name = "openssh"
 version = "9.8p1"
-release = 1
+release = 2
 summary = "Secure shell client and server"
 license = "BSD-2-Clause"
 arch = ["x86_64", "aarch64"]
@@ -20,7 +20,7 @@ script = """
     --with-ssl-engine \\
     --with-zlib
 make -j"$SALT_JOBS"
-make DESTDIR="$SALT_DEST" install
+make DESTDIR="$SALT_DEST" install-nokeys
 """
 
 [package]

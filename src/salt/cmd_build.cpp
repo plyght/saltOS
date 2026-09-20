@@ -114,10 +114,11 @@ static std::string default_build(const std::string &system) {
   if (system == "make")
     return "make -j\"$SALT_JOBS\"\nmake PREFIX=/usr DESTDIR=\"$SALT_DEST\" install";
   if (system == "cmake")
-    return "cmake -B build -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release\ncmake --build "
+    return "cmake -B build -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib "
+           "-DCMAKE_BUILD_TYPE=Release\ncmake --build "
            "build -j\"$SALT_JOBS\"\nDESTDIR=\"$SALT_DEST\" cmake --install build";
   if (system == "meson")
-    return "meson setup build --prefix=/usr\nninja -C build "
+    return "meson setup build --prefix=/usr --libdir=lib --buildtype=release\nninja -C build "
            "-j\"$SALT_JOBS\"\nDESTDIR=\"$SALT_DEST\" "
            "ninja -C build install";
   return "";

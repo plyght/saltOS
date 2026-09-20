@@ -1,6 +1,6 @@
 name = "dracut"
 version = "060"
-release = 1
+release = 2
 summary = "Event-driven initramfs infrastructure"
 license = "GPL-2.0-or-later"
 arch = ["x86_64", "aarch64"]
@@ -14,7 +14,7 @@ system = "custom"
 deps = ["gcc", "make", "bash", "pkgconf", "kmod"]
 script = """
 #!/bin/sh
-./configure --prefix=/usr --sysconfdir=/etc --systemdsystemunitdir=
+./configure --prefix=/usr --sysconfdir=/etc --systemdsystemunitdir= --disable-documentation
 make -j"$SALT_JOBS"
 make DESTDIR="$SALT_DEST" install
 """
