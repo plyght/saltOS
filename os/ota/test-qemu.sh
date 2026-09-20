@@ -73,16 +73,28 @@ WWW="$OUT/www"
 rm -rf "$WWW"; mkdir -p "$WWW"
 SALT="$SALT_BIN" VERSION="$NEW_VERSION" OTA_KEYS="$KEYS" SERVE=0 WORK="$OUT/ship-work" \
   KERNEL_TREE="$OUT/ota/kernel" KERNEL_RELEASE="$NEW_KERNEL" \
+  URL_BASE="http://$GUEST_HOST:$PORT/releases" \
   sh "$HERE/ship.sh" "$WWW/good" >"$OUT/ship.log" 2>&1 || { cat "$OUT/ship.log"; die "ship.sh failed"; }
 ARCH=$("$SALT_BIN" --version | sed -E 's/.*\((.*)\)/\1/')
 [ -f "$WWW/good/$ARCH/index.toml" ] || die "ship.sh produced no $ARCH/index.toml"
+grep -q "^url = \"http://$GUEST_HOST:$PORT/releases/" "$WWW/good/$ARCH/index.toml" || die "index carries no package urls"
 
-cp -a "$WWW/good" "$WWW/badhash"
-grain=$(ls "$WWW/badhash/$ARCH/packages/salt-"*.grain | head -1)
+# Same split as the GitHub channel: the index lives under <source>/<arch>/ (Pages),
+# the grains under a flat /releases/ directory (Release assets) named by the url.
+mkdir -p "$WWW/badhash/$ARCH/packages" "$WWW/badsig"
+cp "$WWW/good/$ARCH/packages/"*.grain "$WWW/badhash/$ARCH/packages/"
+"$SALT_BIN" --key "$(head -1 "$KEYS/ota.sec")" repo publish "$WWW/badhash/$ARCH" \
+  "http://$GUEST_HOST:$PORT/releases-badhash" >/dev/null
+mv "$WWW/badhash/$ARCH/packages" "$WWW/releases-badhash"
+grain=$(ls "$WWW/releases-badhash/salt-"*.grain | head -1)
 python3 -c 'import sys; p=sys.argv[1]; b=bytearray(open(p,"rb").read()); b[64]^=0xff; open(p,"wb").write(b)' "$grain"
 
-cp -a "$WWW/good" "$WWW/badsig"
-"$SALT_BIN" --key "$(head -1 "$KEYS/bad.sec")" repo publish "$WWW/badsig/$ARCH" >/dev/null
+cp -a "$WWW/good/$ARCH" "$WWW/badsig/$ARCH"
+"$SALT_BIN" --key "$(head -1 "$KEYS/bad.sec")" repo publish "$WWW/badsig/$ARCH" \
+  "http://$GUEST_HOST:$PORT/releases" >/dev/null
+rm -rf "$WWW/badsig/$ARCH/packages"
+
+mv "$WWW/good/$ARCH/packages" "$WWW/releases"
 
 echo "==> serving $WWW on 127.0.0.1:$PORT"
 python3 -m http.server "$PORT" --bind 127.0.0.1 --directory "$WWW" >"$OUT/http.log" 2>&1 &

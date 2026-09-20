@@ -38,37 +38,94 @@ layout `salt` expects is:
 ```
 <base-url>/<arch>/index.toml
 <base-url>/<arch>/index.toml.sig
-<base-url>/<arch>/packages/<pkg>.grain
+<base-url>/<arch>/packages/<pkg>.grain      # unless the entry carries a url
 ```
 
-### 1. Create a signing key (once)
+Each `[[package]]` entry in `index.toml` may carry an absolute `url`; the
+client downloads the grain from there and only falls back to
+`<base-url>/<arch>/packages/<filename>` when the field is absent. Either way
+the grain's sha256 must match the signed index and its embedded signature is
+checked, so where the bytes come from does not weaken verification.
+`salt repo publish <dir> [<url-base>]` records `url = <url-base>/<filename>`
+for every entry when the second argument is given.
+
+### Official channel: GitHub Releases + GitHub Pages (no paid infrastructure)
+
+The production channel for `plyght/saltOS` costs nothing to run:
+
+- grains live as assets of GitHub Releases of the repository. Every version
+  gets an immutable release `v<version>` (assets `salt-<version>-1-<arch>.grain`,
+  `saltos-base-…`, `linux-saltos-…`, plus `<arch>-index.toml{,.sig}` for the
+  record). The rolling release `ota-stable` is updated in place with the same
+  assets so "what is the channel shipping right now" is one URL;
+- the small signed index is deployed to GitHub Pages of the same repository,
+  so `https://plyght.github.io/saltOS/<arch>/index.toml` (+ `.sig`) is the
+  `source` clients use. Every entry's `url` points at the `v<version>` release
+  asset, so Pages only ever serves a few KB and the index stays a stable,
+  cacheable layout. The public key is mirrored at
+  `https://plyght.github.io/saltOS/keys/ota.pub`.
+
+`.github/workflows/ota-publish.yml` does all of it. It runs on a tag push
+`v<version>` (prerelease) or by `workflow_dispatch` (inputs: `version`,
+`channel`, `prerelease`, `kernel`), on hosted runners for x86_64 and aarch64:
+
+1. refuses to run unless the secret `OTA_SECRET_KEY` is set **and**
+   `keys/ota.pub` is committed — both messages tell you what to do;
+2. builds `salt`, stages the x86_64 kernel from the Void package the images ship
+   (`os/ota/kernel-stage.sh`), and builds + signs the grains with
+   `os/selfhost/build-base-grains.sh` (`URL_BASE=https://github.com/plyght/saltOS/releases/download/v<version>`);
+3. verifies the signed index with the committed public key before anything is
+   uploaded;
+4. creates/updates the `v<version>` and `ota-stable` releases and uploads the
+   assets (`--clobber`, so re-running is safe);
+5. deploys `<arch>/index.toml{,.sig}`, `keys/ota.pub` and a short `index.txt`
+   to Pages with `actions/deploy-pages`;
+6. proves the result: a fresh client syncs from the published Pages URL,
+   installs `salt` from the Release asset, and `salt update --check` reports it
+   current.
+
+#### Owner setup: the three commands
+
+Run once, on a trusted machine:
 
 ```sh
-salt keygen ./keys ota          # writes keys/ota.pub and keys/ota.sec
+# 1. generate the channel signing key (writes keys/ota.pub + keys/ota.sec)
+build/src/salt/salt keygen ./keys ota
+
+# 2. store the secret half as the repository secret OTA_SECRET_KEY (never commit it)
+gh secret set OTA_SECRET_KEY --repo plyght/saltOS < keys/ota.sec
+
+# 3. commit only the public half; images and the workflow read keys/ota.pub
+git add keys/ota.pub && git commit -m "keys: OTA channel public key" && git push
 ```
 
-Keep `ota.sec` secret. Bake the public key into images: `os/build/vm-x86.sh`
-takes `OTA_SOURCE=<base-url>` and `OTA_KEY="$(cat keys/ota.pub)"` (written to
-`/etc/salt/repo.conf`); `os/build/pi5.sh` takes `OTA_PUBKEY=keys/ota.pub`
-(installed to `/etc/salt/keys/ota.pub`).
+Then enable Pages once (repository Settings → Pages → Source: *GitHub Actions*;
+the workflow also requests this via `actions/configure-pages` with
+`enablement: true`) and publish with `git tag v0.1.2 && git push origin v0.1.2`,
+or run the `ota-publish` workflow by hand with a `version`. Images built by
+`os/build/*.sh` bake `source = "https://plyght.github.io/saltOS"` and, when
+`keys/ota.pub` exists in the checkout, install it as
+`/etc/salt/keys/ota.pub` (override with `OTA_SOURCE`, `OTA_KEY`/`OTA_PUBKEY`).
+Until the key is committed images carry an empty `key`, so `salt sync` warns
+"no trusted key configured; index signature not verified" and grains install as
+unverified — commit the key before shipping images.
 
-### 2. Build packages and publish a signed index
+### Self-hosted or local channel
+
+Any static host works (S3, nginx, a laptop). Create a key, publish, serve:
 
 ```sh
-# build .grain packages into a repo tree (repo/<arch>/packages/*.grain)
-OTA_SECRET_KEY=./keys/ota.sec bash os/ota/publish.sh ./repo
-```
-
-### 3. Host it
-
-Any static host works (S3, GitHub Pages, nginx). For a quick self-hosted endpoint:
-
-```sh
+salt keygen ./keys ota                                    # keys/ota.pub, keys/ota.sec
+OTA_SECRET_KEY=./keys/ota.sec bash os/ota/publish.sh ./repo   # signs repo/<arch>/index.toml
 python3 -m http.server 8080 --directory ./repo
-# or: OTA_ROOT=./repo OTA_PORT=8080 bun os/ota/server.ts
+# or: OTA_ROOT=./repo OTA_PORT=8080 bun os/ota/server.ts   # local dev server
 ```
 
-Then point clients at the base URL (the directory that contains `<arch>/`):
+Keep `ota.sec` secret. `os/build/vm-x86.sh` and the other image builders take
+`OTA_SOURCE=<base-url>` and `OTA_KEY=<hex pubkey or path>` (written to
+`/etc/salt/repo.conf`); `os/build/pi5.sh` takes `OTA_PUBKEY=keys/ota.pub`
+(installed to `/etc/salt/keys/ota.pub`). Point clients at the base URL (the
+directory that contains `<arch>/`):
 
 ```sh
 # /etc/salt/repo.conf on the device

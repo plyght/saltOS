@@ -18,9 +18,19 @@ SALT=/path/to/salt SEC_KEY=$SEC ARCH=aarch64 VERSION=0.1.1 \
 # -> signed repo at ./base-repo/aarch64 (index.toml + index.toml.sig + packages/)
 ```
 
-Upload `./base-repo` to any static host (GitHub Releases, S3, a plain web
-server). The client only fetches `<source>/<arch>/index.toml`, its `.sig`, and
-the `.grain` files — no server-side logic.
+Upload `./base-repo` to any static host (S3, a plain web server). The client
+only fetches `<source>/<arch>/index.toml`, its `.sig`, and the `.grain` files —
+no server-side logic. Pass `URL_BASE=<url>` to record an absolute
+`url = <url>/<filename>` per package when the grains live somewhere other than
+`<source>/<arch>/packages/`.
+
+The official channel does exactly that on GitHub for free: the
+`ota-publish` workflow (`.github/workflows/ota-publish.yml`, tag `v<version>` or
+`workflow_dispatch`) builds and signs the grains with the `OTA_SECRET_KEY`
+secret, uploads them as assets of the `v<version>` and rolling `ota-stable`
+Releases, and deploys the signed index to GitHub Pages at
+`https://plyght.github.io/saltOS/<arch>/index.toml`. Images bake that URL and
+`keys/ota.pub`. Setup and the owner's three commands: [docs/ota.md](../../docs/ota.md).
 
 ## Make an image ship a grain-tracked base
 
