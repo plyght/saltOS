@@ -11,8 +11,8 @@
 #      PORT (default 8099), OTA_KEYS (key dir, default ./ota-keys). Arg 1 = repo
 #      dir (default ./ota-repo). The signing key is created once and reused;
 #      keep OTA_KEYS/ota.sec secret and bake ota.pub into clients.
-#      KERNEL_TREE/KERNEL_RELEASE/KERNEL_VERSION and EXTRA_GRAINS are passed
-#      through to build-base-grains.sh; SERVE=0 publishes without serving.
+#      KERNEL_TREE/KERNEL_RELEASE/KERNEL_VERSION, EXTRA_GRAINS and URL_BASE are
+#      passed through to build-base-grains.sh; SERVE=0 publishes without serving.
 set -eu
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -31,7 +31,7 @@ SEC=$(head -1 "$KEYS/ota.sec")
 
 # 2. build + sign the base grains (salt, saltos-base, and the kernel if given).
 SALT="$SALT" SEC_KEY="$SEC" VERSION="$VERSION" OUT="$REPO" WORK="${WORK:-$REPO.work}" \
-  ${KERNEL:+KERNEL="$KERNEL"} \
+  ${KERNEL:+KERNEL="$KERNEL"} ${URL_BASE:+URL_BASE="$URL_BASE"} \
   sh "$HERE/../selfhost/build-base-grains.sh"
 
 ARCH=$("$SALT" --version | sed -E 's/.*\((.*)\)/\1/')

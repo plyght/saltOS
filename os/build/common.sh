@@ -6,6 +6,11 @@
 # expose-by-default), the passwordless-sudo rule that makes exposed commands
 # work from any user, and the user account.
 
+# Default OTA channel: the signed index published to GitHub Pages by
+# .github/workflows/ota-publish.yml (grains come from GitHub Releases via the
+# per-package url in that index). Override with OTA_SOURCE.
+OTA_CHANNEL_URL="${OTA_CHANNEL_URL:-https://plyght.github.io/saltOS}"
+
 # Output naming: saltos-<version>-<target>-<arch>.<ext>
 saltos_artifact_name() { # <target> <arch> <ext>
   printf 'saltos-%s-%s-%s.%s' "$VERSION" "$1" "$2" "$3"
@@ -40,6 +45,14 @@ EOF
 # default: expose_pm + expose_all + auto_expose=always means installing a tool
 # in any stratum makes it a host command automatically.
 saltos_write_config() {
+  OTA_SOURCE="${OTA_SOURCE:-$OTA_CHANNEL_URL}"
+  if [ -z "${OTA_KEY:-}" ]; then
+    pub="${OTA_PUBKEY:-$REPO/keys/ota.pub}"
+    if [ -s "$pub" ]; then
+      install -Dm644 "$pub" "$ROOTFS/etc/salt/keys/ota.pub"
+      OTA_KEY=/etc/salt/keys/ota.pub
+    fi
+  fi
   cat > "$ROOTFS/etc/salt/repo.conf" <<EOF
 repo = "current"
 source = "${OTA_SOURCE:-}"

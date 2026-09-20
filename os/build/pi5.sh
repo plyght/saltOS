@@ -16,8 +16,8 @@ RPI_MIRROR="${RPI_MIRROR:-http://archive.raspberrypi.com/debian}"
 RPI_SUITE="${RPI_SUITE:-bookworm}"
 IMG_SIZE_MB="${IMG_SIZE_MB:-7168}"
 BOOT_SIZE_MB="${BOOT_SIZE_MB:-512}"
-OTA_SOURCE="${OTA_SOURCE:-}"
-OTA_PUBKEY="${OTA_PUBKEY:-}"
+OTA_SOURCE="${OTA_SOURCE:-https://plyght.github.io/saltOS}"
+OTA_PUBKEY="${OTA_PUBKEY:-$REPO/keys/ota.pub}"
 HOSTNAME="${SALTOS_HOSTNAME:-saltos-pi}"
 
 need() { command -v "$1" >/dev/null 2>&1 || { echo "missing tool: $1" >&2; exit 1; }; }
@@ -135,7 +135,7 @@ source = "$OTA_SOURCE"
 key = "/etc/salt/keys/ota.pub"
 EOF
 mkdir -p "$ROOTFS/etc/salt/keys"
-if [ -n "$OTA_PUBKEY" ] && [ -f "$OTA_PUBKEY" ]; then
+if [ -s "$OTA_PUBKEY" ]; then
   install -Dm644 "$OTA_PUBKEY" "$ROOTFS/etc/salt/keys/ota.pub"
 else
   : > "$ROOTFS/etc/salt/keys/ota.pub"

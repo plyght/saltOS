@@ -1,0 +1,255 @@
+name: ota-publish
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (e.g. 0.1.2); assets go to release v<version>"
+        required: true
+        type: string
+      channel:
+        description: "Rolling channel release, updated in place"
+        required: false
+        default: ota-stable
+        type: string
+      prerelease:
+        description: "Mark the v<version> release as a prerelease"
+        required: false
+        default: true
+        type: boolean
+      kernel:
+        description: "Void kernel package to ship as linux-saltos (x86_64); empty to skip"
+        required: false
+        default: linux
+        type: string
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: ota-publish
+  cancel-in-progress: false
+
+env:
+  CHANNEL: ${{ inputs.channel || 'ota-stable' }}
+
+jobs:
+  grains:
+    name: build + sign grains (${{ matrix.arch }})
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require the OTA signing key and the committed public key
+        env:
+          OTA_SECRET_KEY: ${{ secrets.OTA_SECRET_KEY }}
+        run: |
+          if [ -z "${OTA_SECRET_KEY:-}" ]; then
+            echo "::error::secret OTA_SECRET_KEY is not set. Generate a key with 'salt keygen ./keys ota'," \
+                 "add the contents of keys/ota.sec as the repository secret OTA_SECRET_KEY (see docs/ota.md)" \
+                 "and commit keys/ota.pub."
+            exit 1
+          fi
+          if [ ! -s keys/ota.pub ]; then
+            echo "::error::keys/ota.pub is missing: commit the public half of the OTA signing key (see docs/ota.md)."
+            exit 1
+          fi
+
+      - name: Resolve version and release tag
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = push ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="${{ inputs.version }}"
+          fi
+          case "$version" in
+            ''|*/*|*' '*) echo "::error::bad version '$version'"; exit 1 ;;
+          esac
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "tag=v$version" >>"$GITHUB_OUTPUT"
+          echo "url_base=https://github.com/${{ github.repository }}/releases/download/v$version" >>"$GITHUB_OUTPUT"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config \
+            libzstd-dev libsodium-dev libsqlite3-dev build-essential zstd
+
+      - name: Build salt
+        run: |
+          cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target salt
+          ./build/src/salt/salt --version
+
+      - name: Stage the x86_64 kernel from the Void package saltOS images ship
+        if: matrix.arch == 'x86_64' && (github.event_name == 'push' || inputs.kernel != '')
+        run: |
+          sudo env KERNEL_PKG="${{ inputs.kernel || 'linux' }}" OUT="$PWD/kernel" WORK="$PWD/kernel.work" \
+            bash os/ota/kernel-stage.sh
+          sudo chown -R "$(id -u):$(id -g)" kernel
+          echo "kernel release: $(cat kernel/release)"
+
+      - name: Build and sign the base grains
+        env:
+          OTA_SECRET_KEY: ${{ secrets.OTA_SECRET_KEY }}
+        run: |
+          if [ -f kernel/release ]; then
+            export KERNEL_TREE="$PWD/kernel" KERNEL_RELEASE="$(cat kernel/release)"
+          fi
+          SALT="$PWD/build/src/salt/salt" SEC_KEY="$(printf '%s' "$OTA_SECRET_KEY" | head -1)" \
+            ARCH="${{ matrix.arch }}" VERSION="${{ steps.ver.outputs.version }}" \
+            OUT="$PWD/repo" WORK="$PWD/repo.work" URL_BASE="${{ steps.ver.outputs.url_base }}" \
+            sh os/selfhost/build-base-grains.sh
+          cat "repo/${{ matrix.arch }}/index.toml"
+
+      - name: Verify the signed index with the committed public key
+        run: |
+          mkdir -p verify/etc/salt
+          printf 'repo = "current"\nsource = "file://%s"\nkey = "%s"\n' \
+            "$PWD/repo" "$PWD/keys/ota.pub" >verify/etc/salt/repo.conf
+          ./build/src/salt/salt --root "$PWD/verify" sync
+          grep -q "^url = \"${{ steps.ver.outputs.url_base }}/" "repo/${{ matrix.arch }}/index.toml"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ota-repo-${{ matrix.arch }}
+          path: repo/${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: upload release assets + publish index to Pages
+    needs: grains
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ota-repo-*
+          path: repo
+
+      - name: Resolve version and release tag
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = push ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="${{ inputs.version }}"
+          fi
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "tag=v$version" >>"$GITHUB_OUTPUT"
+
+      - name: Upload grains to the v<version> release (immutable) and the channel release (rolling)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          PRERELEASE: ${{ github.event_name == 'push' && 'true' || inputs.prerelease }}
+        run: |
+          set -eu
+          shopt -s nullglob
+          assets=()
+          for d in repo/ota-repo-*; do
+            arch="${d#repo/ota-repo-}"
+            for g in "$d"/packages/*.grain; do assets+=("$g"); done
+            cp "$d/index.toml" "repo/$arch-index.toml"
+            cp "$d/index.toml.sig" "repo/$arch-index.toml.sig"
+            assets+=("repo/$arch-index.toml" "repo/$arch-index.toml.sig")
+          done
+          [ "${#assets[@]}" -gt 0 ] || { echo "::error::no grains to publish"; exit 1; }
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG exists; adding/replacing assets"
+          else
+            flag=""; [ "$PRERELEASE" = true ] && flag="--prerelease"
+            gh release create "$TAG" --title "saltOS $VERSION" $flag \
+              --notes "Signed saltOS base grains for OTA ($VERSION). Index: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/<arch>/index.toml" \
+              --target "$GITHUB_SHA"
+          fi
+          gh release upload "$TAG" "${assets[@]}" --clobber
+          if ! gh release view "$CHANNEL" >/dev/null 2>&1; then
+            gh release create "$CHANNEL" --title "saltOS OTA channel: $CHANNEL" --prerelease \
+              --notes "Rolling release: always carries the grains currently served by the $CHANNEL index." \
+              --target "$GITHUB_SHA"
+          fi
+          gh release upload "$CHANNEL" "${assets[@]}" --clobber
+          gh release edit "$CHANNEL" --notes "Rolling release: grains of saltOS $VERSION (tag $TAG), as served by https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/<arch>/index.toml"
+
+      - name: Assemble the Pages site (signed index per arch + public key)
+        run: |
+          set -eu
+          mkdir -p site/keys
+          for d in repo/ota-repo-*; do
+            arch="${d#repo/ota-repo-}"
+            mkdir -p "site/$arch"
+            cp "$d/index.toml" "$d/index.toml.sig" "site/$arch/"
+          done
+          cp keys/ota.pub site/keys/ota.pub
+          {
+            echo "saltOS OTA channel $CHANNEL -- version ${{ steps.ver.outputs.version }}"
+            echo
+            echo "repo.conf:"
+            echo "  repo = \"current\""
+            echo "  source = \"https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}\""
+            echo "  key = \"/etc/salt/keys/ota.pub\""
+            echo
+            for d in site/*/index.toml; do echo "$d"; done
+            echo "keys/ota.pub"
+            echo "grains: https://github.com/${{ github.repository }}/releases/tag/${{ steps.ver.outputs.tag }}"
+          } >site/index.txt
+          touch site/.nojekyll
+          find site -type f | sort
+
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+      - name: Prove a client sync + update check against the published Pages index and Release assets
+        run: |
+          set -eu
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config libzstd-dev libsodium-dev libsqlite3-dev build-essential
+          cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target salt
+          base="${{ steps.deploy.outputs.page_url }}"
+          base="${base%/}"
+          mkdir -p client/etc/salt
+          printf 'repo = "current"\nsource = "%s"\nkey = "%s"\n' "$base" "$PWD/keys/ota.pub" >client/etc/salt/repo.conf
+          for i in $(seq 1 30); do
+            if curl -fsS "$base/x86_64/index.toml" | grep -q "version = \"${{ steps.ver.outputs.version }}\""; then break; fi
+            sleep 10
+          done
+          ./build/src/salt/salt --root "$PWD/client" sync
+          ./build/src/salt/salt --root "$PWD/client" --yes install salt
+          ./build/src/salt/salt --root "$PWD/client" list | grep -q "^salt  *${{ steps.ver.outputs.version }}-"
+          "$PWD/client/usr/bin/salt" --version
+          rc=0; ./build/src/salt/salt --root "$PWD/client" update --check || rc=$?
+          [ "$rc" -eq 0 ] || { echo "::error::client not current after install (rc $rc)"; exit 1; }

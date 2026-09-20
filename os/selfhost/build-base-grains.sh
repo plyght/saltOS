@@ -18,7 +18,9 @@
 # root tree instead: boot/vmlinuz-<rel> (or vmlinux/Image), boot/initramfs-<rel>.img
 # and usr/lib/modules/<rel>, versioned as KERNEL_VERSION (default: the release
 # up to its first '_' or '-'). EXTRA_GRAINS=<dir> adds prebuilt .grain files to
-# the published repo.
+# the published repo. URL_BASE=<url> records an absolute url = <url>/<filename>
+# per package so the grains can be served from elsewhere than the index (e.g.
+# GitHub Release assets while the index lives on GitHub Pages).
 set -eu
 
 SALT="${SALT:?set SALT to the salt binary}"
@@ -161,6 +163,6 @@ cp "$SALT_OUT/$ARCH/packages"/*.grain "$OUT/$ARCH/packages/" 2>/dev/null || \
 if [ -n "${EXTRA_GRAINS:-}" ] && [ -d "$EXTRA_GRAINS" ]; then
   cp "$EXTRA_GRAINS"/*.grain "$OUT/$ARCH/packages/"
 fi
-"$SALT" --key "$SEC_KEY" repo publish "$OUT/$ARCH"
+"$SALT" --key "$SEC_KEY" repo publish "$OUT/$ARCH" ${URL_BASE:+"$URL_BASE"}
 echo "wrote signed base-grain repo: $OUT/$ARCH"
 ls -la "$OUT/$ARCH" "$OUT/$ARCH/packages"
