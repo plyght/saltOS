@@ -54,7 +54,7 @@ build_one() {
   else
     log "building $name"
     rm -f "$PKGDIR/$name"-*-"$ARCH".grain
-    if ! SALT_ARCH="$ARCH" SALT_JOBS="$JOBS" SALT_OUT="$OUT" \
+    if ! SALT_ARCH="$ARCH" SALT_JOBS="$JOBS" SALT_OUT="$OUT" FORCE_UNSAFE_CONFIGURE=1 \
         "$SALT" build "$recipe" >"$LOGDIR/$name.log" 2>&1; then
       echo "build failed for $name; log follows:" >&2
       cat "$LOGDIR/$name.log" >&2 || true

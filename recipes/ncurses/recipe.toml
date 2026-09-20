@@ -21,6 +21,7 @@ script = """
     --without-normal \\
     --with-cxx-shared \\
     --enable-pc-files \\
+    --with-pkg-config-libdir=/usr/lib/pkgconfig \\
     --enable-widec
 make -j"$SALT_JOBS"
 make DESTDIR="$SALT_DEST" install
