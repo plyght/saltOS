@@ -32,6 +32,7 @@ int salt_stratum_pkg(const salt_stratum *s, const char *op, char *const pkgs[], 
 typedef struct {
   char *name;
   char *version;
+  char *digest;
 } salt_foreign_pkg;
 
 typedef struct {
@@ -42,6 +43,7 @@ typedef struct {
 
 void salt_foreign_pkg_list_init(salt_foreign_pkg_list *l);
 int salt_foreign_pkg_list_push(salt_foreign_pkg_list *l, const char *name, const char *version);
+int salt_foreign_pkg_set_digest(salt_foreign_pkg *p, const char *digest);
 const salt_foreign_pkg *salt_foreign_pkg_list_find(const salt_foreign_pkg_list *l,
                                                    const char *name);
 void salt_foreign_pkg_list_free(salt_foreign_pkg_list *l);
@@ -61,9 +63,25 @@ int salt_foreign_pkg_parse(const char *kind, const char *text, size_t len,
  * (pacman), where the caller must install from a cached artifact instead. */
 int salt_foreign_pkg_spec(const char *kind, const char *name, const char *version, salt_buf *out);
 
+/* Attach the manager's own content identity of each installed package in
+ * LIST, parsed from TEXT: rpm -qa NAME\tEVR\tSHA256HEADER lines
+ * ("rpm-sha256header:<hex>"), xbps pkgver\tfilename-sha256 lines
+ * ("sha256:<hex>") or the apk installed database ("apk-checksum:Q1...").
+ * Fails when a listed package has no digest in TEXT. */
+int salt_foreign_pkg_parse_digests(const char *kind, const char *text, size_t len,
+                                   salt_foreign_pkg_list *list);
+
 /* Ask the stratum's package manager for every installed package and its exact
  * version. Runs the query inside the stratum. */
 int salt_stratum_pkg_query(const salt_stratum *s, salt_foreign_pkg_list *out);
+
+/* Fill in the digest of every package in LIST from the stratum: the manager's
+ * recorded artifact/header checksum for xbps, rpm and apk, sha256 of the
+ * installed mtree manifest for pacman ("pacman-mtree-sha256:<hex>") and sha256
+ * of dpkg's md5sums (or, for file-less packages, list) file for apt
+ * ("dpkg-md5sums-sha256:<hex>" / "dpkg-list-sha256:<hex>"). Fails closed when
+ * any package has no recoverable identity. */
+int salt_stratum_pkg_digests(const salt_stratum *s, salt_foreign_pkg_list *list);
 
 /* Install exactly the given name/version pairs through the manager's own
  * version-pinning syntax (name=ver, name-EVR, pkgver). pacman has none, so a

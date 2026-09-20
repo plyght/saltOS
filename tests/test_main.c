@@ -843,6 +843,78 @@ static void test_foreign_pkg(void) {
   CHECK(salt_stratum_pkg_kind(&st) == NULL, "unknown kind is NULL");
 }
 
+static void test_foreign_digests(void) {
+  static const char hex[] = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+  salt_foreign_pkg_list l;
+  salt_foreign_pkg_list_init(&l);
+  const salt_foreign_pkg *z;
+
+  const char *rpm = "bash\t5.2.26-3.fc40\nglibc\t2.39-33.fc40\n";
+  CHECK(salt_foreign_pkg_parse("dnf", rpm, strlen(rpm), &l) == SALT_OK, "rpm list for digests");
+  char rpmd[512];
+  snprintf(rpmd, sizeof(rpmd),
+           "gpg-pubkey\t18b8e74c-62f2920f\t(none)\nbash\t5.2.26-3.fc40\t%s\n"
+           "glibc\t2.39-33.fc40\t%s\n",
+           hex, hex);
+  CHECK(salt_foreign_pkg_parse_digests("dnf", rpmd, strlen(rpmd), &l) == SALT_OK,
+        "rpm SHA256HEADER digests attached");
+  z = salt_foreign_pkg_list_find(&l, "bash");
+  CHECK(z && z->digest && strncmp(z->digest, "rpm-sha256header:", 17) == 0 &&
+            strcmp(z->digest + 17, hex) == 0,
+        "rpm digest prefixed");
+  salt_foreign_pkg_list_free(&l);
+
+  CHECK(salt_foreign_pkg_parse("dnf", rpm, strlen(rpm), &l) == SALT_OK, "rpm list again");
+  const char *rpm_none = "bash\t5.2.26-3.fc40\t(none)\nglibc\t2.39-33.fc40\t(none)\n";
+  CHECK(salt_foreign_pkg_parse_digests("dnf", rpm_none, strlen(rpm_none), &l) != SALT_OK,
+        "rpm without SHA256HEADER refused");
+  salt_foreign_pkg_list_free(&l);
+
+  CHECK(salt_foreign_pkg_parse("dnf", rpm, strlen(rpm), &l) == SALT_OK, "rpm list again");
+  snprintf(rpmd, sizeof(rpmd), "bash\t5.2.26-3.fc40\t%s\n", hex);
+  CHECK(salt_foreign_pkg_parse_digests("dnf", rpmd, strlen(rpmd), &l) != SALT_OK,
+        "rpm missing digest for an installed package refused");
+  salt_foreign_pkg_list_free(&l);
+
+  const char *apk = "musl-1.2.5-r0\nzlib-1.3.1-r1\n";
+  CHECK(salt_foreign_pkg_parse("apk", apk, strlen(apk), &l) == SALT_OK, "apk list for digests");
+  const char *apkdb =
+      "C:Q1abcdef=\nP:musl\nV:1.2.5-r0\nA:x86_64\n\n"
+      "C:Q1zzz=\nP:zlib\nV:1.3.1-r1\n\n";
+  CHECK(salt_foreign_pkg_parse_digests("apk", apkdb, strlen(apkdb), &l) == SALT_OK,
+        "apk installed db checksums attached");
+  z = salt_foreign_pkg_list_find(&l, "zlib");
+  CHECK(z && z->digest && strcmp(z->digest, "apk-checksum:Q1zzz=") == 0, "apk checksum prefixed");
+  salt_foreign_pkg_list_free(&l);
+
+  CHECK(salt_foreign_pkg_parse("apk", apk, strlen(apk), &l) == SALT_OK, "apk list again");
+  const char *apkdb_old = "C:Q1abcdef=\nP:musl\nV:1.2.4-r0\n\nC:Q1zzz=\nP:zlib\nV:1.3.1-r1\n";
+  CHECK(salt_foreign_pkg_parse_digests("apk", apkdb_old, strlen(apkdb_old), &l) != SALT_OK,
+        "apk db version mismatch leaves package undigested");
+  salt_foreign_pkg_list_free(&l);
+
+  const char *xbps = "ii zlib-1.3.1_1  zlib\nii base-files-0.143_3  base\n";
+  CHECK(salt_foreign_pkg_parse("xbps", xbps, strlen(xbps), &l) == SALT_OK, "xbps list for digests");
+  char xd[512];
+  snprintf(xd, sizeof(xd), "zlib-1.3.1_1\t%s\nbase-files-0.143_3\t%s\n", hex, hex);
+  CHECK(salt_foreign_pkg_parse_digests("xbps", xd, strlen(xd), &l) == SALT_OK,
+        "xbps filename-sha256 attached");
+  z = salt_foreign_pkg_list_find(&l, "base-files");
+  CHECK(z && z->digest && strncmp(z->digest, "sha256:", 7) == 0 && strcmp(z->digest + 7, hex) == 0,
+        "xbps digest prefixed");
+  salt_foreign_pkg_list_free(&l);
+
+  CHECK(salt_foreign_pkg_parse("xbps", xbps, strlen(xbps), &l) == SALT_OK, "xbps list again");
+  snprintf(xd, sizeof(xd), "zlib-1.3.1_1\t%s\nbase-files-0.143_3\t\n", hex);
+  CHECK(salt_foreign_pkg_parse_digests("xbps", xd, strlen(xd), &l) != SALT_OK,
+        "xbps empty sha256 refused");
+  salt_foreign_pkg_list_free(&l);
+
+  CHECK(salt_foreign_pkg_parse_digests("pacman", "", 0, &l) != SALT_OK,
+        "pacman digests are not text-parsed");
+  salt_foreign_pkg_list_free(&l);
+}
+
 int main(void) {
   test_buf();
   test_strlist();
@@ -860,6 +932,7 @@ int main(void) {
   test_db_deps_conflicts();
   test_txn_rollback();
   test_foreign_pkg();
+  test_foreign_digests();
   printf("\n%d/%d checks passed\n", g_total - g_fail, g_total);
   return g_fail ? 1 : 0;
 }

@@ -2,7 +2,7 @@
 
 This document describes the reproducibility model implemented by `salt lock`,
 `salt lock apply` / `salt install --locked`, `salt lock diff` and
-`salt config {apply,diff,history,rollback,gc}`. It spans **both** package planes: the native plane (recipes that build `.grain`
+`salt config {show,check,apply,diff,history,rollback,gc}`. It spans **both** package planes: the native plane (recipes that build `.grain`
 packages) and the stratum plane (foreign packages installed by `pacman`, `apt`,
 `xbps`, `dnf`, `zypper`, `apk`). The goal the repo owner asked for: a single
 declarative system config plus a lockfile that together reproduce an identical
@@ -132,23 +132,49 @@ on_missing_artifact = "fail"
 Key points:
 
 - `[native].packages` is the curated base plus chosen native packages. Resolution
-  (dependencies, exact versions) is left to the lock — the config only names
-  roots, like a Nix `systemPackages` list. Today `salt` records the config's
-  hash in the lock (`config_hash`) and refuses `salt config apply` when the
-  config changed since the lock was written (unless `--relock`); the resolved
-  set itself comes from the live system at `salt lock` time.
-- `[native.pin]` optionally constrains a package to an exact version; otherwise
-  the latest in the named `repo` snapshot is locked.
+  (dependencies, exact versions) is done by `salt config apply` against the
+  synced repository index — the config only names roots, like a Nix
+  `systemPackages` list. The dependency closure of the roots is installed and
+  every installed native package *outside* that closure is removed, so the
+  section is an exact desired state, not an additive list. The resolved set is
+  then written to the lock, and `config_hash` guards against a config that
+  changed after locking (`salt config apply` refuses unless `--relock`).
+- `[native.pin]` constrains a root or dependency to an exact `"version"` or
+  `"version-release"`. The pinned entry must exist in the index and must be
+  part of the declared closure; otherwise `apply` fails. Unpinned packages take
+  the index's preferred (newest) entry.
 - Each `[[strata]]` block names a stratum, its bootstrap recipe (resolved exactly
-  like `salt stratum add` does via `resolve_stratum_recipe`), and the foreign
-  packages to install in it. The package manager is implied by the stratum
+  like `salt stratum add` does via `resolve_stratum_recipe`; `recipe` defaults
+  to `name`), and the foreign packages that must be present in it. A missing
+  stratum is bootstrapped, then any declared package the manager does not
+  report as installed is installed. Packages the operator installed by hand in
+  the stratum are left alone — exact foreign convergence is the lock's job
+  (`salt lock apply`, section 5). The package manager is implied by the stratum
   recipe (`package_manager` field).
 - `[expose]` declares which stratum commands/apps become host shims — this is the
-  declarative form of `salt expose` / `salt expose-desktop`, so exposure is part
-  of the reproduced system rather than an imperative afterthought.
-- `[policy]` controls strictness: whether unsigned native indexes are rejected,
-  whether unverified-reproducibility native packages are allowed, and what to do
-  when a locked foreign artifact is no longer fetchable (`fail` vs `warn`).
+  declarative form of `salt expose` / `salt expose-desktop`. Keys are
+  `"stratum/command"`; the value is an alias string or a table
+  `{ alias = "...", desktop = true }`. Aliases created this way are recorded with
+  kind `config`, so `apply` adds missing ones and removes config-managed aliases
+  that disappeared from the file without touching aliases created imperatively.
+- `[policy]` controls strictness. `require_signed_native = true` makes `apply`
+  fail unless the local index carries a valid signature from the trusted repo
+  key; `allow_unverified_repro = true` lets the native transaction proceed with
+  index entries whose hash cannot be verified (the equivalent of
+  `--allow-unverified`, with the same loud warning); `on_missing_artifact` is
+  `"fail"` (default: a declared root or dependency absent from the index aborts)
+  or `"skip"` (it is reported and left out of the resolved set).
+
+Every key outside this schema, an unsupported `schema` value, malformed types,
+duplicate strata, a malformed `[expose]` key or an unknown `on_missing_artifact`
+value is a hard error that `salt config check` reports without touching the
+system. Resolution-time problems — a pin the index does not offer, a pin
+outside the declared closure, a missing root or dependency under
+`on_missing_artifact = "fail"`, an `[expose]` key naming a stratum that is
+neither present nor declared — abort `salt config apply` before any change.
+`salt config apply --dry-run` prints the full plan (native transaction, stratum
+bootstrap/installs, shims to add or remove) without acting. The installer's minimal `[system]`/`[kernel]`
+config is accepted and simply leaves every plane unmanaged.
 
 ## 3. The lockfile: `/etc/salt/system.lock.toml`
 
@@ -185,10 +211,12 @@ repo_snapshot = "https://dl-cdn.alpinelinux.org/alpine/v3.20/main"
 [[stratum.package]]
 name = "musl"
 version = "1.2.5-r0"
+digest = "apk-checksum:Q1PS2iNeHDH3BF6TgqSMu/pcc3XIY="
 
 [[stratum.package]]
 name = "nano"
 version = "8.0-r0"
+digest = "apk-checksum:Q1VQKUgzD5QnCU0l0CRKl/YDXPga0="
 ```
 
 What each section pins:
@@ -212,9 +240,23 @@ What each section pins:
 - **`[[stratum.package]]`** — one entry per package the stratum's own package
   manager reports as installed: `name` and the manager's exact `version`
   string (`epoch:pkgver-pkgrel` for pacman, the Debian version for apt,
-  `ver-rN` for apk, `EVR` for rpm-based managers, `ver_rev` for xbps). Every
-  stratum in the lock carries the complete installed set; if any stratum's
-  manager cannot be queried, `salt lock` fails and writes nothing.
+  `ver-rN` for apk, `EVR` for rpm-based managers, `ver_rev` for xbps) plus a
+  `digest`: the content identity the manager itself recorded for that installed
+  package. `salt` never computes or guesses a digest for a package the manager
+  has no record of; the source per manager is:
+
+  | manager | `digest` | source |
+  |---|---|---|
+  | apk | `apk-checksum:Q1...` | the `C:` line of the package's stanza in `lib/apk/db/installed` (apk's own `.apk` control checksum) |
+  | dnf / zypper | `rpm-sha256header:<hex>` | `rpm -qa --qf '%{SHA256HEADER}'`, the SHA-256 of the installed RPM's header (the value the RPM signature covers) |
+  | xbps | `sha256:<hex>` | `xbps-query -p filename-sha256 <pkgver>`, the SHA-256 of the installed `.xbps` archive |
+  | pacman | `pacman-mtree-sha256:<hex>` | SHA-256 of `var/lib/pacman/local/<name>-<version>/mtree`, the installed file manifest (every path, mode, size and sha256) that pacman extracted from the package |
+  | apt | `dpkg-md5sums-sha256:<hex>` (or `dpkg-list-sha256:<hex>` for packages that ship no files) | SHA-256 of `var/lib/dpkg/info/<name>[:arch].md5sums` (dpkg's per-file checksum manifest) |
+
+  Every stratum in the lock carries the complete installed set; if any
+  stratum's manager cannot be queried, or reports a package with no digest
+  (an RPM with `SHA256HEADER` `(none)`, a dpkg package with neither `.md5sums`
+  nor `.list`, ...), `salt lock` fails and writes nothing.
 
 ### 3.1 Validation on load
 
@@ -226,8 +268,10 @@ What each section pins:
   `sha256:` prefix); a placeholder such as `TODO-sha256` is rejected;
 - names the same package twice;
 - has a `[[stratum]]` without a `name`, names a stratum twice, or has a
-  `[[stratum.package]]` without a `name` or a non-empty `version`, or pins the
-  same foreign package twice within a stratum.
+  `[[stratum.package]]` without a `name`, a non-empty `version` or a
+  `<kind>:<value>` `digest`, or pins the same foreign package twice within a
+  stratum. Lockfiles written before digests existed are refused with
+  "has no digest (regenerate the lockfile with 'salt lock')".
 
 ## 4. How `salt lock` captures each plane
 
@@ -290,10 +334,13 @@ ignored because a lock is always verified).
    1. the stratum is bootstrapped from its recipe if absent (a stratum that
       already exists is left as is);
    2. a `pre-lock-apply` stratum snapshot is taken (`salt stratum snapshot`);
-   3. the manager is queried (§4.2) and the live set compared with the lock;
+   3. the manager is queried (§4.2), each installed package's digest is read
+      (§3), and the live set compared with the lock by name, version and
+      digest;
    4. packages installed but absent from the lock are removed through the
       manager's remove command;
-   5. missing packages, and packages whose installed version differs, are
+   5. missing packages, and packages whose installed version or digest
+      differs, are
       installed at the exact locked version through the manager's own pinning
       syntax — `name=version` for apt (`--allow-downgrades`), apk and zypper
       (`--oldpackage`), `name-EVR` for dnf, `name-ver_rev` for xbps, and for
@@ -301,7 +348,10 @@ ignored because a lock is always verified).
       stratum's `/var/cache/pacman/pkg`, because Arch mirrors serve a single
       current build and installing it would silently substitute a different
       version;
-   6. the manager is queried again; any remaining difference is a failure.
+   6. the manager is queried again, digests included; any remaining
+      difference — including a reinstalled package whose digest still differs
+      from the lock because the repository now serves different bytes under
+      the same version — is a failure.
 
    On any failure in steps 3–6 the stratum is rolled back to the
    `pre-lock-apply` snapshot and `lock apply` exits non-zero. A pinned version
@@ -313,8 +363,13 @@ ignored because a lock is always verified).
 `native: already matches` and changes nothing. `salt config apply` is the same
 operation on the default lock path with one extra guard: if
 `etc/salt/system.toml` changed since the lock was generated (its sha256 differs
-from `config_hash`) it refuses unless `--relock` is passed, in which case the
-lock is regenerated after a successful apply.
+from `config_hash`) it refuses unless `--relock` is passed. With `--relock` (or
+when no lock exists yet) the config itself is resolved and enforced as
+described in section 2 — native closure from `[native]`/`[native.pin]`,
+stratum bootstrap and declared packages from `[[strata]]`, shims from
+`[expose]`, strictness from `[policy]` — and the lock is regenerated from the
+resulting system after a successful apply. `[expose]` and `[policy]` are
+enforced on every `config apply`, lock-driven or not.
 
 ## 6. `salt lock diff`
 
@@ -377,6 +432,12 @@ Enforced end to end and covered by `tests/cli_smoke.cmake` and
   whose content hash differs from the lock;
 - `lock diff` exit codes;
 - `config apply` stale-config refusal and `--relock`;
+- `config check` diagnostics and `config apply --relock` converging the native
+  plane to the `[native]` closure (install roots and dependencies, remove
+  extras, honour `[native.pin]`), `--dry-run` planning without changes,
+  `[policy] require_signed_native` refusing an unsigned index,
+  `on_missing_artifact = "fail" | "skip"`, and rejection of unknown keys,
+  unavailable pins, pins outside the native set and malformed `[expose]` keys;
 - generation and cache GC including dry-run and pinning;
 - foreign query parsing and exact-version spec generation for every supported
   manager (`tests/test_main.c`), lockfile validation of `[[stratum.package]]`
@@ -385,16 +446,27 @@ Enforced end to end and covered by `tests/cli_smoke.cmake` and
 Enforced end to end against real strata by the `strata` workflow, for each of
 alpine/apk, void/xbps, arch/pacman, debian/apt, fedora/dnf and opensuse/zypper:
 `salt lock` records the installed set, `lock diff` detects a removed package,
-`lock apply` reinstalls it at the exact locked version, and a lock pinning a
-version the manager cannot provide is refused and rolled back.
+`lock apply` reinstalls it at the exact locked version, every lock entry
+carries a digest, a lock whose digest for an installed package was tampered
+with is reported by `lock diff` and refused (rolled back) by `lock apply`, and
+a lock pinning a version the manager cannot provide is refused and rolled
+back. The same
+workflow proves `config apply --relock` installing a declared `[[strata]]`
+package the manager lacks, creating `[expose]` shims that run, reporting
+`already matches` on a second run, and removing a shim once its `[expose]`
+entry is deleted.
 
 Not enforced:
 
-- **Foreign artifact content hashes.** Stratum packages are pinned by the
-  manager's exact version identity, not by artifact sha256; the artifact is
-  whatever the stratum's repository (or, for pacman, its local cache) serves
-  under that identity, verified by that manager's own signature checks.
-- **`[policy]`, `[native.pin]`, `[[strata]].packages` and `[expose]`** in
-  `system.toml` are not read by `salt`; the config is hashed for staleness
-  detection only. `salt install` always requires a signed index and a verified
-  artifact unless `--allow-unverified` is given explicitly.
+- **Foreign artifact bytes before installation.** The digest in the lock is
+  the identity the manager records once a package is installed (§3), so a
+  substituted artifact is detected after the manager has installed it — and
+  then rolled back — rather than refused before extraction. Pre-extraction
+  verification of the downloaded `.apk`/`.deb`/`.rpm`/`.xbps`/`.pkg.tar` bytes
+  remains the job of each manager's own signature checks. For pacman and apt
+  the identity is the installed file manifest (mtree / md5sums), which pins
+  the package's content but not its compressed container.
+- **Foreign extras under `[[strata]]`.** `config apply` installs declared
+  foreign packages that are missing but does not remove packages the operator
+  added inside a stratum by hand; exact foreign convergence (remove extras,
+  replace changed versions) is what `salt lock apply` does from the lock.

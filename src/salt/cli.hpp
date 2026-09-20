@@ -61,11 +61,17 @@ int native_transaction(const Options &o, const RepoConf &c, salt_ctx *ctx, salt_
                        const NativePlan &plan, const char *op, const TxnFlags &f);
 
 std::string lock_path_for(const Options &o, const std::string &override_path);
+struct ForeignPin {
+  std::string name;
+  std::string version;
+  std::string digest;
+};
+
 struct StratumLock {
   std::string name;
   std::string family;
   std::string package_manager;
-  std::vector<std::pair<std::string, std::string>> packages;
+  std::vector<ForeignPin> packages;
 };
 
 bool lock_load(const std::string &path, std::vector<LockEntry> &out,
@@ -91,6 +97,7 @@ bool confirm(const Options &o, const std::string &prompt);
 PkgRef parse_pkgref(const std::string &arg);
 std::string auto_expose_mode(const Options &o);
 bool native_index_has(const Options &o, const std::string &name);
+bool index_signed_ok(const Options &o, const RepoConf &c);
 
 int stratum_install(const Options &o, const std::string &stratum,
                     const std::vector<std::string> &pkgs);
@@ -101,7 +108,7 @@ int stratum_update(const Options &o, const std::string &stratum);
 std::vector<std::string> list_strata_names(const Options &o);
 std::string choose_stratum_for(const Options &o, const std::string &name);
 std::string resolve_stratum_recipe(const Options &o, const std::string &arg);
-int ensure_stratum(const Options &o, const std::string &name);
+int ensure_stratum(const Options &o, const std::string &name, const std::string &recipe = "");
 bool expose_pm_enabled(const Options &o);
 bool expose_all_enabled(const Options &o);
 bool auto_service_enabled(const Options &o);

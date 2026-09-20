@@ -100,7 +100,17 @@ jobs:
         run: |
           salt=build/src/salt/salt
           sudo "$salt" lock --output /tmp/system.lock.toml
-          grep -A1 'name = "nano"' /tmp/system.lock.toml
+          grep -A2 'name = "nano"' /tmp/system.lock.toml
+          test "$(grep -c '^digest = "[a-z0-9-]*:..*"$' /tmp/system.lock.toml)" = "$(grep -c '^\[\[stratum.package\]\]$' /tmp/system.lock.toml)"
+          sudo "$salt" lock diff /tmp/system.lock.toml
+          awk '/^name = "nano"$/ {print; getline; print; getline; sub(/:.*/, ":0000000000000000000000000000000000000000000000000000000000000000"); print; next} {print}' \
+            /tmp/system.lock.toml > /tmp/baddigest.lock.toml
+          if sudo "$salt" lock diff /tmp/baddigest.lock.toml; then
+            echo "lock diff did not notice the tampered digest"; exit 1
+          fi
+          if sudo "$salt" --yes lock apply /tmp/baddigest.lock.toml; then
+            echo "lock apply accepted a package whose installed digest differs from the lock"; exit 1
+          fi
           sudo "$salt" lock diff /tmp/system.lock.toml
           sudo "$salt" pkg ${{ matrix.id }} remove nano
           if sudo "$salt" lock diff /tmp/system.lock.toml; then
@@ -115,6 +125,31 @@ jobs:
             echo "lock apply accepted a version the manager cannot provide"; exit 1
           fi
           sudo "$salt" lock diff /tmp/system.lock.toml
+
+      - name: Prove declarative system.toml ([[strata]].packages + [expose])
+        run: |
+          salt=build/src/salt/salt
+          sudo mkdir -p /etc/salt
+          printf '[[strata]]\nname = "%s"\npackages = ["nano"]\n\n[expose]\n"%s/nano" = "cfg-nano"\n"%s/sh" = { alias = "cfg-sh" }\n' \
+            ${{ matrix.id }} ${{ matrix.id }} ${{ matrix.id }} | sudo tee /etc/salt/system.toml
+          sudo "$salt" config check
+          sudo "$salt" pkg ${{ matrix.id }} remove nano
+          sudo "$salt" --yes --no-expose config apply --relock
+          sudo "$salt" run ${{ matrix.id }} /bin/sh -c 'command -v nano'
+          test -x /usr/local/salt/shims/cfg-nano
+          sudo env PATH="$PWD/build/src/salt:$PATH" /usr/local/salt/shims/cfg-sh -c 'echo shim-ok' | grep -q shim-ok
+          sudo "$salt" exposed | grep -q '^cfg-sh '
+          grep -q 'name = "nano"' /etc/salt/system.lock.toml
+          sudo "$salt" --yes --no-expose config apply | grep -q 'already matches'
+          printf '[[strata]]\nname = "%s"\npackages = ["nano"]\n\n[expose]\n"%s/nano" = "cfg-nano"\n' \
+            ${{ matrix.id }} ${{ matrix.id }} | sudo tee /etc/salt/system.toml
+          if sudo "$salt" --yes --no-expose config apply; then
+            echo "config apply accepted a stale lock"; exit 1
+          fi
+          sudo "$salt" --yes --no-expose config apply --relock
+          test ! -e /usr/local/salt/shims/cfg-sh
+          test -x /usr/local/salt/shims/cfg-nano
+          sudo "$salt" lock diff /etc/salt/system.lock.toml
 
       - name: Prove per-stratum snapshot + rollback
         run: |

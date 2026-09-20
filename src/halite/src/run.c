@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include "salt/run.h"
+#include "salt/hash.h"
 #include "salt/util.h"
 
 #include <stdio.h>
@@ -868,6 +869,7 @@ int salt_foreign_pkg_list_push(salt_foreign_pkg_list *l, const char *name, const
   }
   l->items[l->len].name = salt_strdup(name);
   l->items[l->len].version = salt_strdup(version);
+  l->items[l->len].digest = NULL;
   if (!l->items[l->len].name || !l->items[l->len].version) {
     free(l->items[l->len].name);
     free(l->items[l->len].version);
@@ -875,6 +877,17 @@ int salt_foreign_pkg_list_push(salt_foreign_pkg_list *l, const char *name, const
     return SALT_ERR;
   }
   l->len++;
+  return SALT_OK;
+}
+
+int salt_foreign_pkg_set_digest(salt_foreign_pkg *p, const char *digest) {
+  char *d = salt_strdup(digest);
+  if (!d) {
+    salt_set_error("out of memory");
+    return SALT_ERR;
+  }
+  free(p->digest);
+  p->digest = d;
   return SALT_OK;
 }
 
@@ -889,6 +902,7 @@ void salt_foreign_pkg_list_free(salt_foreign_pkg_list *l) {
   for (size_t i = 0; i < l->len; i++) {
     free(l->items[i].name);
     free(l->items[i].version);
+    free(l->items[i].digest);
   }
   free(l->items);
   salt_foreign_pkg_list_init(l);
@@ -1112,6 +1126,277 @@ int salt_stratum_pkg_query(const salt_stratum *s, salt_foreign_pkg_list *out) {
     rc = SALT_ERR;
   }
   if (rc == SALT_OK) rc = salt_foreign_pkg_parse(kind, text.data ? text.data : "", text.len, out);
+  salt_buf_free(&text);
+  return rc;
+}
+
+static salt_foreign_pkg *foreign_pkg_find_mut(salt_foreign_pkg_list *l, const char *name) {
+  for (size_t i = 0; i < l->len; i++)
+    if (strcmp(l->items[i].name, name) == 0) return &l->items[i];
+  return NULL;
+}
+
+static int digest_set_prefixed(salt_foreign_pkg *p, const char *prefix, const char *value) {
+  salt_buf b;
+  salt_buf_init(&b);
+  int rc = salt_buf_printf(&b, "%s:%s", prefix, value);
+  if (rc == SALT_OK) rc = salt_foreign_pkg_set_digest(p, b.data);
+  salt_buf_free(&b);
+  return rc;
+}
+
+static int digests_complete(const char *kind, const salt_foreign_pkg_list *l) {
+  for (size_t i = 0; i < l->len; i++)
+    if (!l->items[i].digest) {
+      salt_set_error("%s reports no content digest for %s %s", kind, l->items[i].name,
+                     l->items[i].version);
+      return SALT_ERR;
+    }
+  return SALT_OK;
+}
+
+static bool hex_valid(const char *s) {
+  size_t n = strlen(s);
+  if (n != SALT_SHA256_HEXLEN) return false;
+  for (size_t i = 0; i < n; i++)
+    if (!((s[i] >= '0' && s[i] <= '9') || (s[i] >= 'a' && s[i] <= 'f'))) return false;
+  return true;
+}
+
+int salt_foreign_pkg_parse_digests(const char *kind, const char *text, size_t len,
+                                   salt_foreign_pkg_list *list) {
+  if (!kind) {
+    salt_set_error("unknown package manager");
+    return SALT_ERR;
+  }
+  bool rpm = strcmp(kind, "dnf") == 0 || strcmp(kind, "zypper") == 0;
+  bool xbps = strcmp(kind, "xbps") == 0;
+  bool apk = strcmp(kind, "apk") == 0;
+  if (!rpm && !xbps && !apk) {
+    salt_set_error("%s digests are not parsed from text", kind);
+    return SALT_ERR;
+  }
+  char *apk_name = NULL, *apk_ver = NULL, *apk_sum = NULL;
+  const char *p = text;
+  const char *end = text + len;
+  int rc = SALT_OK;
+  while (rc == SALT_OK && p <= end) {
+    const char *nl = p < end ? memchr(p, '\n', (size_t)(end - p)) : NULL;
+    if (!nl) nl = end;
+    size_t n = (size_t)(nl - p);
+    while (n > 0 && (p[n - 1] == '\r' || p[n - 1] == ' ')) n--;
+    char *line = (char *)malloc(n + 1);
+    if (!line) {
+      salt_set_error("out of memory");
+      rc = SALT_ERR;
+      break;
+    }
+    memcpy(line, p, n);
+    line[n] = '\0';
+    bool last = nl >= end;
+    p = last ? end + 1 : nl + 1;
+    if (apk) {
+      if (n == 0) {
+        if (apk_name && apk_ver && apk_sum) {
+          salt_foreign_pkg *f = foreign_pkg_find_mut(list, apk_name);
+          if (f && strcmp(f->version, apk_ver) == 0)
+            rc = digest_set_prefixed(f, "apk-checksum", apk_sum);
+        } else if (apk_name) {
+          salt_set_error("apk installed db: %s lacks a version or checksum", apk_name);
+          rc = SALT_ERR;
+        }
+        free(apk_name);
+        free(apk_ver);
+        free(apk_sum);
+        apk_name = apk_ver = apk_sum = NULL;
+      } else if (line[1] == ':') {
+        char **slot = line[0] == 'P'   ? &apk_name
+                      : line[0] == 'V' ? &apk_ver
+                      : line[0] == 'C' ? &apk_sum
+                                       : NULL;
+        if (slot) {
+          free(*slot);
+          *slot = salt_strdup(line + 2);
+          if (!*slot) {
+            salt_set_error("out of memory");
+            rc = SALT_ERR;
+          }
+        }
+      }
+    } else if (n > 0) {
+      char *t1 = strchr(line, '\t');
+      char *t2 = t1 ? strchr(t1 + 1, '\t') : NULL;
+      if (rpm) {
+        if (!t1 || !t2) {
+          salt_set_error("rpm -qa: malformed digest line '%s'", line);
+          rc = SALT_ERR;
+        } else {
+          *t1 = '\0';
+          *t2 = '\0';
+          salt_foreign_pkg *f = foreign_pkg_find_mut(list, line);
+          if (f && strcmp(f->version, t1 + 1) == 0) {
+            if (!hex_valid(t2 + 1)) {
+              salt_set_error("rpm reports no SHA256HEADER for %s %s (got '%s')", line, t1 + 1,
+                             t2 + 1);
+              rc = SALT_ERR;
+            } else {
+              rc = digest_set_prefixed(f, "rpm-sha256header", t2 + 1);
+            }
+          }
+        }
+      } else {
+        if (!t1) {
+          salt_set_error("xbps-query: malformed digest line '%s'", line);
+          rc = SALT_ERR;
+        } else {
+          *t1 = '\0';
+          char *dash = strrchr(line, '-');
+          if (!dash || dash == line) {
+            salt_set_error("xbps-query: malformed pkgver '%s'", line);
+            rc = SALT_ERR;
+          } else {
+            *dash = '\0';
+            salt_foreign_pkg *f = foreign_pkg_find_mut(list, line);
+            if (f && strcmp(f->version, dash + 1) == 0) {
+              if (!hex_valid(t1 + 1)) {
+                salt_set_error("xbps reports no filename-sha256 for %s-%s (got '%s')", line,
+                               dash + 1, t1 + 1);
+                rc = SALT_ERR;
+              } else {
+                rc = digest_set_prefixed(f, "sha256", t1 + 1);
+              }
+            }
+          }
+        }
+      }
+    }
+    free(line);
+  }
+  free(apk_name);
+  free(apk_ver);
+  free(apk_sum);
+  if (rc == SALT_OK) rc = digests_complete(kind, list);
+  return rc;
+}
+
+static int digest_host_file(const salt_stratum *s, const char *rel, const char *prefix,
+                            salt_foreign_pkg *p) {
+  char *path = salt_join_path(s->root ? s->root : "", rel);
+  if (!path) {
+    salt_set_error("out of memory");
+    return SALT_ERR;
+  }
+  char hex[SALT_SHA256_HEXLEN + 1];
+  int rc = salt_sha256_file(path, hex);
+  free(path);
+  if (rc != SALT_OK) return rc;
+  return digest_set_prefixed(p, prefix, hex);
+}
+
+static int dpkg_info_file(const salt_stratum *s, const char *name, const char *ext, salt_buf *out) {
+  const char *info = "var/lib/dpkg/info";
+  salt_buf plain;
+  salt_buf_init(&plain);
+  salt_buf_printf(&plain, "%s/%s/%s%s", s->root ? s->root : "", info, name, ext);
+  bool found = salt_path_exists(plain.data);
+  salt_buf_free(&plain);
+  if (found) return salt_buf_printf(out, "%s/%s%s", info, name, ext);
+  salt_buf dir;
+  salt_buf_init(&dir);
+  salt_buf_printf(&dir, "%s/%s", s->root ? s->root : "", info);
+  DIR *d = opendir(dir.data);
+  salt_buf_free(&dir);
+  if (!d) return SALT_ERR;
+  size_t nl = strlen(name), el = strlen(ext);
+  int rc = SALT_ERR;
+  struct dirent *e;
+  while ((e = readdir(d)) != NULL) {
+    size_t l = strlen(e->d_name);
+    if (l <= nl + el || strncmp(e->d_name, name, nl) != 0 || e->d_name[nl] != ':') continue;
+    if (strcmp(e->d_name + l - el, ext) != 0) continue;
+    if (memchr(e->d_name + nl + 1, '.', l - nl - 1 - el) != NULL) continue;
+    rc = salt_buf_printf(out, "%s/%s", info, e->d_name);
+    break;
+  }
+  closedir(d);
+  return rc;
+}
+
+int salt_stratum_pkg_digests(const salt_stratum *s, salt_foreign_pkg_list *list) {
+  const char *kind = salt_stratum_pkg_kind(s);
+  if (!kind) {
+    salt_set_error("unknown package manager for stratum '%s'", s && s->name ? s->name : "?");
+    return SALT_ERR;
+  }
+  if (strcmp(kind, "pacman") == 0) {
+    for (size_t i = 0; i < list->len; i++) {
+      salt_buf rel;
+      salt_buf_init(&rel);
+      salt_buf_printf(&rel, "var/lib/pacman/local/%s-%s/mtree", list->items[i].name,
+                      list->items[i].version);
+      int rc = digest_host_file(s, rel.data, "pacman-mtree-sha256", &list->items[i]);
+      if (rc != SALT_OK)
+        salt_set_error("pacman has no mtree manifest for %s %s under %s/%s", list->items[i].name,
+                       list->items[i].version, s->root ? s->root : "", rel.data);
+      salt_buf_free(&rel);
+      if (rc != SALT_OK) return rc;
+    }
+    return SALT_OK;
+  }
+  if (strcmp(kind, "apt") == 0) {
+    for (size_t i = 0; i < list->len; i++) {
+      salt_buf rel;
+      salt_buf_init(&rel);
+      const char *prefix = "dpkg-md5sums-sha256";
+      int rc = dpkg_info_file(s, list->items[i].name, ".md5sums", &rel);
+      if (rc != SALT_OK) {
+        prefix = "dpkg-list-sha256";
+        rc = dpkg_info_file(s, list->items[i].name, ".list", &rel);
+      }
+      if (rc == SALT_OK) rc = digest_host_file(s, rel.data, prefix, &list->items[i]);
+      if (rc != SALT_OK)
+        salt_set_error("dpkg has no md5sums or list file for %s %s under %s/var/lib/dpkg/info",
+                       list->items[i].name, list->items[i].version, s->root ? s->root : "");
+      salt_buf_free(&rel);
+      if (rc != SALT_OK) return rc;
+    }
+    return SALT_OK;
+  }
+  salt_buf text;
+  salt_buf_init(&text);
+  int rc;
+  if (strcmp(kind, "apk") == 0) {
+    char *path = salt_join_path(s->root ? s->root : "", "lib/apk/db/installed");
+    if (!path) {
+      salt_set_error("out of memory");
+      return SALT_ERR;
+    }
+    rc = salt_read_file(path, &text);
+    free(path);
+  } else {
+    const char *argv[5] = {0};
+    if (strcmp(kind, "xbps") == 0) {
+      argv[0] = "sh";
+      argv[1] = "-c";
+      argv[2] =
+          "set -e; xbps-query -l | while read -r st pv rest; do "
+          "printf '%s\\t%s\\n' \"$pv\" \"$(xbps-query -p filename-sha256 \"$pv\")\"; done";
+    } else {
+      argv[0] = "rpm";
+      argv[1] = "-qa";
+      argv[2] = "--qf";
+      argv[3] = "%{NAME}\\t%{EVR}\\t%{SHA256HEADER}\\n";
+    }
+    int status = -1;
+    rc = pkg_run_capture(s, (char *const *)argv, &text, &status);
+    if (rc == SALT_OK && status != 0) {
+      salt_set_error("%s exited %d while reading package digests in stratum '%s'", argv[0], status,
+                     s->name ? s->name : "?");
+      rc = SALT_ERR;
+    }
+  }
+  if (rc == SALT_OK)
+    rc = salt_foreign_pkg_parse_digests(kind, text.data ? text.data : "", text.len, list);
   salt_buf_free(&text);
   return rc;
 }

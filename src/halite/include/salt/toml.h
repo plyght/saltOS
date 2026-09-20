@@ -28,6 +28,9 @@ const salt_toml *salt_toml_get(const salt_toml *table, const char *key);
 const salt_toml *salt_toml_path(const salt_toml *table, const char *dotted_key);
 size_t salt_toml_array_len(const salt_toml *array);
 const salt_toml *salt_toml_array_at(const salt_toml *array, size_t i);
+size_t salt_toml_table_len(const salt_toml *table);
+const char *salt_toml_table_key(const salt_toml *table, size_t i);
+const salt_toml *salt_toml_table_val(const salt_toml *table, size_t i);
 
 const char *salt_toml_as_string(const salt_toml *t);
 long long salt_toml_as_int(const salt_toml *t, long long fallback);
