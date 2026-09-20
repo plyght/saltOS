@@ -1,0 +1,115 @@
+name: omakase-iso
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "os/omakase/**"
+      - "os/iso/live-build.sh"
+      - ".github/workflows/omakase-iso.yml"
+
+jobs:
+  build:
+    name: omakase ISO (x86_64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet \
+            /opt/hostedtoolcache/CodeQL /usr/local/.ghcup 2>/dev/null || true
+          df -h /
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            shellcheck mtools dosfstools qemu-system-x86 qemu-utils ovmf socat netpbm zstd curl
+
+      - name: ShellCheck
+        run: |
+          shellcheck -S warning os/omakase/build/*.sh os/omakase/lib/*.sh \
+            os/omakase/live/saltos-* os/omakase/target/bin/saltos-*
+
+      - name: Cache Arch offline mirror
+        uses: actions/cache@v4
+        with:
+          path: out-omakase/mirror/arch
+          key: omakase-arch-mirror-${{ hashFiles('os/omakase/packages/packages.tsv', 'os/omakase/build/arch-mirror.sh') }}-${{ github.run_id }}
+          restore-keys: |
+            omakase-arch-mirror-${{ hashFiles('os/omakase/packages/packages.tsv', 'os/omakase/build/arch-mirror.sh') }}-
+
+      - name: Cache vendor bundles
+        uses: actions/cache@v4
+        with:
+          path: .omakase-vendor-cache
+          key: omakase-vendor-${{ hashFiles('os/omakase/build/vendor.sh') }}
+
+      - name: Build Arch offline mirror
+        run: |
+          [ -f out-omakase/mirror/arch/offline.db ] && [ -f out-omakase/mirror/arch/archlinux-bootstrap-x86_64.tar.zst ] \
+            || OUT="$PWD/out-omakase/mirror/arch" bash os/omakase/build/arch-mirror.sh x86_64
+
+      - name: Stage vendor bundles
+        run: |
+          VENDOR_CACHE="$PWD/.omakase-vendor-cache" OUT="$PWD/out-omakase/vendor" bash os/omakase/build/vendor.sh x86_64
+
+      - name: Build salt + salt-setup against the Debian base
+        run: |
+          docker run --rm -v "$PWD":/src -w /src debian:bookworm bash -c '
+            set -e
+            apt-get update
+            apt-get install -y --no-install-recommends \
+              cmake ninja-build pkg-config g++ ca-certificates \
+              libzstd-dev libsodium-dev libsqlite3-dev
+            cmake -G Ninja -B build-iso -DCMAKE_BUILD_TYPE=Release
+            cmake --build build-iso --target salt salt-setup'
+
+      - name: Build omakase ISO (in a clean Debian container)
+        run: |
+          docker run --rm --privileged -v "$PWD":/src -w /src debian:bookworm bash -c '
+            set -e
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update
+            apt-get install -y --no-install-recommends \
+              mmdebstrap debian-archive-keyring squashfs-tools xorriso mtools \
+              grub-pc-bin grub-efi-amd64-bin grub-common ca-certificates curl zstd
+            WORK=/src/out-omakase/work OUT=/src/out-omakase \
+              MIRROR_DIR=/src/out-omakase/mirror/arch VENDOR_DIR=/src/out-omakase/vendor \
+              REPO_DIR=/src SALT_BIN=/src/build-iso/src/salt/salt \
+              SALTSETUP_BIN=/src/build-iso/src/setup/salt-setup \
+              bash os/omakase/build/iso.sh x86_64'
+          sudo rm -rf out-omakase/work
+          sudo chown -R "$USER" out-omakase
+          ls -lh out-omakase/*.iso
+
+      - name: Unattended install + reboot + Sway + theme (QEMU)
+        run: |
+          bash os/omakase/build/test-vm.sh out-omakase/saltos-omakase-x86_64.iso "$PWD/omakase-test"
+
+      - name: Collect logs
+        if: always()
+        run: |
+          mkdir -p omakase-logs
+          cp omakase-test/*.log omakase-logs/ 2>/dev/null || true
+          cp omakase-test/desktop.png omakase-logs/ 2>/dev/null || true
+          cp omakase-test/install.toml omakase-logs/ 2>/dev/null || true
+          echo "----- install serial tail -----"; tail -n 60 omakase-logs/install-serial.log 2>/dev/null || true
+          echo "----- boot serial tail -----"; tail -n 60 omakase-logs/boot-serial.log 2>/dev/null || true
+
+      - name: Upload ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: saltos-omakase-x86_64
+          path: out-omakase/saltos-omakase-x86_64.iso
+          retention-days: 14
+
+      - name: Upload test logs and screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: omakase-qemu-logs
+          path: omakase-logs
+          retention-days: 14

@@ -1,0 +1,217 @@
+# saltOS omakase edition
+
+The omakase edition is the opinionated saltOS ISO: an Omarchy-style, fully
+curated Sway desktop on top of saltOS's native core (runit, `salt`, `halite`,
+Btrfs snapshots, GRUB) plus one **stratum** of your choice that supplies every
+desktop-level package. saltOS owns boot, init, rollback, and system identity;
+the stratum's package manager owns Sway, foot, Waybar, Neovim, fonts, and the
+apps. Nothing desktop-level is packaged as a native `.grain`.
+
+Everything lives in `os/omakase/`:
+
+```txt
+os/omakase/
+  build/      arch-mirror.sh, vendor.sh, iso.sh, test-vm.sh, verify-packages.sh
+  lib/        omakase.sh (shared TOML/state helpers)
+  live/       ISO-side: greeter, configurator, cidata loader, dashboard, installer
+  packages/   packages.tsv, one column per stratum
+  target/     installed-side: bin/saltos-*, config/, templates/
+  themes/     <name>/theme.sh palettes + wallpapers
+```
+
+## Install flow
+
+1. **Boot the ISO.** tty1 shows a centered logo on a Tokyo Night VT palette and
+   `Press Return to Start Install`. Ctrl+C here offers *prepare this machine for
+   another owner* (deferred provisioning: install now, ask identity, keyboard
+   and password at first boot).
+2. **Configurator** (`saltos-configurator`, a gum wizard; finishable in well
+   under a minute):
+   keyboard layout → username → password → full name (optional) → email
+   (optional) → hostname → timezone → **base distribution** (arch, debian,
+   fedora, void, alpine, opensuse; Arch is preselected) → confirmation table
+   → disk → *full disk* or *free space (dual boot)* → **encryption toggle,
+   default OFF** → final confirm.
+   The wizard writes `/run/saltos-install/install.toml` and a `credentials`
+   file (mode 0600).
+3. **Install** (`saltos-install-dashboard` in the foreground, `saltos-install`
+   underneath as a phased state machine writing `state.json`):
+   preflight → base → mount → desktop → apps → host → user → finish.
+   *base* turns the wizard answers into a `salt-setup` configuration
+   (`install.mode = "erase"` or `"alongside"`, `install.encrypt`,
+   `user.password`, `boot.cmdline`) and runs `salt-setup --from` on it, so
+   partitioning, the `@ @home @var @log @snapshots @strata` Btrfs layout, LUKS2,
+   the native core, the user account, the stratum bootstrap, kernel, initramfs
+   and GRUB are the same implementation the text and Calamares installers use.
+   *desktop* and *apps* install the curated set through the stratum's package
+   manager and drop in the omakase configs, themes, and tools. Stratum shims
+   that would shadow a native host command (`cat`, `bash`, `sudo`, ...) are
+   unexposed again so the host userland stays authoritative; only stratum-only
+   commands (`sway`, `foot`, `grim`, ...) remain on `PATH`.
+   *host* enables `udevd`, `dbus`, `seatd`, `NetworkManager`, `bluetoothd` and
+   the session service under `/etc/runit/runsvdir/current`, locks the `root`
+   account (the user is in `sudo`/`wheel`), and removes the live installer.
+4. **Reboot.** First boot autologs the user into Sway on tty1 through a runit
+   service (`saltos-session`); no display manager.
+
+### Offline vs online
+
+The ISO carries a full offline Arch mirror (`build/arch-mirror.sh` downloads
+`base` plus every package in the `arch` column of `packages.tsv`, plus the
+bootstrap tarball, and builds an `offline.db` pacman repository). An Arch
+install therefore needs no network and takes a few minutes in a VM. The other
+five strata are bootstrapped and populated online with their own package
+managers; the wizard warns when it cannot see a default route.
+
+Vicinae, Helium, and gum are not packaged by every stratum; `build/vendor.sh`
+pins their upstream releases with SHA-256 checksums and the installer places
+them under `/opt/saltos/vendor` with wrappers on `PATH`, running against the
+stratum's runtime libraries (`helium-runtime` / `vicinae-runtime` rows).
+
+## Unattended installs (`cidata`)
+
+Attach a second block device with filesystem label `cidata` (or `CIDATA`)
+containing:
+
+- `install.toml` — the same file the configurator writes. Minimal example:
+
+  ```toml
+  [system]
+  hostname = "saltos-omakase"
+  locale = "en_US.UTF-8"
+  timezone = "UTC"
+  keymap = "us"
+
+  [kernel]
+  source = "native"
+
+  [[stratum]]
+  name = "arch"
+  role = "primary"
+  expose = true
+
+  [user]
+  username = "salt"
+  full_name = "saltOS Tester"
+  email = ""
+  deferred = false
+
+  [install]
+  profile = "omakase"
+  disk = "/dev/vda"
+  mode = "disk"          # or "free" for dual boot into unallocated space
+  encrypt = false
+  serial_console = true  # optional: autologin getty on ttyS0 + GRUB serial
+  ```
+
+- `credentials` — `password=<plain text>` (mode 0600 on the target; omit when
+  `deferred = true`).
+
+`saltos-cidata-load` mounts it read-only, validates disk/stratum/credentials,
+applies the keymap, and the greeter skips straight to the dashboard. On
+success the ISO prints `SALTOS_OMAKASE_INSTALL_OK` on the serial console and
+reboots; on failure `SALTOS_OMAKASE_INSTALL_FAIL <reason>`.
+
+`build/test-vm.sh <iso>` does exactly this under QEMU/OVMF: creates the target
+disk and `cidata` image, installs, boots the installed disk, waits for
+`SALTOS_SWAY_SESSION_OK`, runs `saltos-theme set gruvbox` over serial, lists
+runit services, and grabs a `screendump`. `.github/workflows/omakase-iso.yml`
+runs it on every push touching `os/omakase/`.
+
+## Desktop
+
+Sway with Omarchy-style bindings (`$mod` = Super). Waybar, mako, swaylock,
+swayidle, swaybg, xdg-desktop-portal-wlr/gtk, mate-polkit, PipeWire +
+WirePlumber.
+
+| Keys                    | Action                                   |
+|-------------------------|------------------------------------------|
+| Super+Return            | terminal (foot)                          |
+| Super+Space             | launcher (vicinae)                       |
+| Super+B                 | browser (Helium)                         |
+| Super+F                 | file manager (Thunar)                    |
+| Super+N                 | Neovim                                   |
+| Super+T                 | btop                                     |
+| Super+E                 | `saltos-menu`                            |
+| Super+Escape            | power menu (`saltos-power`)              |
+| Super+Ctrl+Escape       | lock                                     |
+| Super+Ctrl+Space        | next theme                               |
+| Super+V                 | clipboard history (cliphist)             |
+| Super+Shift+N / B       | Wi-Fi (nmtui) / Bluetooth (bluetui)      |
+| Print / Shift / Ctrl    | screenshot region / output / window      |
+| Super+W                 | close window                             |
+| Super+H/J/K/L, arrows   | focus; +Shift moves                      |
+| Super+1..0, +Shift      | workspace; move to workspace             |
+| Super+Tab / Shift+Tab   | next / previous workspace                |
+| Super+Shift+V / S       | split vertical / horizontal              |
+| Super+Shift+F           | fullscreen                               |
+| Super+Shift+Space       | float                                    |
+| Super+Shift+T           | toggle tabbed                            |
+| Super+Minus, +Shift     | scratchpad show / move                   |
+| Super+R                 | resize mode                              |
+| Super+Shift+C           | reload Sway                              |
+| XF86 media/brightness   | pamixer, brightnessctl, playerctl        |
+
+Curated apps: foot, Helium, vicinae, Neovim (lazy.nvim, LSP, treesitter,
+telescope, fzf), Thunar, imv, mpv, zathura, grim/slurp/satty, wl-clipboard,
+cliphist, brightnessctl, playerctl, pamixer, pavucontrol, btop, fastfetch,
+NetworkManager (`nmtui`), bluetui/bluez. No web-app or PWA shortcuts.
+Vicinae's system-info telemetry is switched off in the shipped
+`~/.config/vicinae/settings.json`.
+
+## Themes
+
+`tokyo-night` (default), `catppuccin`, `gruvbox`, `nord`, `everforest`,
+`kanagawa`, `rose-pine`. Each is a `themes/<name>/theme.sh` palette plus
+wallpaper; `saltos-theme` renders the templates under `target/templates/` into
+`~/.config/saltos/theme/` for Sway, foot, Waybar, mako, swaylock, Neovim, GTK
+3/4 (`gsettings` + `gtk.css`), the cursor theme, and `swaybg`.
+
+```sh
+saltos-theme list
+saltos-theme current
+saltos-theme set gruvbox      # works headlessly; live-reloads when Sway is up
+saltos-theme next
+```
+
+## Tools
+
+- `saltos-menu` — gum TUI: Theme, Update, Install (search/install/remove
+  stratum packages, add another stratum), Setup (Wi-Fi, Bluetooth, audio,
+  keyboard, password), System (about, stratum snapshots, keybindings, power).
+- `saltos-update [all|host|stratum|neovim]` — `salt-ota run` (falls back to
+  `salt sync && salt update`), then the stratum's package manager upgrade, then
+  Neovim plugins.
+- `saltos-power`, `saltos-screenshot`, `saltos-firstboot` (deferred
+  provisioning), `saltos-provision-home`.
+
+## Package maps
+
+`packages/packages.tsv` has one row per role and one column per stratum; `-`
+marks a gap. `build/verify-packages.sh [tsv] [distro]` resolves every name
+against the distro's official repositories in Docker and prints a per-distro
+`ok`/`missing` list. Known gaps at the time of writing:
+
+| Role            | Missing in                    | Consequence / workaround                              |
+|-----------------|-------------------------------|-------------------------------------------------------|
+| `bluetui`       | debian, fedora, void, alpine, opensuse | `bluetoothctl` from bluez; Super+Shift+B opens it |
+| `satty`         | debian, fedora, alpine, opensuse | screenshots are saved without the annotation step    |
+| `cliphist`      | fedora, alpine, opensuse      | Super+V is disabled; `wl-clipboard` still works       |
+| `lazygit`       | all but arch                  | omitted                                               |
+| `vicinae`, `helium`, `gum` | all                | vendored upstream releases (`build/vendor.sh`)        |
+
+Arch is the complete column and the default selection.
+
+## How it differs from Omarchy
+
+- **Sway** (wlroots) instead of Hyprland; no Quickshell; Waybar + mako.
+- **Stratum choice**: the wizard's *base distribution* step decides which
+  package manager provides the desktop. Omarchy is Arch-only.
+- **Encryption is off by default** and toggled explicitly in the wizard
+  instead of Ctrl+C on the format confirmation.
+- **Native core**: runit, Btrfs snapshots + rollback, `salt`/`halite`, GRUB;
+  `saltos-update` wraps `salt-ota` before the stratum's upgrade.
+- **No web-app shortcuts**; Helium instead of Chromium; vicinae instead of
+  Walker; foot instead of Alacritty.
+- Same greeter → gum wizard → dashboard → reboot flow, same deferred
+  provisioning and `cidata` unattended path, same offline default install.

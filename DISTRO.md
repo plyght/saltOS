@@ -1044,6 +1044,16 @@ Design goal:
 - native base where it matters
 - stratum-backed apps where that is the practical path
 
+### 17.3 Editions
+
+| Edition   | Build                                   | Experience                                                                                                                                                                    |
+|-----------|-----------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `base`    | `os/iso/live-build.sh` (`EDITION=base`) | Console live ISO; `salt-setup` installs the native core and a chosen primary stratum. Unopinionated.                                                                          |
+| `desktop` | `os/iso/live-build.sh` (`EDITION=desktop`) | Graphical live ISO with the unopinionated desktop from section 17.                                                                                                        |
+| `omakase` | `os/omakase/build/iso.sh`               | Opinionated Sway desktop: gum wizard on the ISO, offline Arch mirror (online for other strata), Tokyo Night and six more themes, `saltos-theme`, `saltos-menu`, `saltos-update`. |
+
+The omakase edition never builds desktop software as native `.grain` packages: Sway, foot, Waybar, Neovim, fonts, and the curated apps come from the stratum picked in the wizard, mapped per distribution in `os/omakase/packages/packages.tsv`. It reuses `salt-setup --from` for partitioning, base, stratum bootstrap, and boot. See `docs/omakase.md`.
+
 ## 18. Browser Policy
 
 Helium should be the preferred browser if packaging is practical.

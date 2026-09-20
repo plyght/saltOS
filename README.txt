@@ -38,6 +38,17 @@ What works today
   Self-hosted from-source ISO path for Linux, glibc, bash/coreutils, BusyBox,
   runit, and static salt.
 
+Editions
+--------
+
+  base      console live ISO with salt-setup; installs the native core plus a
+            chosen primary stratum (os/iso/live-build.sh, EDITION=base)
+  desktop   unopinionated graphical live ISO (os/iso/live-build.sh,
+            EDITION=desktop)
+  omakase   opinionated Sway desktop: gum wizard on the ISO, offline Arch
+            mirror, themes, saltos-theme/saltos-menu/saltos-update, curated
+            apps from the chosen stratum (os/omakase/, docs/omakase.md)
+
 Architecture
 ------------
 
@@ -127,6 +138,7 @@ Documentation
   docs/reproducibility.md   lockfiles, config apply, generations and gc
   docs/trust-model.md       trust and supply-chain policy
   docs/installation.md      installation notes
+  docs/omakase.md           opinionated Sway edition and unattended installs
   docs/raspberry-pi.md      Raspberry Pi 5 image
   docs/thinkpad.md          ThinkPad P40 Yoga image
   docs/ota.md               over-the-air update server and client
