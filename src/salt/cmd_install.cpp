@@ -110,8 +110,9 @@ static int install_one(const Options &o, const RepoConf &c, salt_ctx *ctx, salt_
   std::string cache = cache_dir_for(o);
   salt_mkdirs(cache.c_str(), 0755);
   std::string dest = path_join(cache, e->filename);
-  if (salt_fetch_to_file(repo_url(c, std::string("packages/") + e->filename).c_str(),
-                         dest.c_str()) != SALT_OK) {
+  std::string src = e->url && e->url[0] ? std::string(e->url)
+                                        : repo_url(c, std::string("packages/") + e->filename);
+  if (salt_fetch_to_file(src.c_str(), dest.c_str()) != SALT_OK) {
     fprintf(stderr, "salt: download failed for %s: %s\n", e->name, salt_last_error());
     return SALT_ERR_IO;
   }

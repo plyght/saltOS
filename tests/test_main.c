@@ -342,6 +342,18 @@ static void test_repo(void) {
   CHECK(salt_repo_index_load(idxpath, &loaded) == SALT_OK, "repo index load");
   CHECK(loaded.len == 1, "repo index reload");
   CHECK(salt_repo_index_find(&loaded, "x") != NULL, "repo index find");
+  CHECK(loaded.items[0].url == NULL, "repo index url absent");
+
+  CHECK(salt_repo_publish(d, "current", "x86_64",
+                          "https://example.invalid/releases/download/v1/", "") == SALT_OK,
+        "repo publish with url base");
+  salt_repo_index withurl;
+  CHECK(salt_repo_index_load(idxpath, &withurl) == SALT_OK, "repo index load (url)");
+  CHECK(withurl.len == 1 && withurl.items[0].url &&
+            strcmp(withurl.items[0].url,
+                   "https://example.invalid/releases/download/v1/x-1-1-x86_64.grain") == 0,
+        "repo index url");
+  salt_repo_index_free(&withurl);
 
   salt_buf_free(&toml);
   salt_repo_index_free(&idx);

@@ -14,6 +14,7 @@ typedef struct {
   int release;
   char *arch;
   char *filename;
+  char *url;
   char *sha256;
   uint64_t size;
   salt_strlist deps;
@@ -39,7 +40,7 @@ int salt_vercmp(const char *a, const char *b);
 int salt_repo_build_index(const char *packages_dir, const char *repo_name, const char *arch,
                           salt_repo_index *out);
 int salt_repo_publish(const char *out_dir, const char *repo_name, const char *arch,
-                      const char *sec_key_hex);
+                      const char *url_base, const char *sec_key_hex);
 
 int salt_fetch(const char *url_or_path, salt_buf *out);
 int salt_fetch_to_file(const char *url_or_path, const char *dest_path);

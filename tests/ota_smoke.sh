@@ -63,6 +63,7 @@ cp "$SALT_BIN" "$WORK/src/salt"
 recipe salt 0.1.0 'mkdir -p "$SALT_DEST/usr/bin"; cp "$SALT_SRC/salt" "$SALT_DEST/usr/bin/salt"; chmod 0755 "$SALT_DEST/usr/bin/salt"'
 printf '\n' >> "$WORK/src/salt"
 recipe salt 0.1.1 'mkdir -p "$SALT_DEST/usr/bin"; cp "$SALT_SRC/salt" "$SALT_DEST/usr/bin/salt"; chmod 0755 "$SALT_DEST/usr/bin/salt"'
+recipe asset 1.0 'mkdir -p "$SALT_DEST/usr/bin"; { echo "#!/bin/sh"; echo "echo asset"; } > "$SALT_DEST/usr/bin/asset"; chmod +x "$SALT_DEST/usr/bin/asset"'
 G() { echo "$1-$2-1-$ARCH.grain"; }
 
 "$SALT_BIN" keygen "$WORK/keys" repo >/dev/null
@@ -124,6 +125,25 @@ step "salt-ota run: nothing to do after update (rc 0); state + log written"
 ota run --no-reboot >/dev/null 2>&1 || fail "salt-ota run should exit 0 when current"
 grep -q 'everything is up to date' "$SALTOS_OTA_LOG" || fail "salt-ota did not log to $SALTOS_OTA_LOG"
 [ -f "$SALTOS_OTA_STATE" ] || fail "salt-ota state file missing"
+
+step "index url: grains fetched from the per-package url, not <base>/<arch>/packages/"
+mkdir -p "$WORK/assets"
+cp "$SALT_OUT/$ARCH/packages/$(G asset 1.0)" "$WORK/assets/"
+publish "$WORK/keys/repo.sec" "$(G asset 1.0)" "$(G hello 1.1)" "$(G salt 0.1.1)"
+"$SALT_BIN" --key "$WORK/keys/repo.sec" repo publish "$REPO/$ARCH" "file://$WORK/assets" >/dev/null
+rm "$REPO/$ARCH/packages/$(G asset 1.0)"
+grep -q "^url = \"file://$WORK/assets/$(G asset 1.0)\"" "$REPO/$ARCH/index.toml" || fail "index lacks the asset url"
+S sync >/dev/null
+S --yes install asset >/dev/null || fail "install via index url failed"
+[ "$(sh "$ROOT/usr/bin/asset")" = "asset" ] || fail "asset not installed from its url"
+rm "$WORK/assets/$(G asset 1.0)"
+cp "$SALT_OUT/$ARCH/packages/$(G asset 1.0)" "$REPO/$ARCH/packages/"
+S --yes remove asset >/dev/null 2>&1 || true
+S --yes install asset >/dev/null 2>&1 && fail "install must not fall back to packages/ when the url is set"
+publish "$WORK/keys/repo.sec" "$(G asset 1.0)" "$(G hello 1.1)" "$(G salt 0.1.1)"
+S sync >/dev/null
+S --yes install asset >/dev/null || fail "install from packages/ (no url) failed"
+[ "$(sh "$ROOT/usr/bin/asset")" = "asset" ] || fail "asset not installed from packages/"
 
 step "lock: a second run is refused while the lock is held (rc 1)"
 set +e

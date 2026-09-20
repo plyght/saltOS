@@ -19,6 +19,7 @@ static void entry_free(salt_repo_entry *e) {
   free(e->version);
   free(e->arch);
   free(e->filename);
+  free(e->url);
   free(e->sha256);
   salt_strlist_free(&e->deps);
 }
@@ -64,6 +65,8 @@ int salt_repo_index_load(const char *path, salt_repo_index *out) {
     e.release = (int)salt_toml_int(p, "release", 1);
     e.arch = salt_strdup(salt_toml_string(p, "arch", ""));
     e.filename = salt_strdup(salt_toml_string(p, "filename", ""));
+    const char *url = salt_toml_string(p, "url", "");
+    e.url = url[0] ? salt_strdup(url) : NULL;
     e.sha256 = salt_strdup(salt_toml_string(p, "sha256", ""));
     e.size = (uint64_t)salt_toml_int(p, "size", 0);
     salt_toml_string_array(p, "deps", &e.deps);
@@ -85,6 +88,7 @@ int salt_repo_index_to_toml(const salt_repo_index *idx, salt_buf *out) {
     salt_buf_printf(out, "release = %d\n", e->release);
     salt_buf_printf(out, "arch = \"%s\"\n", e->arch);
     salt_buf_printf(out, "filename = \"%s\"\n", e->filename);
+    if (e->url && e->url[0]) salt_buf_printf(out, "url = \"%s\"\n", e->url);
     salt_buf_printf(out, "sha256 = \"%s\"\n", e->sha256);
     salt_buf_printf(out, "size = %llu\n", (unsigned long long)e->size);
     salt_buf_append_str(out, "deps = [");
@@ -204,12 +208,22 @@ int salt_repo_build_index(const char *packages_dir, const char *repo_name, const
 }
 
 int salt_repo_publish(const char *out_dir, const char *repo_name, const char *arch,
-                      const char *sec_key_hex) {
+                      const char *url_base, const char *sec_key_hex) {
   char *pkgdir = salt_join_path(out_dir, "packages");
   salt_repo_index idx;
   int rc = salt_repo_build_index(pkgdir, repo_name, arch, &idx);
   free(pkgdir);
   if (rc != SALT_OK) return rc;
+  if (url_base && url_base[0]) {
+    size_t bl = strlen(url_base);
+    for (size_t i = 0; i < idx.len; i++) {
+      salt_buf u;
+      salt_buf_init(&u);
+      salt_buf_printf(&u, "%s%s%s", url_base, url_base[bl - 1] == '/' ? "" : "/", idx.items[i].filename);
+      idx.items[i].url = salt_strdup(u.data);
+      salt_buf_free(&u);
+    }
+  }
   salt_buf toml;
   salt_repo_index_to_toml(&idx, &toml);
   salt_repo_index_free(&idx);

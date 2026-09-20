@@ -61,17 +61,18 @@ int cmd_sign(const Options &o, const std::vector<std::string> &args) {
 }
 
 int cmd_repo(const Options &o, const std::vector<std::string> &args) {
-  if (args.size() < 2 || args[0] != "publish") {
-    fprintf(stderr, "usage: salt [--key <sec>] repo publish <dir>\n");
+  if (args.size() < 2 || args.size() > 3 || args[0] != "publish") {
+    fprintf(stderr, "usage: salt [--key <sec>] repo publish <dir> [<package-url-base>]\n");
     return 2;
   }
   const std::string &dir = args[1];
+  std::string url_base = args.size() > 2 ? args[2] : "";
   RepoConf c = load_repo_conf(o);
   std::string sec = read_secret(o.key);
   if (sec.empty())
     fprintf(stderr, "warning: no secret key; index will not be signed\n");
-  if (salt_repo_publish(dir.c_str(), c.name.c_str(), arch_detect().c_str(), sec.c_str()) !=
-      SALT_OK) {
+  if (salt_repo_publish(dir.c_str(), c.name.c_str(), arch_detect().c_str(), url_base.c_str(),
+                        sec.c_str()) != SALT_OK) {
     fprintf(stderr, "salt: %s\n", salt_last_error());
     return 1;
   }
