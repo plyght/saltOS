@@ -15,7 +15,7 @@ deps = ["gcc", "make", "meson", "ninja"]
 script = """
 #!/bin/sh
 meson setup build \\
-    --prefix=/usr \\
+    --prefix=/usr --libdir=lib \\
     --buildtype=release \\
     -DSKIP_TESTS=true \\
     -DBUILD_HTML_MANS=false \\

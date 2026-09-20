@@ -15,7 +15,7 @@ deps = ["gcc", "make", "meson", "ninja", "expat"]
 script = """
 #!/bin/sh
 meson setup build \\
-    --prefix=/usr \\
+    --prefix=/usr --libdir=lib \\
     --buildtype=release \\
     -Dsystemd=disabled \\
     -Dx11_autolaunch=disabled

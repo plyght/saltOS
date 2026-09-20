@@ -14,7 +14,7 @@ system = "cmake"
 deps = ["cmake", "ninja", "pkgconf", "gcc"]
 script = """
 #!/bin/sh
-cmake -G Ninja -S "$SALT_SRC" -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DENABLE_STATIC=OFF
+cmake -G Ninja -S "$SALT_SRC" -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib -DENABLE_STATIC=OFF
 cmake --build build -j"$SALT_JOBS"
 DESTDIR="$SALT_DEST" cmake --install build
 """

@@ -1,6 +1,6 @@
 name = "gcc"
 version = "14.2.0"
-release = 3
+release = 4
 summary = "GNU Compiler Collection"
 license = "GPL-3.0-or-later"
 arch = ["x86_64", "aarch64"]
@@ -14,6 +14,8 @@ system = "autotools"
 deps = ["gmp", "mpfr", "mpc", "binutils", "glibc", "make"]
 script = """
 #!/bin/sh
+sed -e '/m64=/s/lib64/lib/' -i gcc/config/i386/t-linux64
+sed -e '/lp64=/s/lib64/lib/' -i gcc/config/aarch64/t-aarch64-linux
 mkdir -p build
 cd build
 ../configure --prefix=/usr \\

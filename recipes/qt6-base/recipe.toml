@@ -14,7 +14,7 @@ system = "cmake"
 deps = ["cmake", "ninja", "pkgconf", "openssl", "zlib", "libpng", "freetype", "fontconfig", "libx11", "mesa", "sqlite", "gcc"]
 script = """
 #!/bin/sh
-cmake -G Ninja -S "$SALT_SRC" -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+cmake -G Ninja -S "$SALT_SRC" -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib
 cmake --build build -j"$SALT_JOBS"
 DESTDIR="$SALT_DEST" cmake --install build
 """

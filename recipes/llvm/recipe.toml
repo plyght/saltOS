@@ -14,7 +14,7 @@ system = "cmake"
 deps = ["cmake", "ninja", "pkgconf", "zlib", "zstd", "gcc"]
 script = """
 #!/bin/sh
-cmake -G Ninja -S "$SALT_SRC/llvm" -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DLLVM_ENABLE_RTTI=ON -DLLVM_BUILD_LLVM_DYLIB=ON -DLLVM_LINK_LLVM_DYLIB=ON
+cmake -G Ninja -S "$SALT_SRC/llvm" -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib -DLLVM_ENABLE_RTTI=ON -DLLVM_BUILD_LLVM_DYLIB=ON -DLLVM_LINK_LLVM_DYLIB=ON
 cmake --build build -j"$SALT_JOBS"
 DESTDIR="$SALT_DEST" cmake --install build
 """

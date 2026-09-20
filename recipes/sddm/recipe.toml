@@ -14,7 +14,7 @@ system = "cmake"
 deps = ["cmake", "ninja", "pkgconf", "qt6-base", "gcc"]
 script = """
 #!/bin/sh
-cmake -G Ninja -S "$SALT_SRC" -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DNO_PAM=ON -DUSE_QT6=ON
+cmake -G Ninja -S "$SALT_SRC" -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib -DNO_PAM=ON -DUSE_QT6=ON
 cmake --build build -j"$SALT_JOBS"
 DESTDIR="$SALT_DEST" cmake --install build
 """

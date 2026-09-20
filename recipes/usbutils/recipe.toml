@@ -15,7 +15,7 @@ deps = ["gcc", "make", "meson", "ninja", "libusb"]
 script = """
 #!/bin/sh
 meson setup build \\
-    --prefix=/usr \\
+    --prefix=/usr --libdir=lib \\
     --buildtype=release
 ninja -C build
 DESTDIR="$SALT_DEST" ninja -C build install
