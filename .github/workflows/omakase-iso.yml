@@ -120,3 +120,69 @@ jobs:
           name: omakase-qemu-logs
           path: omakase-logs
           retention-days: 14
+
+      - name: Upload host salt binary for the install-path tests
+        uses: actions/upload-artifact@v4
+        with:
+          name: omakase-salt-host
+          path: build-iso/src/salt/salt
+          retention-days: 1
+
+  install-paths:
+    name: ${{ matrix.mode }} install (QEMU)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [encrypt, alongside, interactive]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            mtools dosfstools gdisk ntfs-3g qemu-system-x86 qemu-utils ovmf socat netpbm
+          if [ -e /dev/kvm ]; then
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+              | sudo tee /etc/udev/rules.d/99-kvm4all.rules > /dev/null
+            sudo udevadm control --reload-rules
+            sudo udevadm trigger --name-match=kvm
+          fi
+          ls -l /dev/kvm || echo "no KVM; running under TCG"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: saltos-omakase-x86_64
+          path: out-omakase
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: omakase-salt-host
+          path: build-iso/src/salt
+
+      - name: ${{ matrix.mode }} install + reboot + Sway (QEMU)
+        run: |
+          chmod +x build-iso/src/salt/salt
+          OMAKASE_TEST_MODE=${{ matrix.mode }} SALT_BIN="$PWD/build-iso/src/salt/salt" \
+            bash os/omakase/build/test-vm.sh out-omakase/saltos-omakase-x86_64.iso "$PWD/omakase-test"
+
+      - name: Collect logs
+        if: always()
+        run: |
+          mkdir -p omakase-logs
+          cp omakase-test/*.log omakase-logs/ 2>/dev/null || true
+          cp omakase-test/desktop.png omakase-logs/ 2>/dev/null || true
+          cp omakase-test/install.toml omakase-logs/ 2>/dev/null || true
+          echo "----- install serial tail -----"; tail -n 60 omakase-logs/install-serial.log 2>/dev/null || true
+          echo "----- boot serial tail -----"; tail -n 60 omakase-logs/boot-serial.log 2>/dev/null || true
+
+      - name: Upload test logs and screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: omakase-qemu-logs-${{ matrix.mode }}
+          path: omakase-logs
+          retention-days: 14

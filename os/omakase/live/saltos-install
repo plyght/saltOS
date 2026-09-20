@@ -26,6 +26,8 @@ encrypt="$(toml_get "$OMAKASE_CONFIG" install encrypt)"
 serial_console="$(toml_get "$OMAKASE_CONFIG" install serial_console)"
 [ "$serial_console" = true ] || serial_console=false
 password="$(credential_get password || true)"
+passphrase="$(credential_get passphrase || true)"
+[ -n "$passphrase" ] || passphrase="$password"
 deferred=false
 [ -e "$OMAKASE_DEFERRED" ] && deferred=true
 [ -n "$locale" ] || locale="en_US.UTF-8"
@@ -91,7 +93,7 @@ phase_preflight() {
   [ -n "$distro" ] || { log "no stratum selected"; return 1; }
   [ -f "/etc/salt/strata/$distro.toml" ] || { log "no recipe for $distro"; return 1; }
   if [ "$deferred" = false ] && [ -z "$password" ]; then log "no password"; return 1; fi
-  if [ "$encrypt" = true ] && [ -z "$password" ]; then log "encryption needs a passphrase"; return 1; fi
+  if [ "$encrypt" = true ] && [ -z "$passphrase" ]; then log "encryption needs a passphrase"; return 1; fi
   for t in salt salt-setup jq; do
     command -v "$t" >/dev/null || { log "missing tool $t"; return 1; }
   done
@@ -143,8 +145,10 @@ write_setup_config() {
         "$(toml_quote "$hostname_")" "$(toml_quote "$locale")" "$(toml_quote "$timezone")" "$(toml_quote "${keymap:-us}")"
       printf '[install]\ndisk = %s\nmode = %s\nfilesystem = "btrfs"\nencrypt = %s\ndesktop = "none"\n' \
         "$(toml_quote "$disk")" "$(toml_quote "$setup_mode")" "$encrypt"
-      [ "$encrypt" = true ] && printf 'passphrase = %s\n' "$(toml_quote "$password")"
-      printf '\n[boot]\ncmdline = %s\n\n' "$(toml_quote "$cmdline")"
+      [ "$encrypt" = true ] && printf 'passphrase = %s\n' "$(toml_quote "$passphrase")"
+      printf '\n[boot]\ncmdline = %s\n' "$(toml_quote "$cmdline")"
+      [ "$setup_mode" = alongside ] && printf 'os_prober = true\n'
+      printf '\n'
       printf '[user]\nname = %s\nsudo = true\nautologin = false\n' "$(toml_quote "$username")"
       if [ "$deferred" = true ]; then
         printf 'password_hash = "!"\n\n'
@@ -190,6 +194,10 @@ bind_target() {
   mountpoint -q "$MNT/proc" || mount -t proc proc "$MNT/proc" || return 1
   mountpoint -q "$MNT/sys" || mount -t sysfs sys "$MNT/sys" || return 1
   mountpoint -q "$MNT/run" || mount -t tmpfs tmpfs "$MNT/run" || return 1
+  if [ -d /run/udev/data ] && ! mountpoint -q "$MNT/run/udev"; then
+    mkdir -p "$MNT/run/udev"
+    mount --bind -o ro /run/udev "$MNT/run/udev" 2>/dev/null || true
+  fi
   if [ -d /sys/firmware/efi ]; then
     mountpoint -q "$MNT/sys/firmware/efi/efivars" || mount -t efivarfs efivarfs "$MNT/sys/firmware/efi/efivars" 2>/dev/null || true
   fi
@@ -203,9 +211,9 @@ phase_mount() {
     rootdev=/dev/mapper/saltos-root
     if [ ! -e "$rootdev" ]; then
       local cryptpart
-      cryptpart="$(blkid -t TYPE=crypto_LUKS -o device | head -1)"
-      [ -n "$cryptpart" ] || { log "no LUKS partition found"; return 1; }
-      printf '%s' "$password" | cryptsetup open --key-file - "$cryptpart" saltos-root || return 1
+      cryptpart="$(blkid -t TYPE=crypto_LUKS -o device | grep "^$disk" | tail -1)"
+      [ -n "$cryptpart" ] || { log "no LUKS partition found on $disk"; return 1; }
+      printf '%s' "$passphrase" | cryptsetup open --key-file - "$cryptpart" saltos-root || return 1
     fi
   else
     rootdev="$(blkid -L saltOS)"
