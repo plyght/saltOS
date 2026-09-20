@@ -106,12 +106,58 @@ sysroot_toolchain_env() {
   export ACLOCAL_PATH="$SYSROOT/usr/share/aclocal"
 }
 
+CHROOT_MOUNTS=""
+
+sysroot_chroot_umount() {
+  for m in $CHROOT_MOUNTS; do
+    umount "$m" 2>/dev/null || umount -l "$m" 2>/dev/null || true
+  done
+  CHROOT_MOUNTS=""
+}
+
+sysroot_chroot_env() {
+  for tool in gcc g++ make bash sh; do
+    if [ ! -x "$SYSROOT/usr/bin/$tool" ]; then
+      echo "sysroot incomplete: missing $SYSROOT/usr/bin/$tool (run the temp-tools stage first)" >&2
+      return 1
+    fi
+  done
+  mkdir -p "$SYSROOT/usr/sbin" "$SYSROOT/dev" "$SYSROOT/proc" "$SYSROOT/sys" "$SYSROOT/run" \
+    "$SYSROOT/tmp" "$SYSROOT/var/tmp" "$SYSROOT/root" "$SYSROOT/etc"
+  chmod 1777 "$SYSROOT/tmp" "$SYSROOT/var/tmp"
+  for d in bin sbin lib; do
+    [ -e "$SYSROOT/$d" ] || ln -s "usr/$d" "$SYSROOT/$d"
+  done
+  [ -f "$SYSROOT/etc/passwd" ] || printf 'root:x:0:0:root:/root:/bin/bash\n' > "$SYSROOT/etc/passwd"
+  [ -f "$SYSROOT/etc/group" ] || printf 'root:x:0:\n' > "$SYSROOT/etc/group"
+  if [ -z "$CHROOT_MOUNTS" ]; then
+    mount --bind /dev "$SYSROOT/dev"
+    CHROOT_MOUNTS="$SYSROOT/dev"
+    mount -t proc proc "$SYSROOT/proc"
+    CHROOT_MOUNTS="$SYSROOT/proc $CHROOT_MOUNTS"
+    mount -t sysfs sysfs "$SYSROOT/sys"
+    CHROOT_MOUNTS="$SYSROOT/sys $CHROOT_MOUNTS"
+    mount -t tmpfs tmpfs "$SYSROOT/run"
+    CHROOT_MOUNTS="$SYSROOT/run $CHROOT_MOUNTS"
+  fi
+  unset CC CXX CPP AR RANLIB STRIP NM OBJCOPY OBJDUMP
+  unset PKG_CONFIG_SYSROOT_DIR PKG_CONFIG_LIBDIR PKG_CONFIG_PATH ACLOCAL_PATH
+  unset CFLAGS CXXFLAGS LDFLAGS CPPFLAGS
+  export PATH=/usr/bin:/usr/sbin:/bin:/sbin
+  export HOME=/root
+  export SALT_WORK="$SYSROOT/var/tmp/salt-build"
+  export SALT_BUILD_ROOT="$SYSROOT"
+}
+
+trap sysroot_chroot_umount EXIT INT TERM
+
 run_stage() {
   stage="$1"
   log "=== stage: $stage ==="
   case "$stage" in
     cross-toolchain) ;;
-    *) sysroot_toolchain_env ;;
+    temp-tools) sysroot_toolchain_env ;;
+    *) sysroot_chroot_env ;;
   esac
   stage_packages "$stage" | while IFS= read -r pkg; do
     [ -n "$pkg" ] || continue

@@ -1,6 +1,6 @@
 name = "glibc"
 version = "2.41"
-release = 1
+release = 2
 summary = "GNU C Library"
 license = "LGPL-2.1-or-later"
 arch = ["x86_64", "aarch64"]
@@ -23,6 +23,12 @@ cd build
     libc_cv_slibdir=/usr/lib
 make -j"$SALT_JOBS"
 make DESTDIR="$SALT_DEST" install
+case "$SALT_ARCH" in
+    x86_64)
+        mkdir -p "$SALT_DEST/lib64"
+        ln -sf ../usr/lib/ld-linux-x86-64.so.2 "$SALT_DEST/lib64/ld-linux-x86-64.so.2"
+        ;;
+esac
 """
 
 [package]
