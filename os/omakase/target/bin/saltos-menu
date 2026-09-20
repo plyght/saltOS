@@ -32,6 +32,13 @@ menu_theme() {
   saltos-theme set "$pick"
 }
 
+menu_wallpaper() {
+  local cur pick
+  cur="$(saltos-wallpaper current)"
+  pick="$(saltos-wallpaper list | gum choose --header "Wallpaper for $(saltos-theme current) (current: $cur)" --cursor "▶ ")" || return 0
+  saltos-wallpaper set "$pick"
+}
+
 menu_update() {
   local pick
   pick="$(printf '%s\n' "Everything" "saltOS core (salt-ota)" "$distro packages" "Neovim plugins" | gum choose --header "Update" --cursor "▶ ")" || return 0
@@ -102,9 +109,10 @@ menu_system() {
 while :; do
   clear
   gum style --foreground 5 --bold "saltOS  ·  $distro stratum"
-  pick="$(printf '%s\n' "Theme" "Update" "Install" "Setup" "System" "Quit" | gum choose --cursor "▶ ")" || exit 0
+  pick="$(printf '%s\n' "Theme" "Wallpaper" "Update" "Install" "Setup" "System" "Quit" | gum choose --cursor "▶ ")" || exit 0
   case "$pick" in
     Theme) menu_theme ;;
+    Wallpaper) menu_wallpaper ;;
     Update) menu_update ;;
     Install) menu_install ;;
     Setup) menu_setup ;;

@@ -8,6 +8,7 @@ REPO="${REPO_DIR:-$PWD}"
 VERSION="${VERSION:-0.1.0}"
 MIRROR_DIR="${MIRROR_DIR:-$OUT/mirror/arch}"
 VENDOR_DIR="${VENDOR_DIR:-$OUT/vendor}"
+WALLPAPER_DIR="${WALLPAPER_DIR:-$OUT/wallpapers}"
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 
 case "$ARCH" in
@@ -19,6 +20,7 @@ esac
 [ -x "$VENDOR_DIR/gum-$ARCH" ] || { echo "iso: run os/omakase/build/vendor.sh $ARCH first (missing $VENDOR_DIR/gum-$ARCH)" >&2; exit 1; }
 [ -d "$VENDOR_DIR/vicinae-$ARCH" ] || { echo "iso: missing $VENDOR_DIR/vicinae-$ARCH" >&2; exit 1; }
 [ -d "$VENDOR_DIR/helium-$ARCH" ] || { echo "iso: missing $VENDOR_DIR/helium-$ARCH" >&2; exit 1; }
+[ -f "$WALLPAPER_DIR/CREDITS" ] || { echo "iso: run os/omakase/build/wallpapers.sh first (missing $WALLPAPER_DIR/CREDITS)" >&2; exit 1; }
 if [ "$ARCH" = x86_64 ] && [ "${OMAKASE_OFFLINE:-1}" = 1 ]; then
   [ -f "$MIRROR_DIR/offline.db" ] || { echo "iso: run os/omakase/build/arch-mirror.sh first (missing $MIRROR_DIR/offline.db)" >&2; exit 1; }
 fi
@@ -99,9 +101,10 @@ saltOS omakase \r (\l)
 
 EOF
 
-echo "==> staging offline mirror and vendor bundles"
+echo "==> staging offline mirror, vendor bundles and wallpapers"
 rm -rf "$ISODIR/omakase"
 mkdir -p "$ISODIR/omakase/vendor"
+cp -a "$WALLPAPER_DIR" "$ISODIR/omakase/wallpapers"
 if [ -f "$MIRROR_DIR/offline.db" ]; then
   mkdir -p "$ISODIR/omakase/mirror"
   cp -a "$MIRROR_DIR" "$ISODIR/omakase/mirror/arch"

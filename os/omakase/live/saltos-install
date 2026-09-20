@@ -374,6 +374,14 @@ phase_apps() {
   cp -a "$src/vicinae-$arch" "$MNT/opt/vicinae"
   cp -a "$src/helium-$arch" "$MNT/opt/helium"
   log "installed vicinae and helium under /opt"
+  [ -f "$MEDIUM/omakase/wallpapers/CREDITS" ] || { log "wallpapers not on medium"; return 1; }
+  rm -rf "$MNT/opt/saltos/share/wallpapers"
+  cp -a "$MEDIUM/omakase/wallpapers" "$MNT/opt/saltos/share/wallpapers"
+  chown -R 0:0 "$MNT/opt/saltos/share/wallpapers"
+  mkdir -p "$MNT/usr/share/saltos" "$sroot/usr/share/saltos"
+  ln -sfn /opt/saltos/share/wallpapers "$MNT/usr/share/saltos/wallpapers"
+  ln -sfn /opt/saltos/share/wallpapers "$sroot/usr/share/saltos/wallpapers"
+  log "installed wallpapers under /usr/share/saltos/wallpapers"
   cat >"$sroot/usr/local/bin/vicinae" <<'EOF'
 #!/bin/sh
 exec /opt/vicinae/AppRun "$@"

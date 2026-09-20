@@ -380,6 +380,22 @@ sudo_cmd() { printf "printf '%%s\\\\n' '%s' | sudo -S -p '' %s" "$PASSWORD" "$1"
 
 boot_installed "phase 2"
 run_checked "saltos-theme set $THEME && echo SALTOS_THEME_OK \$(saltos-theme current)" "SALTOS_THEME_OK $THEME" 90 "theme switch"
+run_checked "sleep 3; pgrep -a swaybg | grep -q -- \"-i /usr/share/saltos/wallpapers/$THEME/01-\" && echo SALTOS_SWAYBG_PHOTO_OK" SALTOS_SWAYBG_PHOTO_OK 60 "swaybg shows the theme's first Unsplash photo"
+run_checked "saltos-wallpaper next && sleep 3 && pgrep -a swaybg | grep -q -- \"-i /usr/share/saltos/wallpapers/$THEME/\$(saltos-wallpaper current)\" && [ \"\$(saltos-wallpaper current)\" != \"\$(saltos-wallpaper list | head -1)\" ] && echo SALTOS_WALLPAPER_NEXT_OK" SALTOS_WALLPAPER_NEXT_OK 60 "saltos-wallpaper next cycles swaybg to the second photo"
+run_checked "[ -s /usr/share/saltos/wallpapers/CREDITS ] && salt run $DISTRO grep -q unsplash.com /usr/share/saltos/wallpapers/CREDITS && echo SALTOS_WALLPAPER_CREDITS_OK" SALTOS_WALLPAPER_CREDITS_OK 60 "wallpaper CREDITS shipped on host and visible in the stratum"
+sleep 2
+printf 'screendump wallpaper.ppm\n' | socat -T 2 - UNIX-CONNECT:qmon >/dev/null 2>&1 || true
+sleep 3
+if [ -f wallpaper.ppm ] && command -v pnmtopng >/dev/null; then
+  pnmtopng wallpaper.ppm >wallpaper.png 2>/dev/null && echo "screenshot: $OUT/wallpaper.png"
+  if command -v identify >/dev/null; then
+    colors="$(identify -format '%k' wallpaper.png 2>/dev/null || echo 0)"
+    if [ "$colors" -lt 2000 ]; then
+      echo "wallpaper screenshot has only $colors distinct colours: swaybg is not showing a photo FAILED"; stop_vm; exit 1
+    fi
+    echo "wallpaper screenshot has $colors distinct colours (a photo, not a solid fill) OK"
+  fi
+fi
 run_checked "ps -o user=,supgrp= -C sway | grep -q '^$USERNAME .*seat' && echo SALTOS_SESSION_IDENTITY_OK" SALTOS_SESSION_IDENTITY_OK 60 "sway runs as $USERNAME with host groups (real uid, not a userns)"
 run_checked "SWAYSOCK=\$(ls /run/user/\$(id -u)/sway-ipc.*.sock | head -n1) salt run $DISTRO swaymsg exec \"sh -c 'sudo -n salt stratum list >/tmp/saltos-sudo-test 2>&1; echo rc=\\\$? >>/tmp/saltos-sudo-test'\" && sleep 6 && grep -q '^rc=0' /tmp/saltos-sudo-test && grep -q '^$DISTRO ' /tmp/saltos-sudo-test && echo SALTOS_SESSION_SUDO_OK" SALTOS_SESSION_SUDO_OK 90 "sudo salt works from inside the desktop session"
 serial_send "$(sudo_cmd "sv status /etc/runit/runsvdir/current/*") 2>/dev/null | sed 's/^/SALTOS_SV /'"

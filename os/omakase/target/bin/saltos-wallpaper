@@ -1,0 +1,93 @@
+#!/bin/bash
+set -euo pipefail
+
+WALLPAPERS="${SALTOS_WALLPAPERS:-/usr/share/saltos/wallpapers}"
+CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}"
+CHOICE="$CONFIG/saltos/wallpaper"
+
+usage() {
+  cat <<EOF
+usage: saltos-wallpaper <command>
+
+  list            list the wallpapers shipped for the active theme
+  current         print the wallpaper sway is showing for the active theme
+  set <file>      switch to one of the active theme's wallpapers
+  next            cycle to the next wallpaper of the active theme
+  credits         show photographer credits for all shipped wallpapers
+EOF
+}
+
+theme="$(saltos-theme current)"
+dir="$WALLPAPERS/$theme"
+
+list_wallpapers() {
+  [ -d "$dir" ] || { echo "saltos-wallpaper: no wallpapers installed for theme '$theme' in $WALLPAPERS" >&2; return 1; }
+  find "$dir" -mindepth 1 -maxdepth 1 -type f \( -name '*.jpg' -o -name '*.png' \) -printf '%f\n' | sort
+}
+
+current_wallpaper() {
+  local pick
+  pick="$(cat "$CHOICE/$theme" 2>/dev/null || true)"
+  if [ -z "$pick" ] || [ ! -f "$dir/$pick" ]; then
+    pick="$(list_wallpapers | head -1)"
+  fi
+  echo "$pick"
+}
+
+sway_socket() {
+  [ -n "${SWAYSOCK:-}" ] && [ -S "$SWAYSOCK" ] && { echo "$SWAYSOCK"; return 0; }
+  local rt="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" s
+  for s in "$rt"/sway-ipc.*.sock; do
+    [ -S "$s" ] && { echo "$s"; return 0; }
+  done
+  return 1
+}
+
+desktop_cmd() {
+  if command -v "$1" >/dev/null 2>&1; then
+    "$@"
+  elif [ -r /etc/saltos-omakase-stratum ] && command -v salt >/dev/null 2>&1; then
+    salt run "$(cat /etc/saltos-omakase-stratum)" "$@"
+  else
+    return 127
+  fi
+}
+
+apply() {
+  local pick="$1" sock
+  [ -f "$dir/$pick" ] || { echo "saltos-wallpaper: no such wallpaper '$pick'" >&2; echo "available: $(list_wallpapers | tr '\n' ' ')" >&2; return 1; }
+  mkdir -p "$CHOICE"
+  printf '%s\n' "$pick" >"$CHOICE/$theme"
+  saltos-theme render "$theme"
+  if sock="$(sway_socket)"; then
+    SWAYSOCK="$sock" desktop_cmd swaymsg output '*' bg "$dir/$pick" fill >/dev/null 2>&1 || true
+    SWAYSOCK="$sock" desktop_cmd notify-send -a saltos-wallpaper "Wallpaper" "$(credit "$pick")" 2>/dev/null || true
+  fi
+  echo "wallpaper set to $pick"
+}
+
+credit() {
+  awk -v f="$1" '$0 == f { getline; sub(/^ +/, ""); print; exit }' "$WALLPAPERS/CREDITS" 2>/dev/null || echo "$1"
+}
+
+case "${1:-}" in
+  list) list_wallpapers ;;
+  current) current_wallpaper ;;
+  set) [ -n "${2:-}" ] || { usage >&2; exit 2; }; apply "$2" ;;
+  next)
+    cur="$(current_wallpaper)"
+    mapfile -t all < <(list_wallpapers)
+    [ "${#all[@]}" -gt 0 ] || exit 1
+    nxt="${all[0]}"
+    for i in "${!all[@]}"; do
+      if [ "${all[$i]}" = "$cur" ]; then
+        nxt="${all[$(( (i + 1) % ${#all[@]} ))]}"
+        break
+      fi
+    done
+    apply "$nxt"
+    ;;
+  credits) cat "$WALLPAPERS/CREDITS" ;;
+  -h|--help|help|"") usage ;;
+  *) usage >&2; exit 2 ;;
+esac

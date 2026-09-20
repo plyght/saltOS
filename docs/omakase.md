@@ -11,12 +11,13 @@ Everything lives in `os/omakase/`:
 
 ```txt
 os/omakase/
-  build/      arch-mirror.sh, vendor.sh, iso.sh, test-vm.sh, verify-packages.sh
+  build/      arch-mirror.sh, vendor.sh, wallpapers.sh, iso.sh, test-vm.sh, verify-packages.sh
   lib/        omakase.sh (shared TOML/state helpers)
   live/       ISO-side: greeter, configurator, cidata loader, dashboard, installer
   packages/   packages.tsv, one column per stratum
   target/     installed-side: bin/saltos-*, config/, templates/
-  themes/     <name>/theme.sh palettes + wallpapers
+  themes/     <name>/theme.sh palettes
+  wallpapers/ <name>.toml Unsplash manifests (photo id, url, photographer, sha256)
 ```
 
 ## Install flow
@@ -122,11 +123,14 @@ reboots; on failure `SALTOS_OMAKASE_INSTALL_FAIL <reason>`.
 
 `build/test-vm.sh <iso>` does exactly this under QEMU/OVMF: creates the target
 disk and `cidata` image, installs, boots the installed disk, waits for
-`SALTOS_SWAY_SESSION_OK`, runs `saltos-theme set gruvbox` over serial, lists
-runit services, and grabs a `screendump`. `OMAKASE_TEST_MODE` selects the
-path: `erase` (default), `encrypt` (cidata with `encrypt = true`; answers the
-LUKS prompt at boot, then installs a throwaway grain, runs `salt rollback` and
-reboots to prove the rolled-back root unlocks and boots), `alongside`
+`SALTOS_SWAY_SESSION_OK`, runs `saltos-theme set gruvbox` over serial, checks
+that `swaybg` is showing the theme's Unsplash photo and that `saltos-wallpaper
+next` moves it to the second one (the `wallpaper.png` screendump must contain
+thousands of distinct colours, not a solid fill), lists runit services, and
+grabs a `screendump`. `OMAKASE_TEST_MODE` selects the path: `erase` (default),
+`encrypt` (cidata with `encrypt = true`; answers the LUKS prompt at boot, then
+installs a throwaway grain, runs `salt rollback` and reboots to prove the
+rolled-back root unlocks and boots), `alongside`
 (free-space install next to a fake Windows ESP + NTFS layout; asserts the
 existing partitions are byte-identical afterwards and GRUB lists `Windows Boot
 Manager`), and `interactive` (no cidata; drives the gum configurator over the
@@ -152,6 +156,7 @@ WirePlumber.
 | Super+Escape            | power menu (`saltos-power`)              |
 | Super+Ctrl+Escape       | lock                                     |
 | Super+Ctrl+Space        | next theme                               |
+| Super+Ctrl+Shift+Space  | next wallpaper                           |
 | Super+V                 | clipboard history (cliphist)             |
 | Super+Shift+N / B       | Wi-Fi (nmtui) / Bluetooth (bluetui)      |
 | Print / Shift / Ctrl    | screenshot region / output / window      |
@@ -178,21 +183,46 @@ Vicinae's system-info telemetry is switched off in the shipped
 ## Themes
 
 `tokyo-night` (default), `catppuccin`, `gruvbox`, `nord`, `everforest`,
-`kanagawa`, `rose-pine`. Each is a `themes/<name>/theme.sh` palette plus
-wallpaper; `saltos-theme` renders the templates under `target/templates/` into
-`~/.config/saltos/theme/` for Sway, foot, Waybar, mako, swaylock, Neovim, GTK
-3/4 (`gsettings` + `gtk.css`), the cursor theme, and `swaybg`.
+`kanagawa`, `rose-pine`. Each is a `themes/<name>/theme.sh` palette plus 2-3
+colour-matched wallpapers; `saltos-theme` renders the templates under
+`target/templates/` into `~/.config/saltos/theme/` for Sway, foot, Waybar,
+mako, swaylock, Neovim, GTK 3/4 (`gsettings` + `gtk.css`), the cursor theme,
+and `swaybg`.
 
 ```sh
 saltos-theme list
 saltos-theme current
 saltos-theme set gruvbox      # works headlessly; live-reloads when Sway is up
 saltos-theme next
+saltos-wallpaper list         # the active theme's photos
+saltos-wallpaper next         # cycle swaybg through them (Super+Ctrl+Shift+Space)
+saltos-wallpaper credits
 ```
+
+### Wallpapers
+
+The wallpapers are real photos from Unsplash -- salt flats, salt and mineral
+crystals, salt lakes, ice, nebulae, Hokusai -- picked to match each palette.
+They are **not** committed to the repository: `os/omakase/wallpapers/<theme>.toml`
+lists, per photo, the Unsplash id, title, photographer and profile URL, the
+photo page, the download URL and its SHA-256. `build/wallpapers.sh` downloads
+them at ISO build time (cached under `$WALLPAPER_CACHE`), verifies every hash
+and fails the build on any mismatch, then writes a `CREDITS` file. The
+installer ships the set to `/usr/share/saltos/wallpapers/<theme>/NN-<id>.jpg`
+(a symlink to `/opt/saltos/share/wallpapers` so the same path resolves on the
+host and inside the stratum) together with `CREDITS`. All photos are under
+the Unsplash License (no Unsplash+ images); `saltos-wallpaper credits` prints
+the attributions.
+
+`saltos-theme` picks the theme's first photo unless `saltos-wallpaper set|next`
+recorded a choice in `~/.config/saltos/wallpaper/<theme>`; the choice is
+remembered per theme. A theme directory containing `background.png|jpg`
+still overrides the Unsplash set, and a theme with neither falls back to a
+solid `$BG` fill.
 
 ## Tools
 
-- `saltos-menu` — gum TUI: Theme, Update, Install (search/install/remove
+- `saltos-menu` — gum TUI: Theme, Wallpaper, Update, Install (search/install/remove
   stratum packages, add another stratum), Setup (Wi-Fi, Bluetooth, audio,
   keyboard, password), System (about, stratum snapshots, keybindings, power).
 - `saltos-update [all|host|stratum|neovim]` — `salt-ota run` (falls back to

@@ -26,7 +26,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            shellcheck mtools dosfstools qemu-system-x86 qemu-utils ovmf socat netpbm zstd curl
+            shellcheck mtools dosfstools qemu-system-x86 qemu-utils ovmf socat netpbm imagemagick zstd curl
           if [ -e /dev/kvm ]; then
             echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
               | sudo tee /etc/udev/rules.d/99-kvm4all.rules > /dev/null
@@ -53,6 +53,16 @@ jobs:
         with:
           path: .omakase-vendor-cache
           key: omakase-vendor-${{ hashFiles('os/omakase/build/vendor.sh') }}
+
+      - name: Cache wallpapers
+        uses: actions/cache@v4
+        with:
+          path: .omakase-wallpaper-cache
+          key: omakase-wallpapers-${{ hashFiles('os/omakase/wallpapers/*.toml') }}
+
+      - name: Download + verify Unsplash wallpapers
+        run: |
+          WALLPAPER_CACHE="$PWD/.omakase-wallpaper-cache" OUT="$PWD/out-omakase/wallpapers" bash os/omakase/build/wallpapers.sh
 
       - name: Build Arch offline mirror
         run: |
@@ -85,6 +95,7 @@ jobs:
               grub-pc-bin grub-efi-amd64-bin grub-common ca-certificates curl zstd
             WORK=/src/out-omakase/work OUT=/src/out-omakase \
               MIRROR_DIR=/src/out-omakase/mirror/arch VENDOR_DIR=/src/out-omakase/vendor \
+              WALLPAPER_DIR=/src/out-omakase/wallpapers \
               REPO_DIR=/src SALT_BIN=/src/build-iso/src/salt/salt \
               SALTSETUP_BIN=/src/build-iso/src/setup/salt-setup \
               bash os/omakase/build/iso.sh x86_64'
@@ -101,7 +112,7 @@ jobs:
         run: |
           mkdir -p omakase-logs
           cp omakase-test/*.log omakase-logs/ 2>/dev/null || true
-          cp omakase-test/desktop.png omakase-logs/ 2>/dev/null || true
+          cp omakase-test/desktop.png omakase-test/wallpaper.png omakase-logs/ 2>/dev/null || true
           cp omakase-test/install.toml omakase-logs/ 2>/dev/null || true
           echo "----- install serial tail -----"; tail -n 60 omakase-logs/install-serial.log 2>/dev/null || true
           echo "----- boot serial tail -----"; tail -n 60 omakase-logs/boot-serial.log 2>/dev/null || true
@@ -144,7 +155,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            mtools dosfstools gdisk ntfs-3g qemu-system-x86 qemu-utils ovmf socat netpbm
+            mtools dosfstools gdisk ntfs-3g qemu-system-x86 qemu-utils ovmf socat netpbm imagemagick
           if [ -e /dev/kvm ]; then
             echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
               | sudo tee /etc/udev/rules.d/99-kvm4all.rules > /dev/null
@@ -174,7 +185,7 @@ jobs:
         run: |
           mkdir -p omakase-logs
           cp omakase-test/*.log omakase-logs/ 2>/dev/null || true
-          cp omakase-test/desktop.png omakase-logs/ 2>/dev/null || true
+          cp omakase-test/desktop.png omakase-test/wallpaper.png omakase-logs/ 2>/dev/null || true
           cp omakase-test/install.toml omakase-logs/ 2>/dev/null || true
           echo "----- install serial tail -----"; tail -n 60 omakase-logs/install-serial.log 2>/dev/null || true
           echo "----- boot serial tail -----"; tail -n 60 omakase-logs/boot-serial.log 2>/dev/null || true

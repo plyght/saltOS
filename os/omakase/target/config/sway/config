@@ -40,6 +40,7 @@ bindsym $mod+t exec $term -e btop
 bindsym $mod+e exec $term --app-id saltos-menu -e saltos-menu
 bindsym $mod+Escape exec $term --app-id saltos-power -e saltos-power
 bindsym $mod+Ctrl+space exec saltos-theme next
+bindsym $mod+Ctrl+Shift+space exec saltos-wallpaper next
 bindsym $mod+w kill
 bindsym $mod+Shift+c reload
 bindsym $mod+Ctrl+Escape exec swaylock -f

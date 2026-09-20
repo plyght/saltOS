@@ -4,9 +4,11 @@ set -euo pipefail
 SHARE="${SALTOS_SHARE:-/opt/saltos/share}"
 THEMES="$SHARE/themes"
 TEMPLATES="$SHARE/templates"
+WALLPAPERS="${SALTOS_WALLPAPERS:-/usr/share/saltos/wallpapers}"
 CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}"
 OUT="$CONFIG/saltos/theme"
 CURRENT="$CONFIG/saltos/current-theme"
+WALLPAPER_CHOICE="$CONFIG/saltos/wallpaper"
 
 usage() {
   cat <<EOF
@@ -52,11 +54,30 @@ foot_colors_section() {
   fi
 }
 
+list_wallpapers() {
+  [ -d "$WALLPAPERS/$1" ] || return 1
+  find "$WALLPAPERS/$1" -mindepth 1 -maxdepth 1 -type f \( -name '*.jpg' -o -name '*.png' \) -printf '%f\n' | sort
+}
+
+wallpaper_for() {
+  local theme="$1" pick
+  [ -d "$WALLPAPERS/$theme" ] || return 1
+  pick="$(cat "$WALLPAPER_CHOICE/$theme" 2>/dev/null || true)"
+  if [ -z "$pick" ] || [ ! -f "$WALLPAPERS/$theme/$pick" ]; then
+    pick="$(list_wallpapers "$theme" | head -1)"
+  fi
+  [ -n "$pick" ] || return 1
+  echo "$WALLPAPERS/$theme/$pick"
+}
+
 render() {
   local name="$1" dir="$THEMES/$1"
   [ -f "$dir/theme.sh" ] || { echo "saltos-theme: unknown theme '$name'" >&2; echo "available: $(list_themes | tr '\n' ' ')" >&2; return 1; }
   . "$dir/theme.sh"
-  if [ -f "$dir/background.png" ]; then
+  local wp
+  if wp="$(wallpaper_for "$name")"; then
+    WALLPAPER="$wp fill"
+  elif [ -f "$dir/background.png" ]; then
     WALLPAPER="$dir/background.png fill"
   elif [ -f "$dir/background.jpg" ]; then
     WALLPAPER="$dir/background.jpg fill"
