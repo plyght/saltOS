@@ -21,8 +21,9 @@ esac
 [ -d "$VENDOR_DIR/vicinae-$ARCH" ] || { echo "iso: missing $VENDOR_DIR/vicinae-$ARCH" >&2; exit 1; }
 [ -d "$VENDOR_DIR/helium-$ARCH" ] || { echo "iso: missing $VENDOR_DIR/helium-$ARCH" >&2; exit 1; }
 [ -f "$WALLPAPER_DIR/CREDITS" ] || { echo "iso: run os/omakase/build/wallpapers.sh first (missing $WALLPAPER_DIR/CREDITS)" >&2; exit 1; }
-if [ "$ARCH" = x86_64 ] && [ "${OMAKASE_OFFLINE:-1}" = 1 ]; then
-  [ -f "$MIRROR_DIR/offline.db" ] || { echo "iso: run os/omakase/build/arch-mirror.sh first (missing $MIRROR_DIR/offline.db)" >&2; exit 1; }
+if [ "${OMAKASE_OFFLINE:-1}" = 1 ]; then
+  [ -f "$MIRROR_DIR/offline.db" ] || { echo "iso: run os/omakase/build/arch-mirror.sh $ARCH first (missing $MIRROR_DIR/offline.db)" >&2; exit 1; }
+  [ -s "$MIRROR_DIR/bootstrap.sha256" ] || { echo "iso: missing $MIRROR_DIR/bootstrap.sha256" >&2; exit 1; }
 fi
 
 mkdir -p "$OUT"
@@ -68,6 +69,23 @@ for f in "$SHARE"/live/saltos-*; do
   ln -sf "/usr/share/saltos-omakase/live/$(basename "$f")" "$ROOTFS/usr/local/bin/$(basename "$f")"
 done
 install -m 0755 "$VENDOR_DIR/gum-$ARCH" "$ROOTFS/usr/local/bin/gum"
+
+ARCH_RECIPE="$REPO/strata/arch.toml"
+[ -f "$REPO/strata/arch-$ARCH.toml" ] && ARCH_RECIPE="$REPO/strata/arch-$ARCH.toml"
+mkdir -p "$SHARE/strata"
+install -m 0644 "$ARCH_RECIPE" "$SHARE/strata/arch.toml"
+install -m 0644 "$ARCH_RECIPE" "$ROOTFS/etc/salt/strata/arch.toml"
+if [ -f "$MIRROR_DIR/offline.db" ]; then
+  echo "==> pinning the arch recipe to the offline bootstrap"
+  read -r BOOTSTRAP_SHA BOOTSTRAP_FILE <"$MIRROR_DIR/bootstrap.sha256"
+  [ -f "$MIRROR_DIR/$BOOTSTRAP_FILE" ] || { echo "iso: bootstrap $BOOTSTRAP_FILE missing from $MIRROR_DIR" >&2; exit 1; }
+  awk -v url="file:///run/saltos-install/offline/$BOOTSTRAP_FILE" -v sha="$BOOTSTRAP_SHA" '
+    /^\[/ { section = $0 }
+    section == "[bootstrap]" && /^url = / { print "url = \"" url "\""; next }
+    section == "[bootstrap]" && /^sha256 = / { print "sha256 = \"" sha "\""; next }
+    { print }' "$ARCH_RECIPE" >"$ROOTFS/etc/salt/strata/arch.toml"
+  grep -q "^sha256 = \"$BOOTSTRAP_SHA\"" "$ROOTFS/etc/salt/strata/arch.toml" || { echo "iso: recipe pinning failed" >&2; exit 1; }
+fi
 
 cat >"$ROOTFS/etc/os-release" <<EOF
 NAME="saltOS"
@@ -136,6 +154,17 @@ menuentry "saltOS $VERSION omakase (install, safe graphics)" {
 EOF
 
 ISO_PATH="$OUT/saltos-omakase-$ARCH.iso"
-grub-mkrescue -o "$ISO_PATH" "$ISODIR" -- -volid "SALTOS_OMAKASE"
+MKRESCUE_OPTS=()
+if [ "$ARCH" = aarch64 ]; then
+  if [ -f /usr/lib/grub/arm64-efi/modinfo.sh ]; then
+    MKRESCUE_OPTS=(-d /usr/lib/grub/arm64-efi)
+  elif [ -f "$ROOTFS/usr/lib/grub/arm64-efi/modinfo.sh" ]; then
+    MKRESCUE_OPTS=(-d "$ROOTFS/usr/lib/grub/arm64-efi")
+  else
+    echo "iso: no arm64-efi GRUB modules on the host or in the rootfs; install grub-efi-arm64-bin" >&2
+    exit 1
+  fi
+fi
+grub-mkrescue "${MKRESCUE_OPTS[@]}" -o "$ISO_PATH" "$ISODIR" -- -volid "SALTOS_OMAKASE"
 du -h "$ISO_PATH"
 echo "wrote $ISO_PATH"

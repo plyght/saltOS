@@ -116,20 +116,23 @@ phase_preflight() {
 }
 
 stage_offline_recipe() {
-  RECIPE_BACKUP="$OMAKASE_RUN/$distro.toml.orig"
-  cp "/etc/salt/strata/$distro.toml" "$RECIPE_BACKUP"
-  local tarball sha
-  tarball="$(ls "$MEDIUM/omakase/mirror/arch"/archlinux-bootstrap-*.tar.zst 2>/dev/null | head -1)"
-  [ -n "$tarball" ] || { log "no bootstrap tarball on the medium"; return 1; }
-  sha="$(sha256sum "$tarball" | cut -d' ' -f1)"
-  sed -i -e "s|^url = .*|url = \"$tarball\"|" -e "s|^sha256 = .*|sha256 = \"$sha\"|" "/etc/salt/strata/$distro.toml"
+  local url tarball
+  url="$(toml_get "/etc/salt/strata/$distro.toml" bootstrap url)"
+  case "$url" in
+    "file://$OMAKASE_RUN/offline/"*) ;;
+    *) log "recipe for $distro is not pinned to the offline medium ($url)"; return 1 ;;
+  esac
+  tarball="$MEDIUM/omakase/mirror/arch/$(basename "$url")"
+  [ -f "$tarball" ] || { log "no bootstrap tarball on the medium ($tarball)"; return 1; }
+  mkdir -p "$OMAKASE_RUN/offline"
+  ln -sfn "$tarball" "$OMAKASE_RUN/offline/$(basename "$url")"
   log "stratum bootstrap staged from $tarball"
 }
 
 restore_recipe() {
-  [ -n "${RECIPE_BACKUP:-}" ] || return 0
-  cp "$RECIPE_BACKUP" "/etc/salt/strata/$distro.toml"
-  [ -d "$MNT/etc/salt/strata" ] && cp "$RECIPE_BACKUP" "$MNT/etc/salt/strata/$distro.toml"
+  [ "$OFFLINE" = true ] || return 0
+  [ -f "$OMAKASE_SHARE/strata/$distro.toml" ] || return 0
+  [ -d "$MNT/etc/salt/strata" ] && cp "$OMAKASE_SHARE/strata/$distro.toml" "$MNT/etc/salt/strata/$distro.toml"
   return 0
 }
 
@@ -137,7 +140,7 @@ write_setup_config() {
   SETUP_CONFIG="$OMAKASE_RUN/salt-setup.toml"
   local setup_mode=erase cmdline=""
   [ "$mode" = free ] && setup_mode=alongside
-  [ "$serial_console" = true ] && cmdline="console=tty0 console=ttyS0,115200"
+  [ "$serial_console" = true ] && cmdline="console=tty0 console=$(serial_tty),115200"
   (
     umask 077
     {
@@ -205,7 +208,6 @@ bind_target() {
 }
 
 phase_mount() {
-  restore_recipe
   local rootdev
   if [ "$encrypt" = true ]; then
     rootdev=/dev/mapper/saltos-root
@@ -313,6 +315,7 @@ phase_desktop() {
     *) log "unknown family for $distro"; rc=1 ;;
   esac
   [ $rc -eq 0 ] && stratum_locale "$root"
+  [ $rc -eq 0 ] && stratum_stock_accounts "$root"
   unbind_stratum "$root"
   [ $rc -eq 0 ] || return 1
   log "refreshing exposed commands"
@@ -344,6 +347,19 @@ stratum_locale() {
     in_stratum "$root" localedef -i "$base" -f UTF-8 "$loc" >/dev/null 2>&1 || log "localedef for $loc failed in $distro"
   fi
   printf 'LANG=%s\n' "$loc" >"$root/etc/locale.conf"
+}
+
+stratum_stock_accounts() {
+  local root="$1" name uid
+  while IFS=: read -r name _ uid _; do
+    [ "$uid" -ge 1000 ] 2>/dev/null && [ "$uid" -lt 65534 ] || continue
+    grep -q "^$name:" "$MNT/etc/passwd" && continue
+    log "removing stock account $name (uid $uid) shipped by the $distro rootfs"
+    in_stratum "$root" userdel -r "$name" >/dev/null 2>&1 ||
+      in_stratum "$root" deluser --remove-home "$name" >/dev/null 2>&1 ||
+      log "could not remove $name from $distro"
+  done <"$root/etc/passwd"
+  in_stratum "$root" passwd -l root >/dev/null 2>&1 || true
 }
 
 phase_apps() {
@@ -465,17 +481,19 @@ EOF
     chroot_target passwd -l "$username" >/dev/null 2>&1 || true
   fi
   if [ "$serial_console" = true ]; then
+    local tty
+    tty="$(serial_tty)"
     mkdir -p "$MNT$svroot/saltos-serial-console"
     cat >"$MNT$svroot/saltos-serial-console/run" <<EOF
 #!/bin/sh
 exec 2>&1
-[ -e /sys/class/tty/ttyS0 ] || exec sleep infinity
-exec setsid -w agetty --noclear --autologin $username ttyS0 115200 vt100
+[ -e /sys/class/tty/$tty ] || exec sleep infinity
+exec setsid -w agetty --noclear --autologin $username $tty 115200 vt100
 EOF
     chmod 0755 "$MNT$svroot/saltos-serial-console/run"
     ln -sf "$svroot/saltos-serial-console" "$rundir/saltos-serial-console"
   fi
-  rm -f "$rundir/agetty-serial" "$rundir/agetty-ttyS0"
+  rm -f "$rundir/agetty-serial" "$rundir/agetty-ttyS0" "$rundir/agetty-ttyAMA0"
   rm -f "$MNT/etc/sudoers.d/salt-live" "$MNT/etc/sudoers.d/90-salt-live" "$MNT/etc/sudoers.d/salt" 2>/dev/null
   printf '%%wheel ALL=(ALL:ALL) ALL\n%%sudo ALL=(ALL:ALL) ALL\n%s ALL=(ALL) NOPASSWD: /usr/bin/salt, /usr/bin/salt-ota, /usr/local/bin/salt-ota, /opt/saltos/bin/saltos-session-launch\n' "$username" >"$MNT/etc/sudoers.d/91-saltos-omakase"
   chmod 0440 "$MNT/etc/sudoers.d/91-saltos-omakase"

@@ -16,20 +16,25 @@ chown "$uid" "/run/user/$uid"
 chmod 0700 "/run/user/$uid"
 rm -f "/run/user/$uid/saltos-session.ok"
 
+case "$(uname -m)" in
+  aarch64) serial=/dev/ttyAMA0 ;;
+  *) serial=/dev/ttyS0 ;;
+esac
+
 setsid -f sh -c '
-  user="$1" ok="$2" n=0
+  user="$1" ok="$2" serial="$3" n=0
   while [ $n -lt 300 ]; do
     if [ -f "$ok" ]; then
       msg="SALTOS_SWAY_SESSION_OK user=$user $(cat "$ok")"
       echo "$msg" >/dev/console 2>/dev/null
-      echo "$msg" >/dev/ttyS0 2>/dev/null
+      echo "$msg" >"$serial" 2>/dev/null
       exit 0
     fi
     sleep 1
     n=$((n + 1))
   done
   echo "SALTOS_SWAY_SESSION_TIMEOUT user=$user" >/dev/console 2>/dev/null
-  echo "SALTOS_SWAY_SESSION_TIMEOUT user=$user" >/dev/ttyS0 2>/dev/null
-' saltos-session-watch "$user" "/run/user/$uid/saltos-session.ok" </dev/null >/dev/null 2>&1
+  echo "SALTOS_SWAY_SESSION_TIMEOUT user=$user" >"$serial" 2>/dev/null
+' saltos-session-watch "$user" "/run/user/$uid/saltos-session.ok" "$serial" </dev/null >/dev/null 2>&1
 
 exec setsid -w agetty --noclear --autologin "$user" tty1 linux

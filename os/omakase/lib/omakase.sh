@@ -73,6 +73,13 @@ stratum_bootstrap_method() {
   toml_get "$recipe" bootstrap method
 }
 
+serial_tty() {
+  case "$(uname -m)" in
+    aarch64) echo ttyAMA0 ;;
+    *) echo ttyS0 ;;
+  esac
+}
+
 live_medium() {
   local d
   for d in /run/initramfs/live /run/live/medium /lib/live/mount/medium; do

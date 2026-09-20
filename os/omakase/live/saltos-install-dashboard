@@ -78,12 +78,12 @@ if [ $rc -eq 0 ]; then
     "Remove the install medium and reboot to start your desktop."
   if [ "$unattended" = true ]; then
     echo "SALTOS_OMAKASE_INSTALL_OK" >/dev/console 2>/dev/null
-    echo "SALTOS_OMAKASE_INSTALL_OK" >/dev/ttyS0 2>/dev/null
+    echo "SALTOS_OMAKASE_INSTALL_OK" >"/dev/$(serial_tty)" 2>/dev/null
     sleep 3
     reboot
     exit 0
   fi
-  echo "SALTOS_OMAKASE_INSTALL_OK" >/dev/ttyS0 2>/dev/null
+  echo "SALTOS_OMAKASE_INSTALL_OK" >"/dev/$(serial_tty)" 2>/dev/null
   if gum confirm --default=true "Reboot now?"; then
     reboot
     exit 0
@@ -95,6 +95,6 @@ fi
   echo "----- install.log tail -----"
   tail -n 60 "$OMAKASE_LOG" 2>/dev/null
   echo "----- end install.log -----"
-} >/dev/ttyS0 2>/dev/null
+} >"/dev/$(serial_tty)" 2>/dev/null
 gum style --foreground 1 --bold "Install failed: $(jq -r .message "$OMAKASE_STATE" 2>/dev/null)"
 exit 1
