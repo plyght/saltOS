@@ -63,3 +63,35 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+  btrfs:
+    name: btrfs snapshot/rollback/gc (loop-mounted)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies and btrfs tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config \
+            libzstd-dev libsodium-dev libsqlite3-dev \
+            build-essential btrfs-progs
+
+      - name: Configure and build
+        run: |
+          cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+
+      - name: Run the btrfs smoke test on a real btrfs filesystem
+        run: |
+          set -o pipefail
+          sudo sh tests/btrfs_smoke.sh "$PWD/build/src/salt/salt" "$RUNNER_TEMP/btrfs-smoke" 2>&1 \
+            | tee "$RUNNER_TEMP/btrfs-smoke.log"
+
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: btrfs-smoke-log
+          path: ${{ runner.temp }}/btrfs-smoke.log
