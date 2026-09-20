@@ -144,13 +144,15 @@ static int emit_strata(const Options &o, salt_buf *out, int *count) {
 
     salt_foreign_pkg_list pkgs;
     salt_foreign_pkg_list_init(&pkgs);
-    if (salt_stratum_pkg_query(&s, &pkgs) != SALT_OK) {
+    if (salt_stratum_pkg_query(&s, &pkgs) != SALT_OK ||
+        salt_stratum_pkg_digests(&s, &pkgs) != SALT_OK) {
       fprintf(stderr, "salt: stratum %s: %s\n", s.name ? s.name : "?", salt_last_error());
       rc = 1;
     }
-    for (size_t p = 0; p < pkgs.len; p++)
-      salt_buf_printf(out, "[[stratum.package]]\nname = \"%s\"\nversion = \"%s\"\n\n",
-                      pkgs.items[p].name, pkgs.items[p].version);
+    for (size_t p = 0; p < pkgs.len && rc == 0; p++)
+      salt_buf_printf(out,
+                      "[[stratum.package]]\nname = \"%s\"\nversion = \"%s\"\ndigest = \"%s\"\n\n",
+                      pkgs.items[p].name, pkgs.items[p].version, pkgs.items[p].digest);
     salt_foreign_pkg_list_free(&pkgs);
     (*count)++;
   }
@@ -235,6 +237,7 @@ static bool load_strata(const std::string &path, const salt_toml *root,
       const salt_toml *pt = salt_toml_array_at(parr, j);
       const char *pnm = salt_toml_string(pt, "name", nullptr);
       const char *pver = salt_toml_string(pt, "version", nullptr);
+      const char *pdig = salt_toml_string(pt, "digest", nullptr);
       if (!pnm || !pnm[0]) {
         err = path + ": stratum " + sl.name + ": package entry " + std::to_string(j + 1) +
               " has no name";
@@ -244,11 +247,16 @@ static bool load_strata(const std::string &path, const salt_toml *root,
         err = path + ": stratum " + sl.name + ": " + pnm + " has no version";
         return false;
       }
+      if (!pdig || !pdig[0] || strchr(pdig, ':') == nullptr || strchr(pdig, ':')[1] == '\0') {
+        err = path + ": stratum " + sl.name + ": " + pnm +
+              " has no digest (regenerate the lockfile with 'salt lock')";
+        return false;
+      }
       if (!pseen.insert(pnm).second) {
         err = path + ": stratum " + sl.name + ": " + pnm + " is pinned twice";
         return false;
       }
-      sl.packages.emplace_back(pnm, pver);
+      sl.packages.push_back({pnm, pver, pdig});
     }
     strata.push_back(std::move(sl));
   }
@@ -347,8 +355,8 @@ static void compare_lock(salt_db *db, const std::vector<LockEntry> &lock, LockCo
 }
 
 struct StratumCompare {
-  std::vector<std::pair<std::string, std::string>> missing;
-  std::vector<std::pair<std::string, std::string>> changed;
+  std::vector<ForeignPin> missing;
+  std::vector<ForeignPin> changed;
   std::vector<std::string> changed_from;
   std::vector<std::string> extra;
   size_t matched = 0;
@@ -361,13 +369,16 @@ static void compare_stratum(const StratumLock &sl, const salt_foreign_pkg_list &
                             StratumCompare &c) {
   std::set<std::string> locked;
   for (const auto &p : sl.packages) {
-    locked.insert(p.first);
-    const salt_foreign_pkg *cur = salt_foreign_pkg_list_find(&live, p.first.c_str());
+    locked.insert(p.name);
+    const salt_foreign_pkg *cur = salt_foreign_pkg_list_find(&live, p.name.c_str());
     if (!cur)
       c.missing.push_back(p);
-    else if (p.second != cur->version) {
+    else if (p.version != cur->version) {
       c.changed.push_back(p);
       c.changed_from.push_back(cur->version);
+    } else if (cur->digest && p.digest != cur->digest) {
+      c.changed.push_back(p);
+      c.changed_from.push_back(cur->version + std::string(" (") + cur->digest + ")");
     } else
       c.matched++;
   }
@@ -388,7 +399,8 @@ static int query_stratum(const Options &o, const std::string &name, salt_foreign
   int rc = 0;
   if (salt_stratum_get(db, name.c_str(), &s) != SALT_OK) {
     rc = 1;
-  } else if (salt_stratum_pkg_query(&s, live) != SALT_OK) {
+  } else if (salt_stratum_pkg_query(&s, live) != SALT_OK ||
+             salt_stratum_pkg_digests(&s, live) != SALT_OK) {
     fprintf(stderr, "salt: stratum %s: %s\n", name.c_str(), salt_last_error());
     rc = 2;
   }
@@ -399,11 +411,11 @@ static int query_stratum(const Options &o, const std::string &name, salt_foreign
 
 static void print_stratum_compare(const StratumLock &sl, const StratumCompare &c) {
   for (const auto &p : c.missing)
-    printf("+ %s/%s %s (in lock, not installed)\n", sl.name.c_str(), p.first.c_str(),
-           p.second.c_str());
+    printf("+ %s/%s %s (in lock, not installed)\n", sl.name.c_str(), p.name.c_str(),
+           p.version.c_str());
   for (size_t i = 0; i < c.changed.size(); i++)
-    printf("~ %s/%s installed %s, lock pins %s\n", sl.name.c_str(), c.changed[i].first.c_str(),
-           c.changed_from[i].c_str(), c.changed[i].second.c_str());
+    printf("~ %s/%s installed %s, lock pins %s (%s)\n", sl.name.c_str(), c.changed[i].name.c_str(),
+           c.changed_from[i].c_str(), c.changed[i].version.c_str(), c.changed[i].digest.c_str());
   for (const auto &n : c.extra)
     printf("- %s/%s (installed, not in lock)\n", sl.name.c_str(), n.c_str());
 }
@@ -484,8 +496,8 @@ static int apply_stratum(const Options &o, const StratumLock &sl, const TxnFlags
     if (f.dry_run) {
       printf("stratum %s: would bootstrap\n", sl.name.c_str());
       for (const auto &p : sl.packages)
-        printf("stratum %s: would install %s %s\n", sl.name.c_str(), p.first.c_str(),
-               p.second.c_str());
+        printf("stratum %s: would install %s %s\n", sl.name.c_str(), p.name.c_str(),
+               p.version.c_str());
       return 0;
     }
     printf("stratum: ensuring %s\n", sl.name.c_str());
@@ -511,12 +523,12 @@ static int apply_stratum(const Options &o, const StratumLock &sl, const TxnFlags
     for (const auto &n : cmp.extra)
       printf("stratum %s: would remove %s\n", sl.name.c_str(), n.c_str());
     for (const auto &p : cmp.missing)
-      printf("stratum %s: would install %s %s\n", sl.name.c_str(), p.first.c_str(),
-             p.second.c_str());
+      printf("stratum %s: would install %s %s\n", sl.name.c_str(), p.name.c_str(),
+             p.version.c_str());
     for (size_t i = 0; i < cmp.changed.size(); i++)
       printf("stratum %s: would replace %s %s with %s\n", sl.name.c_str(),
-             cmp.changed[i].first.c_str(), cmp.changed_from[i].c_str(),
-             cmp.changed[i].second.c_str());
+             cmp.changed[i].name.c_str(), cmp.changed_from[i].c_str(),
+             cmp.changed[i].version.c_str());
     return 0;
   }
 
@@ -555,9 +567,11 @@ static int apply_stratum(const Options &o, const StratumLock &sl, const TxnFlags
   if (rc == 0 && (!cmp.missing.empty() || !cmp.changed.empty())) {
     std::vector<salt_foreign_pkg> want;
     for (const auto &p : cmp.missing)
-      want.push_back({const_cast<char *>(p.first.c_str()), const_cast<char *>(p.second.c_str())});
+      want.push_back({const_cast<char *>(p.name.c_str()), const_cast<char *>(p.version.c_str()),
+                      const_cast<char *>(p.digest.c_str())});
     for (const auto &p : cmp.changed)
-      want.push_back({const_cast<char *>(p.first.c_str()), const_cast<char *>(p.second.c_str())});
+      want.push_back({const_cast<char *>(p.name.c_str()), const_cast<char *>(p.version.c_str()),
+                      const_cast<char *>(p.digest.c_str())});
     if (salt_stratum_pkg_install_exact(&s, want.data(), want.size(), &st) != SALT_OK) {
       fprintf(stderr, "salt: stratum %s: %s\n", sl.name.c_str(), salt_last_error());
       rc = 1;
@@ -570,7 +584,8 @@ static int apply_stratum(const Options &o, const StratumLock &sl, const TxnFlags
   if (rc == 0) {
     salt_foreign_pkg_list after;
     salt_foreign_pkg_list_init(&after);
-    if (salt_stratum_pkg_query(&s, &after) != SALT_OK) {
+    if (salt_stratum_pkg_query(&s, &after) != SALT_OK ||
+        salt_stratum_pkg_digests(&s, &after) != SALT_OK) {
       fprintf(stderr, "salt: stratum %s: %s\n", sl.name.c_str(), salt_last_error());
       rc = 1;
     } else {

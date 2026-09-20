@@ -61,11 +61,17 @@ int native_transaction(const Options &o, const RepoConf &c, salt_ctx *ctx, salt_
                        const NativePlan &plan, const char *op, const TxnFlags &f);
 
 std::string lock_path_for(const Options &o, const std::string &override_path);
+struct ForeignPin {
+  std::string name;
+  std::string version;
+  std::string digest;
+};
+
 struct StratumLock {
   std::string name;
   std::string family;
   std::string package_manager;
-  std::vector<std::pair<std::string, std::string>> packages;
+  std::vector<ForeignPin> packages;
 };
 
 bool lock_load(const std::string &path, std::vector<LockEntry> &out,

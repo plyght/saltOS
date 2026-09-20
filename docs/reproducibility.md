@@ -211,10 +211,12 @@ repo_snapshot = "https://dl-cdn.alpinelinux.org/alpine/v3.20/main"
 [[stratum.package]]
 name = "musl"
 version = "1.2.5-r0"
+digest = "apk-checksum:Q1PS2iNeHDH3BF6TgqSMu/pcc3XIY="
 
 [[stratum.package]]
 name = "nano"
 version = "8.0-r0"
+digest = "apk-checksum:Q1VQKUgzD5QnCU0l0CRKl/YDXPga0="
 ```
 
 What each section pins:
@@ -238,9 +240,23 @@ What each section pins:
 - **`[[stratum.package]]`** — one entry per package the stratum's own package
   manager reports as installed: `name` and the manager's exact `version`
   string (`epoch:pkgver-pkgrel` for pacman, the Debian version for apt,
-  `ver-rN` for apk, `EVR` for rpm-based managers, `ver_rev` for xbps). Every
-  stratum in the lock carries the complete installed set; if any stratum's
-  manager cannot be queried, `salt lock` fails and writes nothing.
+  `ver-rN` for apk, `EVR` for rpm-based managers, `ver_rev` for xbps) plus a
+  `digest`: the content identity the manager itself recorded for that installed
+  package. `salt` never computes or guesses a digest for a package the manager
+  has no record of; the source per manager is:
+
+  | manager | `digest` | source |
+  |---|---|---|
+  | apk | `apk-checksum:Q1...` | the `C:` line of the package's stanza in `lib/apk/db/installed` (apk's own `.apk` control checksum) |
+  | dnf / zypper | `rpm-sha256header:<hex>` | `rpm -qa --qf '%{SHA256HEADER}'`, the SHA-256 of the installed RPM's header (the value the RPM signature covers) |
+  | xbps | `sha256:<hex>` | `xbps-query -p filename-sha256 <pkgver>`, the SHA-256 of the installed `.xbps` archive |
+  | pacman | `pacman-mtree-sha256:<hex>` | SHA-256 of `var/lib/pacman/local/<name>-<version>/mtree`, the installed file manifest (every path, mode, size and sha256) that pacman extracted from the package |
+  | apt | `dpkg-md5sums-sha256:<hex>` (or `dpkg-list-sha256:<hex>` for packages that ship no files) | SHA-256 of `var/lib/dpkg/info/<name>[:arch].md5sums` (dpkg's per-file checksum manifest) |
+
+  Every stratum in the lock carries the complete installed set; if any
+  stratum's manager cannot be queried, or reports a package with no digest
+  (an RPM with `SHA256HEADER` `(none)`, a dpkg package with neither `.md5sums`
+  nor `.list`, ...), `salt lock` fails and writes nothing.
 
 ### 3.1 Validation on load
 
@@ -252,8 +268,10 @@ What each section pins:
   `sha256:` prefix); a placeholder such as `TODO-sha256` is rejected;
 - names the same package twice;
 - has a `[[stratum]]` without a `name`, names a stratum twice, or has a
-  `[[stratum.package]]` without a `name` or a non-empty `version`, or pins the
-  same foreign package twice within a stratum.
+  `[[stratum.package]]` without a `name`, a non-empty `version` or a
+  `<kind>:<value>` `digest`, or pins the same foreign package twice within a
+  stratum. Lockfiles written before digests existed are refused with
+  "has no digest (regenerate the lockfile with 'salt lock')".
 
 ## 4. How `salt lock` captures each plane
 
@@ -316,10 +334,13 @@ ignored because a lock is always verified).
    1. the stratum is bootstrapped from its recipe if absent (a stratum that
       already exists is left as is);
    2. a `pre-lock-apply` stratum snapshot is taken (`salt stratum snapshot`);
-   3. the manager is queried (§4.2) and the live set compared with the lock;
+   3. the manager is queried (§4.2), each installed package's digest is read
+      (§3), and the live set compared with the lock by name, version and
+      digest;
    4. packages installed but absent from the lock are removed through the
       manager's remove command;
-   5. missing packages, and packages whose installed version differs, are
+   5. missing packages, and packages whose installed version or digest
+      differs, are
       installed at the exact locked version through the manager's own pinning
       syntax — `name=version` for apt (`--allow-downgrades`), apk and zypper
       (`--oldpackage`), `name-EVR` for dnf, `name-ver_rev` for xbps, and for
@@ -327,7 +348,10 @@ ignored because a lock is always verified).
       stratum's `/var/cache/pacman/pkg`, because Arch mirrors serve a single
       current build and installing it would silently substitute a different
       version;
-   6. the manager is queried again; any remaining difference is a failure.
+   6. the manager is queried again, digests included; any remaining
+      difference — including a reinstalled package whose digest still differs
+      from the lock because the repository now serves different bytes under
+      the same version — is a failure.
 
    On any failure in steps 3–6 the stratum is rolled back to the
    `pre-lock-apply` snapshot and `lock apply` exits non-zero. A pinned version
@@ -422,8 +446,11 @@ Enforced end to end and covered by `tests/cli_smoke.cmake` and
 Enforced end to end against real strata by the `strata` workflow, for each of
 alpine/apk, void/xbps, arch/pacman, debian/apt, fedora/dnf and opensuse/zypper:
 `salt lock` records the installed set, `lock diff` detects a removed package,
-`lock apply` reinstalls it at the exact locked version, and a lock pinning a
-version the manager cannot provide is refused and rolled back. The same
+`lock apply` reinstalls it at the exact locked version, every lock entry
+carries a digest, a lock whose digest for an installed package was tampered
+with is reported by `lock diff` and refused (rolled back) by `lock apply`, and
+a lock pinning a version the manager cannot provide is refused and rolled
+back. The same
 workflow proves `config apply --relock` installing a declared `[[strata]]`
 package the manager lacks, creating `[expose]` shims that run, reporting
 `already matches` on a second run, and removing a shim once its `[expose]`
@@ -431,10 +458,14 @@ entry is deleted.
 
 Not enforced:
 
-- **Foreign artifact content hashes.** Stratum packages are pinned by the
-  manager's exact version identity, not by artifact sha256; the artifact is
-  whatever the stratum's repository (or, for pacman, its local cache) serves
-  under that identity, verified by that manager's own signature checks.
+- **Foreign artifact bytes before installation.** The digest in the lock is
+  the identity the manager records once a package is installed (§3), so a
+  substituted artifact is detected after the manager has installed it — and
+  then rolled back — rather than refused before extraction. Pre-extraction
+  verification of the downloaded `.apk`/`.deb`/`.rpm`/`.xbps`/`.pkg.tar` bytes
+  remains the job of each manager's own signature checks. For pacman and apt
+  the identity is the installed file manifest (mtree / md5sums), which pins
+  the package's content but not its compressed container.
 - **Foreign extras under `[[strata]]`.** `config apply` installs declared
   foreign packages that are missing but does not remove packages the operator
   added inside a stratum by hand; exact foreign convergence (remove extras,
