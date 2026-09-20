@@ -105,7 +105,7 @@ Key core concepts (see the headers for exact signatures):
   the zstd payload, and any scripts. Built from a staging directory, written to
   a file, opened, and extracted into a target tree.
 - the transaction layer (`txn.h`) — `salt_snapshot_create` /
-  `salt_snapshot_restore`, `salt_install_archive`, `salt_remove_pkg`,
+  `salt_txn_revert_files`, `salt_install_archive`, `salt_remove_pkg`,
   `salt_deployments_list`, and `salt_rollback_last`.
 
 The CLI is daemonless: nothing runs in the background, and every command is a

@@ -396,7 +396,11 @@ int native_transaction(const Options &o, const RepoConf &c, salt_ctx *ctx, salt_
     return 1;
   }
   char *snap = nullptr;
-  salt_snapshot_create(ctx, db, txn_id, &snap);
+  if (salt_snapshot_create(ctx, db, txn_id, &snap) != SALT_OK) {
+    fprintf(stderr, "salt: %s\n", salt_last_error());
+    salt_db_txn_finish(db, txn_id, "failed");
+    return 1;
+  }
   if (snap) salt_db_txn_set_snapshot(db, txn_id, snap);
 
   int rc = salt_db_sql_begin(db);

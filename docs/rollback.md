@@ -63,8 +63,9 @@ transaction. The lifecycle is:
    changed (`txn_changes`) and the kernel the deployment carries (`txn_meta`)
    are recorded, the bootloader menu is regenerated, and snapshots beyond
    `[deploy] keep` (default 5) are pruned — pinned deployments are never pruned.
-   On any failure, the transaction is rolled back **automatically**: the snapshot
-   is restored (`salt_snapshot_restore`) and the database changes are reverted,
+   On any failure, the transaction is rolled back **automatically**: every file
+   it touched is put back from the per-transaction backup
+   (`salt_txn_revert_files`) and the database changes are reverted,
    leaving the system exactly as it was before the transaction began.
 
 The automatic case means a transaction that dies partway — a bad package, an
@@ -83,8 +84,9 @@ The transaction and rollback logic is exposed by `halite` (see
   status, timestamp, and backing snapshot; and a list of them.
 - `salt_snapshot_create(ctx, txn_id, &snapshot)` — take the pre-transaction
   snapshot of `@`.
-- `salt_snapshot_restore(ctx, snapshot)` — restore a given snapshot in place
-  (used for the automatic rollback of a failed transaction).
+- `salt_txn_revert_files(ctx, txn_id)` — put back every file a transaction
+  touched from its saved state (used for the automatic rollback of a failed
+  transaction and for rollback on non-Btrfs roots).
 - `salt_deployments_list(ctx, db, &out)` — enumerate deployments / rollback
   points.
 - `salt_deploy_record` / `salt_deploy_changes` / `salt_deploy_meta` — record and

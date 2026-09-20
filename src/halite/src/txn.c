@@ -1,4 +1,5 @@
 #include "salt/txn.h"
+#include "salt/deploy.h"
 #include "salt/zst.h"
 #include "salt/tar.h"
 
@@ -82,17 +83,6 @@ int salt_snapshot_create(const salt_ctx *ctx, salt_db *db, int64_t txn_id, char 
   *snapshot_out = name.data;
   free(sdir);
   return SALT_OK;
-}
-
-int salt_snapshot_restore(const salt_ctx *ctx, const char *snapshot) {
-  if (!ctx->use_btrfs) return SALT_OK;
-  salt_buf cmd;
-  salt_buf_init(&cmd);
-  salt_buf_printf(&cmd, "btrfs subvolume set-default '%s/%s' '%s' >/dev/null 2>&1",
-                  ctx->snapshot_dir, snapshot, ctx->root);
-  int rc = system(cmd.data);
-  salt_buf_free(&cmd);
-  return rc == 0 ? SALT_OK : SALT_ERR_IO;
 }
 
 static int backup_file(const char *root, const char *backup_dir, const char *relpath) {
@@ -352,16 +342,28 @@ int salt_rollback_last(salt_ctx *ctx, salt_db *db) {
   char *before_db = salt_join_path(sdir, "db.before");
 
   int rc = SALT_OK;
-  if (ctx->use_btrfs && snapshot && snapshot[0]) {
-    rc = salt_snapshot_restore(ctx, snapshot);
-  } else {
-    if (!salt_path_exists(before_db)) {
-      salt_set_error("transaction %lld has no saved state to roll back to", (long long)id);
-      rc = SALT_ERR_NOTFOUND;
-    } else {
-      salt_txn_revert_files(ctx, id);
-      rc = salt_db_restore_state_from(db, before_db);
+  if (ctx->use_btrfs && snapshot && strncmp(snapshot, "root-", 5) == 0) {
+    int64_t target = 0, rb = 0;
+    char *new_root = NULL;
+    bool reboot = false;
+    rc = salt_rollback_to(ctx, db, id, NULL, &target, &rb, &new_root, &reboot);
+    if (new_root) {
+      char *slash = strrchr(new_root, '/');
+      if (slash) *slash = '\0';
+      salt_btrfs_umount_toplevel(new_root);
+      free(new_root);
     }
+    free(snapshot);
+    free(sdir);
+    free(before_db);
+    return rc;
+  }
+  if (!salt_path_exists(before_db)) {
+    salt_set_error("transaction %lld has no saved state to roll back to", (long long)id);
+    rc = SALT_ERR_NOTFOUND;
+  } else {
+    salt_txn_revert_files(ctx, id);
+    rc = salt_db_restore_state_from(db, before_db);
   }
 
   if (rc == SALT_OK) {

@@ -243,21 +243,45 @@ typedef struct {
 The flow for a mutating operation is **snapshot-before-mutate**:
 
 1. `salt_db_txn_new()` opens a transaction.
-2. `salt_snapshot_create()` snapshots the `@` subvolume (or saves per-file state
-   under `state_dir` on non-Btrfs fallback) and records a deployment row.
+2. `salt_snapshot_create()` saves the database and snapshots the `@` subvolume
+   on Btrfs, and records a deployment row. If the snapshot cannot be taken the
+   transaction is refused before any file is touched. Per-file backups under
+   `state_dir` are written as files are replaced, on every filesystem.
 3. The payload is applied: `salt_install_archive()` extracts and records each
    package; `salt_remove_pkg()` removes one.
 4. On success, the SQLite transaction commits and `salt_db_txn_finish()` marks
    it committed.
 5. On **any** failure — a file that cannot be backed up, a payload that fails
    to extract, or a database write that is rejected — the system automatically
-   rolls back: `salt_snapshot_restore()` restores the pre-transaction state, the
-   SQLite transaction is rolled back, and the transaction is finished with a
-   failed status. A package whose extraction failed is never recorded as
-   installed.
+   rolls back: `salt_txn_revert_files()` puts every touched file back from the
+   per-transaction backup, the SQLite transaction is rolled back, and the
+   transaction is finished with a failed status. A package whose extraction
+   failed is never recorded as installed.
 
-`salt rollback` reuses this machinery via `salt_rollback_last()` to return to the
-previous deployment on demand. See [rollback.md](rollback.md) for the full model.
+`salt rollback [N]` (`salt_rollback_to()`) returns to an earlier deployment on
+demand. See [rollback.md](rollback.md) for the full model.
+
+### Btrfs backend
+
+`salt_ctx_init()` enables the Btrfs backend when the target root and its
+`.snapshots` directory are both on Btrfs (a booted saltOS `@` with `@snapshots`
+mounted at `/.snapshots`, or an installer target mounted the same way).
+`SALT_BTRFS=1` / `SALT_BTRFS=0` force it on or off. With the backend on:
+
+- every transaction first snapshots the root subvolume to
+  `/.snapshots/root-<txn>`; the transaction is refused if that fails;
+- `salt rollback [N]` re-snapshots `root-<N>` as the new `@` at the Btrfs top
+  level, keeps the outgoing `@` as `root-<rollback txn>`, carries the newer
+  transaction history into the new root's database and regenerates the GRUB
+  menu; the swap takes effect at the next boot (exit status 3);
+- `salt config gc` deletes the `root-<txn>` subvolumes of pruned generations
+  with `btrfs subvolume delete`, never those of kept, pinned or booted ones.
+
+On non-Btrfs roots (and under `--root <dir>` in tests) the same commands work
+from the per-file backups under `state_dir` and take effect immediately.
+
+`tests/btrfs_smoke.sh` runs the whole flow (install, update, rollback across a
+remount, remove, lock, gc) on a loop-mounted Btrfs image in the `ci` workflow.
 
 ### State paths
 
