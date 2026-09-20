@@ -55,6 +55,7 @@ packages = [
   "gettext",
   "pkgconf",
   "perl",
+  "libxcrypt",
   "expat",
   "libffi",
   "openssl",

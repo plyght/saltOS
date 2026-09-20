@@ -11,7 +11,7 @@ sha256 = "dd8bd002a379b5d499dfb050dd1fa9af8029e80461f4bb6c523c49973f5a39f3"
 
 [build]
 system = "autotools"
-deps = ["gcc", "make", "openssl", "zlib"]
+deps = ["gcc", "make", "openssl", "zlib", "libxcrypt"]
 script = """
 #!/bin/sh
 ./configure --prefix=/usr \\
@@ -24,7 +24,7 @@ make DESTDIR="$SALT_DEST" install
 """
 
 [package]
-deps = ["glibc", "openssl", "zlib"]
+deps = ["glibc", "openssl", "zlib", "libxcrypt"]
 
 [reproducibility]
 status = "verified"
