@@ -313,6 +313,7 @@ def main():
         ser.note("boot 5: refuse a corrupted grain")
         wait_network(ser, badhash + "/", 180)
         set_repo(ser, badhash)
+        ser.run("sudo -n salt clean --all", check=0)
         _, before = ser.run("sudo -n salt deployments", check=0)
         rc_, out = ser.run("sudo -n salt-ota run --no-reboot", 300)
         expect(rc_ == 4 and "HASH MISMATCH" in out, "bad hash: update refused before any change (rc 4)")
