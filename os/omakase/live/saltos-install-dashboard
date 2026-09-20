@@ -28,44 +28,49 @@ phase_label() {
   esac
 }
 
+sgr() { printf '\e[%sm%s\e[0m' "$1" "$2"; }
+
 render() {
-  local rows cols lines="" phase status icon color elapsed
+  local reserve="${1:-0}" rows cols lines="" phase status icon color elapsed
   rows=$(tput lines); cols=$(tput cols)
   printf '\e[H\e[J'
-  gum style --foreground 5 --bold "  saltOS omakase  ·  installing $(gum style --bold "$hostname_") on $disk with the $distro stratum"
+  printf '  %s  ·  installing %s on %s with the %s stratum\n' \
+    "$(sgr '1;35' 'saltOS omakase')" "$(sgr 1 "$hostname_")" "$disk" "$distro"
   echo
   if [ -s "$OMAKASE_STATE" ]; then
     while IFS=$'\t' read -r phase status; do
       case "$status" in
-        done) icon="✓"; color=2 ;;
-        running) icon="●"; color=4 ;;
-        failed) icon="✗"; color=1 ;;
-        *) icon="○"; color=8 ;;
+        done) icon="●"; color=32 ;;
+        running) icon="►"; color=34 ;;
+        failed) icon="■"; color=31 ;;
+        *) icon="○"; color=90 ;;
       esac
-      lines="$lines$(gum style --foreground "$color" "  $icon $(phase_label "$phase")")"$'\n'
+      lines="$lines$(sgr "$color" "  $icon $(phase_label "$phase")")"$'\n'
     done < <(jq -r '.phases[] | [.name, .status] | @tsv' "$OMAKASE_STATE" 2>/dev/null)
     printf '%s' "$lines"
     elapsed=$(( $(date +%s) - $(jq -r .started "$OMAKASE_STATE") ))
-    printf '\n  %s\n' "$(gum style --faint "elapsed $((elapsed / 60))m $((elapsed % 60))s")"
+    printf '\n  %s\n' "$(sgr 90 "elapsed $((elapsed / 60))m $((elapsed % 60))s")"
   else
-    gum style --foreground 4 "  ● Starting installer"
+    sgr 34 "  ► Starting installer"; echo
   fi
-  local tail_lines=$((rows - 16))
+  local tail_lines=$((rows - 16 - reserve))
   [ $tail_lines -lt 3 ] && tail_lines=3
   echo
-  gum style --faint "  ── log ──"
-  tail -n "$tail_lines" "$OMAKASE_LOG" 2>/dev/null | cut -c1-$((cols - 4)) | sed 's/^/  /'
+  sgr 90 "  ── log ──"; echo
+  tail -n "$tail_lines" "$OMAKASE_LOG" 2>/dev/null | sed 's/.*\r//' | cut -c1-$((cols - 4)) | sed 's/^/  /'
 }
 
 saltos-vt-palette 2>/dev/null || clear
+stty -echo 2>/dev/null
 while kill -0 "$INSTALLER" 2>/dev/null; do
   render
   sleep 1
 done
 wait "$INSTALLER"
 rc=$?
-render
+render 11
 echo
+stty echo 2>/dev/null
 printf '\e[?25h'
 if [ $rc -eq 0 ]; then
   gum style --border rounded --padding "1 3" --border-foreground 2 \

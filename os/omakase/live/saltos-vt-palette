@@ -2,11 +2,30 @@
 
 palette=(1a1b26 f7768e 9ece6a e0af68 7aa2f7 bb9af7 7dcfff a9b1d6 414868 f7768e 9ece6a e0af68 7aa2f7 bb9af7 7dcfff c0caf5)
 
+console_font() {
+  local size w h cw ch
+  size="$(cat /sys/class/graphics/fb0/virtual_size 2>/dev/null)" || return 1
+  w="${size%%,*}"; h="${size##*,}"
+  for ch in 32 28 24 22 20 18 16; do
+    case $ch in
+      32) cw=16 ;; 28) cw=14 ;; 24) cw=12 ;; 22) cw=11 ;; 20|18) cw=10 ;; *) cw=8 ;;
+    esac
+    if [ $((w / cw)) -ge 90 ] && [ $((h / ch)) -ge 30 ]; then
+      if [ $ch -eq 16 ]; then echo Uni3-Terminus16; else echo "Uni3-Terminus${ch}x${cw}"; fi
+      return 0
+    fi
+  done
+  return 1
+}
+
 if [ -t 1 ] && [ "$TERM" = "linux" ]; then
   for i in "${!palette[@]}"; do
     printf '\e]P%X%s' "$i" "${palette[$i]}"
   done
   printf '\e[8]'
+  if font="$(console_font)"; then
+    setfont "$font" 2>/dev/null || true
+  fi
 fi
 printf '\e[?25l'
 clear

@@ -7,12 +7,19 @@ export TERM="${TERM:-linux}"
 mkdir -p "$OMAKASE_RUN"
 chmod 700 "$OMAKASE_RUN"
 
+visible_width() {
+  local plain
+  plain="$(sed 's/\x1b\[[0-9;]*m//g' <<<"$1")"
+  printf '%s' "${#plain}"
+}
+
 center() {
-  local cols rows text_rows=0 width=0 line
+  local cols rows text_rows=0 width=0 line w
   cols=$(tput cols); rows=$(tput lines)
   while IFS= read -r line; do
     text_rows=$((text_rows + 1))
-    [ ${#line} -gt $width ] && width=${#line}
+    w=$(visible_width "$line")
+    [ "$w" -gt $width ] && width=$w
   done <<<"$1"
   local top=$(( (rows - text_rows) / 2 - 2 )) left=$(( (cols - width) / 2 ))
   [ $top -lt 0 ] && top=0
@@ -30,7 +37,6 @@ greeter() {
   logo="$(cat "$OMAKASE_SHARE/live/logo.txt")"
   prompt=$'\n\n'"$(gum style --foreground 4 --bold 'Press Return to Start Install')"
   center "$logo"$'\n'"$(gum style --foreground 5 'omakase edition')"$'\n'"$prompt"
-  printf '\e[?25h'
   local rc=0
   trap 'rc=130' INT
   IFS= read -r _
