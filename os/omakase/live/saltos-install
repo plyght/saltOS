@@ -164,7 +164,24 @@ phase_base() {
   salt-setup --from "$SETUP_CONFIG" --mnt "$MNT" </dev/null
   local rc=$?
   rm -f "$SETUP_CONFIG"
-  return $rc
+  [ $rc -eq 0 ] || return $rc
+  release_target
+  return 0
+}
+
+release_target() {
+  if mountpoint -q "$MNT"; then
+    umount -R "$MNT" 2>/dev/null || umount -lR "$MNT" 2>/dev/null || true
+  fi
+  if [ "$encrypt" = true ] && [ -e /dev/mapper/saltos-root ]; then
+    cryptsetup close saltos-root 2>/dev/null || true
+  fi
+}
+
+mount_subvol() {
+  mountpoint -q "$MNT$2" && return 0
+  mkdir -p "$MNT$2"
+  mount -o "subvol=$1" "$rootdev" "$MNT$2"
 }
 
 bind_target() {
@@ -181,10 +198,6 @@ bind_target() {
 
 phase_mount() {
   restore_recipe
-  if mountpoint -q "$MNT"; then
-    bind_target || return 1
-    return 0
-  fi
   local rootdev
   if [ "$encrypt" = true ]; then
     rootdev=/dev/mapper/saltos-root
@@ -199,15 +212,16 @@ phase_mount() {
   fi
   [ -b "$rootdev" ] || { log "cannot find installed root"; return 1; }
   mkdir -p "$MNT"
-  mount -o subvol=@ "$rootdev" "$MNT" || return 1
-  mount -o subvol=@home "$rootdev" "$MNT/home" || return 1
-  mount -o subvol=@var "$rootdev" "$MNT/var" || return 1
-  mount -o subvol=@log "$rootdev" "$MNT/var/log" || return 1
-  mount -o subvol=@strata "$rootdev" "$MNT/strata" || return 1
-  if [ "$encrypt" = true ]; then
+  mount_subvol @ "" || return 1
+  mount_subvol @home /home || return 1
+  mount_subvol @var /var || return 1
+  mount_subvol @log /var/log || return 1
+  mount_subvol @snapshots /.snapshots || return 1
+  mount_subvol @strata /strata || return 1
+  if [ "$encrypt" = true ] && ! mountpoint -q "$MNT/boot"; then
     mount "$(blkid -L saltOS-boot)" "$MNT/boot" || return 1
   fi
-  mount "$(blkid -L EFI | head -1)" "$MNT/boot/efi" 2>/dev/null || true
+  mountpoint -q "$MNT/boot/efi" || mount "$(blkid -L EFI | head -1)" "$MNT/boot/efi" 2>/dev/null || true
   bind_target || return 1
   restore_recipe
   return 0

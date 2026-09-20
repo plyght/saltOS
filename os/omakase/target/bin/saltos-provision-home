@@ -14,6 +14,8 @@ mkdir -p "$home/.config" "$home/.local/bin" "$home/.local/share" "$home/.cache" 
 cp -a "$share/config/." "$home/.config/"
 mkdir -p "$home/.config/sway/config.d" "$home/.config/saltos"
 printf '%s\n' "$distro" >"$home/.config/saltos/stratum"
+mkdir -p "$home/.local/state/vicinae"
+printf '{"version":1,"completedAt":"%s"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$home/.local/state/vicinae/onboarding.json"
 
 cat >"$home/.config/user-dirs.dirs" <<EOF
 XDG_DESKTOP_DIR="\$HOME/Desktop"

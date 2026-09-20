@@ -159,6 +159,10 @@ serial_send "printf '%s\\n' '$PASSWORD' | sudo -S sv status /etc/runit/runsvdir/
 sleep 5
 serial_send "grep -c . ~/.config/saltos/theme/sway.conf | sed 's/^/SALTOS_THEME_LINES /'"
 sleep 5
+serial_send "for p in sway waybar mako swayidle vicinae pipewire wireplumber; do pgrep -x \"\$p\" >/dev/null && echo SALTOS_PROC \$p up || echo SALTOS_PROC \$p DOWN; done"
+sleep 5
+serial_send "tail -n 30 ~/.local/state/saltos/session.log | sed 's/^/SALTOS_SESSION_LOG /'"
+sleep 5
 printf 'screendump screen.ppm\n' | socat -T 2 - UNIX-CONNECT:qmon >/dev/null 2>&1 || true
 sleep 3
 if [ -f screen.ppm ] && command -v pnmtopng >/dev/null; then
