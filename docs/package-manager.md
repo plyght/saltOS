@@ -502,8 +502,11 @@ salt config gc
 ### `salt lock`, `salt lock apply`, `salt lock diff`
 
 Write, apply and compare `etc/salt/system.lock.toml`, which pins every installed
-native package by name, version, release, arch, sha256 and repository.
-`lock apply` fails closed on any hash mismatch. `salt config apply`,
+native package by name, version, release, arch, sha256 and repository, and
+every package installed in each stratum by name and the foreign manager's exact
+version. `lock apply` fails closed on any hash mismatch and on any foreign
+version the stratum's manager cannot provide (rolling the stratum back to its
+pre-apply snapshot). `salt config apply`,
 `salt config diff` and `salt config rollback` operate on the default lock path.
 See [reproducibility.md](reproducibility.md) for the format and the exact
 semantics.
