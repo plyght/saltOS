@@ -47,7 +47,7 @@ jobs:
             cmake ninja-build pkg-config \
             libzstd-dev libsodium-dev libsqlite3-dev build-essential \
             mmdebstrap debian-archive-keyring gdisk dosfstools btrfs-progs \
-            zstd curl gpg ca-certificates fdisk mount
+            zstd curl gpg ca-certificates fdisk mount file
 
       - name: Build salt and salt-setup against the Debian base (arm64)
         run: |
@@ -108,6 +108,9 @@ jobs:
             [ -e "/mnt/pi-root/$f" ] || { echo "FAIL: root filesystem is missing /$f"; exit 1; }
           done
           readlink /mnt/pi-root/usr/sbin/init | grep -q runit-init || { echo "FAIL: /sbin/init is not runit-init"; exit 1; }
+          for b in usr/bin/salt usr/bin/salt-setup usr/sbin/runit; do
+            file -b "/mnt/pi-root/$b" | grep -q 'ARM aarch64' || { echo "FAIL: /$b is not an aarch64 binary"; file "/mnt/pi-root/$b"; exit 1; }
+          done
           cat /mnt/pi-root/etc/os-release
           grep -q 'LABEL=saltos-boot  /boot/firmware' /mnt/pi-root/etc/fstab
           ls /mnt/pi-root/lib/modules | grep -q rpt-rpi-2712 || { echo "FAIL: no Raspberry Pi 5 kernel modules"; ls /mnt/pi-root/lib/modules; exit 1; }
