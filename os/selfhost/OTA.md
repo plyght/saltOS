@@ -41,16 +41,29 @@ is baked into the image as before; you can still migrate a running system to
 grain-tracking later by pointing `repo.conf` at the repo and
 `salt install salt saltos-base linux-saltos`.
 
+To package a complete kernel (vmlinuz + initramfs + modules) from an installed
+tree instead of a bare `Image`, pass `KERNEL_TREE=<root> KERNEL_RELEASE=<uname -r>`;
+this is what `os/build/vm-x86.sh` does to register the factory kernel and what
+`os/ota/ship.sh` uses to publish a kernel upgrade.
+
 ## Update a running system
 
 ```sh
-salt sync       # fetch + verify the signed index against the trusted key
-salt update     # install any base/app grain whose version is newer
-salt rollback   # btrfs/A-B snapshot taken before the txn, if needed
+salt-ota check    # sync + report what would be upgraded
+salt-ota run      # sync, upgrade everything in one snapshotted transaction,
+                  # arm a trial boot if the kernel changed (exit 3 = reboot)
+salt-ota confirm  # after the reboot: health checks, make the new kernel default
+salt deployments  # generations with date, kernel and packages changed
+salt rollback [N] # previous generation becomes the root again; reboot
 ```
 
 `salt update` selects the **newest** version in the index (natural version
-compare), verifies every grain's signature against the key in `repo.conf`, and
-rejects a tampered/unsigned index. Verified end-to-end: install salt as a grain,
-publish a newer one, `salt update` swaps the on-disk binary; same for the
-`saltos-base` config grain (and `repo.conf` is preserved across the update).
+compare), verifies every grain's hash and signature against the key in
+`repo.conf`, and rejects a tampered/unsigned index or grain leaving the system
+unchanged. Verified end-to-end in QEMU by `os/ota/test-qemu.sh` (workflow
+`ota`): factory image with `salt` + `linux-saltos` registered as grains, a
+newer `salt` and kernel published with `ship.sh`, `salt-ota run`, trial boot of
+the new kernel, automatic fallback when it is not confirmed, confirmation,
+`salt rollback` to the factory generation, and refusal of a bad-hash and a
+bad-signature repository. Commands and exit codes: [docs/ota.md](../../docs/ota.md);
+the deployment/rollback model: [docs/rollback.md](../../docs/rollback.md).
