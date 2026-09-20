@@ -129,6 +129,19 @@ def live_wifi():
     return None
 
 
+def kernel_cmdline(conf):
+    words = (conf.get("extraCmdline", "") or "").split()
+    try:
+        with open("/proc/cmdline", encoding="utf-8") as f:
+            live = f.read().split()
+    except OSError:
+        live = []
+    for w in live:
+        if w.startswith("console=") and w not in words:
+            words.append(w)
+    return " ".join(words)
+
+
 def build_config(conf, gs):
     root_mount_point = gs.value("rootMountPoint")
     root, esp, swap = selected_partitions(gs)
@@ -204,7 +217,7 @@ def build_config(conf, gs):
         "[boot]",
         "firmware = " + toml_str(firmware),
         "os_prober = true",
-        "cmdline = " + toml_str(conf.get("extraCmdline", "") or ""),
+        "cmdline = " + toml_str(kernel_cmdline(conf)),
         "shim = \"auto\"",
         "",
         "[user]",

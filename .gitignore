@@ -33,3 +33,4 @@ selfhost-work/
 .toolscache/
 .audiocache/
 .gnucache/
+__pycache__/
