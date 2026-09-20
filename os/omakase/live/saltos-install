@@ -299,6 +299,7 @@ phase_desktop() {
       ;;
     *) log "unknown family for $distro"; rc=1 ;;
   esac
+  [ $rc -eq 0 ] && stratum_locale "$root"
   unbind_stratum "$root"
   [ $rc -eq 0 ] || return 1
   log "refreshing exposed commands"
@@ -318,6 +319,18 @@ phase_desktop() {
   done
   log "dropped $dropped shadowing shims"
   return 0
+}
+
+stratum_locale() {
+  local root="$1" loc="${locale:-en_US.UTF-8}" base
+  base="${loc%%.*}"
+  if [ -x "$root/usr/bin/locale-gen" ] || [ -x "$root/usr/sbin/locale-gen" ]; then
+    grep -qx "$loc UTF-8" "$root/etc/locale.gen" 2>/dev/null || printf '%s UTF-8\n' "$loc" >>"$root/etc/locale.gen"
+    in_stratum "$root" locale-gen >/dev/null 2>&1 || log "locale-gen for $loc failed in $distro"
+  elif [ -x "$root/usr/bin/localedef" ]; then
+    in_stratum "$root" localedef -i "$base" -f UTF-8 "$loc" >/dev/null 2>&1 || log "localedef for $loc failed in $distro"
+  fi
+  printf 'LANG=%s\n' "$loc" >"$root/etc/locale.conf"
 }
 
 phase_apps() {

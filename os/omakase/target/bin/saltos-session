@@ -29,6 +29,9 @@ if [ -z "${LANG:-}" ]; then
   [ -r /etc/locale.conf ] && . /etc/locale.conf
   export LANG="${LANG:-C.UTF-8}"
 fi
+if ! salt run "$distro" locale -a 2>/dev/null | sed 's/utf8$/UTF-8/' | grep -qix "$LANG"; then
+  export LANG=C.UTF-8
+fi
 [ -n "${SALTOS_SESSION_LOG:-}" ] || SALTOS_SESSION_LOG="$HOME/.local/state/saltos/session.log"
 mkdir -p "$(dirname "$SALTOS_SESSION_LOG")"
 

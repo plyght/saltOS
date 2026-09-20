@@ -107,7 +107,6 @@ reload() {
   local sock
   if sock="$(sway_socket)"; then
     SWAYSOCK="$sock" desktop_cmd swaymsg reload >/dev/null 2>&1 || true
-    pkill -USR2 -x waybar 2>/dev/null || true
     desktop_cmd makoctl reload >/dev/null 2>&1 || true
     desktop_cmd gsettings set org.gnome.desktop.interface gtk-theme "$GTK_THEME" 2>/dev/null || true
     desktop_cmd gsettings set org.gnome.desktop.interface icon-theme "$ICON_THEME" 2>/dev/null || true
