@@ -30,9 +30,10 @@ fi
 SEC=$(head -1 "$KEYS/ota.sec")
 
 # 2. build + sign the base grains (salt, saltos-base, and the kernel if given).
-SALT="$SALT" SEC_KEY="$SEC" VERSION="$VERSION" OUT="$REPO" WORK="${WORK:-$REPO.work}" \
-  ${KERNEL:+KERNEL="$KERNEL"} ${URL_BASE:+URL_BASE="$URL_BASE"} \
-  sh "$HERE/../selfhost/build-base-grains.sh"
+export SALT SEC_KEY="$SEC" VERSION OUT="$REPO" WORK="${WORK:-$REPO.work}"
+[ -n "${KERNEL:-}" ] && export KERNEL
+[ -n "${URL_BASE:-}" ] && export URL_BASE
+sh "$HERE/../selfhost/build-base-grains.sh"
 
 ARCH=$("$SALT" --version | sed -E 's/.*\((.*)\)/\1/')
 cat <<EOF
