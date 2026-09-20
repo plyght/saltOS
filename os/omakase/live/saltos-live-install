@@ -33,8 +33,13 @@ center() {
 
 greeter() {
   saltos-vt-palette
-  local logo prompt
+  local logo prompt crystal=""
   logo="$(cat "$OMAKASE_SHARE/live/logo.txt")"
+  if [ "$(tput lines)" -ge 40 ]; then
+    crystal="$(sed -e 's/:\+/\x1b[34m&\x1b[0m/g' -e 's/-\+/\x1b[36m&\x1b[0m/g' -e 's/[=+]\+/\x1b[96m&\x1b[0m/g' \
+      "$OMAKASE_SHARE/live/crystal.txt")"$'\n\n'
+  fi
+  logo="$crystal$logo"
   prompt=$'\n\n'"$(gum style --foreground 4 --bold 'Press Return to Start Install')"
   center "$logo"$'\n'"$(gum style --foreground 5 'omakase edition')"$'\n'"$prompt"
   local rc=0
