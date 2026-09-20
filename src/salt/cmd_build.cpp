@@ -79,15 +79,31 @@ static std::string recipe_file(const std::string &dir) {
   return p;
 }
 
+static bool chroot_path(const std::string &root, const std::string &abs, std::string &out) {
+  std::string r = root;
+  while (r.size() > 1 && r.back() == '/') r.pop_back();
+  if (abs.compare(0, r.size(), r) != 0 || abs.size() <= r.size() || abs[r.size()] != '/')
+    return false;
+  out = abs.substr(r.size());
+  return true;
+}
+
 static int run_shell(const std::string &workdir, const std::string &script,
-                     const std::vector<std::string> &env) {
+                     const std::vector<std::string> &env, const std::string &root) {
   std::string tmp = path_join(workdir, ".salt-build.sh");
   std::string full = "set -e\n" + script + "\n";
   if (salt_write_file(tmp.c_str(), full.c_str(), full.size(), 0755) != SALT_OK) return SALT_ERR;
   std::string cmd;
   for (auto &e : env) cmd += e + " ";
   cmd += "sh -e .salt-build.sh";
-  std::string run = "cd '" + workdir + "' && " + cmd;
+  std::string run;
+  if (root.empty()) {
+    run = "cd '" + workdir + "' && " + cmd;
+  } else {
+    std::string inner;
+    if (!chroot_path(root, workdir, inner)) return SALT_ERR;
+    run = "chroot '" + root + "' /bin/sh -c \"cd '" + inner + "' && " + cmd + "\"";
+  }
   int rc = system(run.c_str());
   return rc == 0 ? SALT_OK : SALT_ERR;
 }
@@ -150,6 +166,15 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
   salt_mkdirs(src.c_str(), 0755);
   salt_mkdirs(dest.c_str(), 0755);
   salt_mkdirs(dl.c_str(), 0755);
+  std::string absdest = dest;
+  std::string abssrc = src;
+  {
+    char cwd[4096];
+    if (getcwd(cwd, sizeof(cwd))) {
+      if (!dest.empty() && dest[0] != '/') absdest = std::string(cwd) + "/" + dest;
+      if (!src.empty() && src[0] != '/') abssrc = std::string(cwd) + "/" + src;
+    }
+  }
 
   printf("==> building %s %s-%d for %s\n", name.c_str(), version.c_str(), release, arch.c_str());
 
@@ -175,7 +200,14 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
   }
   if (local) {
     std::string srcpath = localpath;
-    std::string copy = "cp -a '" + srcpath + "/.' '" + src + "/'";
+    std::string copy;
+    if (salt_is_dir(path_join(srcpath, ".git").c_str()))
+      copy = "cd '" + srcpath +
+             "' && git -c 'safe.directory=*' ls-files -z --cached --others --exclude-standard | "
+             "tar --null -T - -cf - | "
+             "tar -C '" + abssrc + "' -xf -";
+    else
+      copy = "cp -a '" + srcpath + "/.' '" + src + "/'";
     if (system(copy.c_str()) != 0) {
       fprintf(stderr, "salt: failed to copy local source %s\n", srcpath.c_str());
       salt_toml_free(t);
@@ -211,22 +243,24 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
     return 1;
   }
   std::vector<std::string> env;
-  std::string absdest = dest;
-  std::string abssrc = src;
-  {
-    char cwd[4096];
-    if (getcwd(cwd, sizeof(cwd))) {
-      if (!dest.empty() && dest[0] != '/') absdest = std::string(cwd) + "/" + dest;
-      if (!src.empty() && src[0] != '/') abssrc = std::string(cwd) + "/" + src;
-    }
+  const char *rootenv = getenv("SALT_BUILD_ROOT");
+  std::string root = rootenv ? rootenv : "";
+  std::string envsrc = abssrc, envdest = absdest;
+  if (!root.empty() &&
+      (!chroot_path(root, abssrc, envsrc) || !chroot_path(root, absdest, envdest))) {
+    fprintf(stderr, "salt: SALT_WORK (%s) must lie inside SALT_BUILD_ROOT (%s)\n", work.c_str(),
+            root.c_str());
+    salt_toml_free(t);
+    return 1;
   }
-  env.push_back("SALT_SRC='" + abssrc + "'");
-  env.push_back("SALT_DEST='" + absdest + "'");
+  env.push_back("SALT_SRC='" + envsrc + "'");
+  env.push_back("SALT_DEST='" + envdest + "'");
   env.push_back("SALT_ARCH='" + arch + "'");
   env.push_back("SALT_JOBS=" + std::string(getenv("SALT_JOBS") ? getenv("SALT_JOBS") : "4"));
   env.push_back("SALT_NO_NETWORK=1");
-  printf("==> running build (%s)\n", build_system.c_str());
-  if (run_shell(src, body, env) != SALT_OK) {
+  printf("==> running build (%s%s)\n", build_system.c_str(),
+         root.empty() ? "" : ", chrooted");
+  if (run_shell(abssrc, body, env, root) != SALT_OK) {
     fprintf(stderr, "salt: build failed\n");
     salt_toml_free(t);
     return 1;

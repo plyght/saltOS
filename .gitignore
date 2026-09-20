@@ -1,4 +1,5 @@
 /build/
+/saltos-build/
 /build-vm/
 /out/
 *.o
