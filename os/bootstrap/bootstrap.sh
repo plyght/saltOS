@@ -6,6 +6,7 @@ OUT="${OUT:-/var/tmp/saltos-build}"
 JOBS="${JOBS:-$(nproc 2>/dev/null || echo 2)}"
 REPO_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 SALT="${SALT:-salt}"
+SALT="$(command -v "$SALT")" || { echo "salt not found in PATH" >&2; exit 2; }
 
 case "$ARCH" in
   x86_64|aarch64) ;;

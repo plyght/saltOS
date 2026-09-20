@@ -1,6 +1,6 @@
 name = "gcc"
 version = "14.2.0"
-release = 2
+release = 3
 summary = "GNU Compiler Collection"
 license = "GPL-3.0-or-later"
 arch = ["x86_64", "aarch64"]
@@ -26,6 +26,7 @@ cd build
 make -j"$SALT_JOBS"
 make DESTDIR="$SALT_DEST" install
 rm -rf "$SALT_DEST"/usr/lib/gcc/*/*/include-fixed
+ln -sf gcc "$SALT_DEST/usr/bin/cc"
 """
 
 [package]
