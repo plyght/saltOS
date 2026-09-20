@@ -116,6 +116,31 @@ jobs:
           fi
           sudo "$salt" lock diff /tmp/system.lock.toml
 
+      - name: Prove declarative system.toml ([[strata]].packages + [expose])
+        run: |
+          salt=build/src/salt/salt
+          sudo mkdir -p /etc/salt
+          printf '[[strata]]\nname = "%s"\npackages = ["nano"]\n\n[expose]\n"%s/nano" = "cfg-nano"\n"%s/sh" = { alias = "cfg-sh" }\n' \
+            ${{ matrix.id }} ${{ matrix.id }} ${{ matrix.id }} | sudo tee /etc/salt/system.toml
+          sudo "$salt" config check
+          sudo "$salt" pkg ${{ matrix.id }} remove nano
+          sudo "$salt" --yes --no-expose config apply --relock
+          sudo "$salt" run ${{ matrix.id }} /bin/sh -c 'command -v nano'
+          test -x /usr/local/salt/shims/cfg-nano
+          sudo env PATH="$PWD/build/src/salt:$PATH" /usr/local/salt/shims/cfg-sh -c 'echo shim-ok' | grep -q shim-ok
+          sudo "$salt" exposed | grep -q '^cfg-sh '
+          grep -q 'name = "nano"' /etc/salt/system.lock.toml
+          sudo "$salt" --yes --no-expose config apply | grep -q 'already matches'
+          printf '[[strata]]\nname = "%s"\npackages = ["nano"]\n\n[expose]\n"%s/nano" = "cfg-nano"\n' \
+            ${{ matrix.id }} ${{ matrix.id }} | sudo tee /etc/salt/system.toml
+          if sudo "$salt" --yes --no-expose config apply; then
+            echo "config apply accepted a stale lock"; exit 1
+          fi
+          sudo "$salt" --yes --no-expose config apply --relock
+          test ! -e /usr/local/salt/shims/cfg-sh
+          test -x /usr/local/salt/shims/cfg-nano
+          sudo "$salt" lock diff /etc/salt/system.lock.toml
+
       - name: Prove per-stratum snapshot + rollback
         run: |
           salt=build/src/salt/salt

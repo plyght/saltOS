@@ -222,6 +222,88 @@ if(NOT RELOCKED MATCHES "config_hash = \"sha256:")
   message(FATAL_ERROR "--relock did not record the config hash")
 endif()
 
+file(WRITE "${ROOT}/etc/salt/system.toml"
+"schema = 1
+[system]
+hostname = \"smoke\"
+[native]
+repo = \"current\"
+packages = [\"greeter\"]
+[native.pin]
+greeter = \"1.0-1\"
+[policy]
+require_signed_native = true
+on_missing_artifact = \"fail\"
+")
+expect_output("config check" "ok" "${SALT_BIN}" --root "${ROOT}" config check)
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes config apply --relock --dry-run
+                OUTPUT_VARIABLE CFGDRY COMMAND_ERROR_IS_FATAL ANY)
+if(NOT CFGDRY MATCHES "\\+ greeter" OR NOT CFGDRY MATCHES "\\+ libgreet" OR NOT CFGDRY MATCHES "- hello")
+  message(FATAL_ERROR "config apply --dry-run did not plan the declared native set:\n${CFGDRY}")
+endif()
+if(EXISTS "${ROOT}/usr/bin/greeter" OR NOT EXISTS "${ROOT}/usr/bin/hello")
+  message(FATAL_ERROR "config apply --dry-run changed the system")
+endif()
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes config apply --relock COMMAND_ERROR_IS_FATAL ANY)
+if(NOT EXISTS "${ROOT}/usr/bin/greeter" OR NOT EXISTS "${ROOT}/usr/bin/libgreet" OR EXISTS "${ROOT}/usr/bin/hello")
+  message(FATAL_ERROR "config apply did not converge to the declared native set")
+endif()
+file(READ "${ROOT}/etc/salt/system.lock.toml" CFGLOCK)
+if(NOT CFGLOCK MATCHES "name = \"greeter\"" OR NOT CFGLOCK MATCHES "name = \"libgreet\"" OR CFGLOCK MATCHES "name = \"hello\"")
+  message(FATAL_ERROR "config apply did not relock the converged set:\n${CFGLOCK}")
+endif()
+expect_output("config apply is idempotent" "already matches" "${SALT_BIN}" --root "${ROOT}" --yes config apply)
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" config diff COMMAND_ERROR_IS_FATAL ANY)
+
+file(RENAME "${ROOT}/var/lib/salt/repo/${ARCH}/index.toml.sig" "${ROOT}/var/lib/salt/repo/${ARCH}/index.toml.sig.off")
+expect_fail_output("policy require_signed_native refuses an unsigned index" "require_signed_native"
+                   "${SALT_BIN}" --root "${ROOT}" --yes config apply)
+file(RENAME "${ROOT}/var/lib/salt/repo/${ARCH}/index.toml.sig.off" "${ROOT}/var/lib/salt/repo/${ARCH}/index.toml.sig")
+
+file(WRITE "${ROOT}/etc/salt/system.toml"
+"[native]
+packages = [\"greeter\"]
+[native.pin]
+greeter = \"9.9\"
+")
+expect_fail_output("config apply refuses an unavailable pin" "does not offer"
+                   "${SALT_BIN}" --root "${ROOT}" --yes config apply --relock)
+file(WRITE "${ROOT}/etc/salt/system.toml"
+"[native]
+packages = [\"greeter\", \"no-such-package\"]
+")
+expect_fail_output("config apply fails on a missing root by default" "not in the repository index"
+                   "${SALT_BIN}" --root "${ROOT}" --yes config apply --relock)
+file(WRITE "${ROOT}/etc/salt/system.toml"
+"[native]
+packages = [\"greeter\", \"no-such-package\"]
+[policy]
+on_missing_artifact = \"skip\"
+")
+expect_output("policy on_missing_artifact = skip" "skipping: native package no-such-package"
+              "${SALT_BIN}" --root "${ROOT}" --yes config apply --relock)
+file(WRITE "${ROOT}/etc/salt/system.toml" "[native]\npackages = [\"greeter\"]\n[policy]\non_missing_artifact = \"ignore\"\n")
+expect_fail_output("config rejects an unknown policy value" "on_missing_artifact"
+                   "${SALT_BIN}" --root "${ROOT}" config check)
+file(WRITE "${ROOT}/etc/salt/system.toml" "[native]\npackages = [\"greeter\"]\n[policy]\nfrobnicate = true\n")
+expect_fail_output("config rejects an unknown policy key" "unknown key"
+                   "${SALT_BIN}" --root "${ROOT}" config check)
+file(WRITE "${ROOT}/etc/salt/system.toml" "[native]\npackages = [\"greeter\"]\n[native.pin]\nhello = \"1.0\"\n")
+expect_fail_output("config rejects a pin outside the native set" "not part of the declared native set"
+                   "${SALT_BIN}" --root "${ROOT}" --yes config apply --relock)
+file(WRITE "${ROOT}/etc/salt/system.toml" "[native]\npackages = [\"greeter\"]\n[expose]\n\"nowhere/rg\" = \"rg\"\n")
+expect_fail_output("config apply reports an unknown expose stratum" "unknown stratum nowhere"
+                   "${SALT_BIN}" --root "${ROOT}" --yes config apply --relock)
+file(WRITE "${ROOT}/etc/salt/system.toml" "[native]\npackages = [\"greeter\"]\n[expose]\nrg = \"rg\"\n")
+expect_fail_output("config rejects a malformed expose key" "stratum/command"
+                   "${SALT_BIN}" --root "${ROOT}" config check)
+
+file(WRITE "${ROOT}/etc/salt/system.toml" "[system]\nhostname = \"smoke\"\n[native]\npackages = [\"hello\"]\n")
+execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes config apply --relock COMMAND_ERROR_IS_FATAL ANY)
+if(NOT EXISTS "${ROOT}/usr/bin/hello" OR EXISTS "${ROOT}/usr/bin/greeter" OR EXISTS "${ROOT}/usr/bin/libgreet")
+  message(FATAL_ERROR "config apply did not swap the native set back to hello")
+endif()
+
 execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes remove hello COMMAND_ERROR_IS_FATAL ANY)
 execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes install --locked COMMAND_ERROR_IS_FATAL ANY)
 if(NOT EXISTS "${ROOT}/usr/bin/hello")

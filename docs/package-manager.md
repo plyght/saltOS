@@ -517,6 +517,25 @@ salt lock diff
 salt lock apply /srv/locks/lab.lock.toml --dry-run
 ```
 
+### `salt config <subcommand>`
+
+Declarative system management driven by `etc/salt/system.toml`. `show` prints
+the config, `check` validates it (schema, keys, types) without touching the
+system, and `apply` converges the machine to it: with an up-to-date lock it is
+`salt lock apply`; with `--relock` (or no lock yet) it resolves `[native]` and
+`[native.pin]` against the repository index into one native transaction that
+installs the declared closure and removes everything outside it, bootstraps
+missing `[[strata]]` and installs their declared packages, reconciles `[expose]`
+shims, enforces `[policy]`, and writes a fresh lock. `diff`, `history`,
+`rollback` and `gc` are the lock/generation commands described above. `apply`
+accepts `--dry-run`, `--download-only` and `--allow-unverified`.
+
+```sh
+salt config check
+salt config apply --relock --dry-run
+salt config apply --relock
+```
+
 ### `salt build <recipe-dir>`
 
 Build a `.grain` from a recipe directory. The source is fetched and its hash

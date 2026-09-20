@@ -715,6 +715,21 @@ const salt_toml *salt_toml_array_at(const salt_toml *array, size_t i) {
   return array->u.arr.items[i];
 }
 
+size_t salt_toml_table_len(const salt_toml *table) {
+  if (!table || table->type != SALT_TOML_TABLE) return 0;
+  return table->u.tab.len;
+}
+
+const char *salt_toml_table_key(const salt_toml *table, size_t i) {
+  if (!table || table->type != SALT_TOML_TABLE || i >= table->u.tab.len) return NULL;
+  return table->u.tab.keys[i];
+}
+
+const salt_toml *salt_toml_table_val(const salt_toml *table, size_t i) {
+  if (!table || table->type != SALT_TOML_TABLE || i >= table->u.tab.len) return NULL;
+  return table->u.tab.vals[i];
+}
+
 const char *salt_toml_as_string(const salt_toml *t) {
   if (!t || t->type != SALT_TOML_STRING) return NULL;
   return t->u.s;

@@ -297,7 +297,7 @@ int cmd_pm(const Options &o, const std::vector<std::string> &args) {
   return rc != SALT_OK ? 1 : st;
 }
 
-int ensure_stratum(const Options &o, const std::string &name) {
+int ensure_stratum(const Options &o, const std::string &name, const std::string &recipe) {
   salt_strata_db *db = nullptr;
   if (salt_strata_db_open(o.root.c_str(), &db) != SALT_OK) {
     fprintf(stderr, "salt: %s\n", salt_last_error());
@@ -311,7 +311,7 @@ int ensure_stratum(const Options &o, const std::string &name) {
     return 0;
   }
 
-  std::string path = resolve_stratum_recipe(o, name);
+  std::string path = resolve_stratum_recipe(o, recipe.empty() ? name : recipe);
   if (path.empty()) {
     fprintf(stderr, "salt: no stratum '%s' and no built-in recipe to bootstrap it from.\n",
             name.c_str());
@@ -326,6 +326,10 @@ int ensure_stratum(const Options &o, const std::string &name) {
     salt_stratum_recipe_free(&r);
     salt_strata_db_close(db);
     return 1;
+  }
+  if (!r.name || name != r.name) {
+    free(r.name);
+    r.name = salt_strdup(name.c_str());
   }
   fprintf(stderr, "salt: the '%s' stratum is not set up yet.\n", name.c_str());
   if (!confirm(o, std::string("bootstrap ") + name + " (" + (r.family ? r.family : "?") +

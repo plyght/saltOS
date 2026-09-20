@@ -149,7 +149,7 @@ int cmd_sync(const Options &o, const std::vector<std::string> &args) {
   return 0;
 }
 
-static bool index_signed_ok(const Options &o, const RepoConf &c) {
+bool index_signed_ok(const Options &o, const RepoConf &c) {
   std::string key = read_key(c.key);
   if (key.empty()) return false;
   std::string idxp = index_path_for(o);
