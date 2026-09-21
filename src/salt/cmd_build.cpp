@@ -273,6 +273,7 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
     salt_toml_free(t);
     return 1;
   }
+  unlink(path_join(dest, "usr/share/info/dir").c_str());
 
   salt_pkg_meta meta;
   salt_pkg_meta_init(&meta);
