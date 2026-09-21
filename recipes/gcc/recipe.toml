@@ -1,6 +1,6 @@
 name = "gcc"
 version = "14.2.0"
-release = 4
+release = 5
 summary = "GNU Compiler Collection"
 license = "GPL-3.0-or-later"
 arch = ["x86_64", "aarch64"]
@@ -23,8 +23,7 @@ cd build
     --enable-default-pie \\
     --enable-default-ssp \\
     --disable-multilib \\
-    --disable-bootstrap \\
-    --with-system-zlib
+    --disable-bootstrap
 make -j"$SALT_JOBS"
 make DESTDIR="$SALT_DEST" install
 rm -rf "$SALT_DEST"/usr/lib/gcc/*/*/include-fixed

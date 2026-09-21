@@ -26,10 +26,18 @@ builder path in `src/salt/cmd_build.cpp`.
 - `2f7fd10`: native-base grain cache key now also hashes `os/bootstrap/**`,
   `src/halite/**`, `src/salt/**` so builder changes invalidate cached grains.
 
+- gcc recipe (release 5): dropped `--with-system-zlib`; the cross-stage gcc is built on
+  the CI host and linked against the host libz, so `cc1` failed to load inside the base
+  chroot (`libz.so.1: cannot open shared object file`, surfaced as glibc configure
+  "cannot compute suffix of object files"). In-tree zlib is linked statically now.
+
 ## In progress
 
-- native-base run for `2f7fd10`: https://github.com/plyght/saltOS/actions/runs/35549117135
-  (toolchain job must get past gmp/mpfr; base job and ISO/QEMU job follow, ~hours).
+- native-base for `2f7fd10` got through the toolchain job; the base job failed on the
+  cc1/libz issue fixed above. Next run (latest main) must be watched: toolchain rebuilds
+  gcc, then base, then ISO+QEMU (~hours). Reproduce a base-job failure locally by
+  `gh run download <id> -n saltos-build-x86_64`, untar into `saltos-build`, and run
+  bootstrap.sh with `STAGES=base OUT=$PWD/saltos-build`.
 - selfhost-desktop run for `7a5fcb6`: https://github.com/plyght/saltOS/actions/runs/35547211980
   (workflow only triggers on `os/selfhost/desktop.sh` / its yml; re-run via
   `gh workflow run selfhost-desktop --repo plyght/saltOS` if needed).
