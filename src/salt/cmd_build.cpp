@@ -187,12 +187,9 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
     return 1;
   }
   if (local) {
-    if (!sha.empty()) {
-      fprintf(stderr, "salt: source.sha256 is not applicable to a local source directory (%s)\n",
+    if (!sha.empty())
+      fprintf(stderr, "salt: warning: ignoring source.sha256 for local source directory %s\n",
               localpath.c_str());
-      salt_toml_free(t);
-      return 1;
-    }
   } else if (!is_sha256_hex(sha)) {
     fprintf(stderr, "salt: source.sha256 must be 64 lowercase hex digits, got '%s'\n",
             sha.c_str());
