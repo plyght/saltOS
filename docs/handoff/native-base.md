@@ -37,16 +37,15 @@ builder path in `src/salt/cmd_build.cpp`.
 
 - build-order: popt and rsync now precede linux (kernel `headers_install` needs rsync).
 
-## In progress
+## Current CI state
 
-- native-base for `2f7fd10` got through the toolchain job; the base job failed on the
-  cc1/libz issue, then (8b72323) on glibc configure missing bison/python; both fixed above. Next run (latest main) must be watched: toolchain rebuilds
-  gcc, then base, then ISO+QEMU (~hours). Reproduce a base-job failure locally by
-  `gh run download <id> -n saltos-build-x86_64`, untar into `saltos-build`, and run
-  bootstrap.sh with `STAGES=base OUT=$PWD/saltos-build`.
-- selfhost-desktop run for `7a5fcb6`: https://github.com/plyght/saltOS/actions/runs/35547211980
+- native-base green on main for `e9bdbbd` (toolchain, base, ISO assembly + QEMU boot):
+  https://github.com/plyght/saltOS/actions/runs/35559388485
+- selfhost-desktop green for `7a5fcb6`: https://github.com/plyght/saltOS/actions/runs/35547211980
   (workflow only triggers on `os/selfhost/desktop.sh` / its yml; re-run via
   `gh workflow run selfhost-desktop --repo plyght/saltOS` if needed).
+- To reproduce a base-job failure locally: `gh run download <id> -n saltos-build-x86_64`,
+  untar into `saltos-build`, run bootstrap.sh with `STAGES=base OUT=$PWD/saltos-build`.
 
 ## Verified locally
 
@@ -69,9 +68,7 @@ serial log prints `SALTOS_X_OK xorg + twm + xterm running, all from source, no D
 
 ## Left / known gaps
 
-- Confirm both workflows green on main after the runs above; fix whatever CI hits
-  next (`gh run view <id> --log-failed`). Local host has no `makeinfo`, so info-page
-  related conflicts only appear in CI.
+- Local host has no `makeinfo`, so info-page related conflicts only appear in CI.
 - Binaries are not stripped; the native rootfs is ~6 GB (git-core alone 2.6 GB).
   The builder has no strip step yet.
 - selfhost-desktop proves Xorg + twm + xterm, not the LXQt + SDDM target stack.
