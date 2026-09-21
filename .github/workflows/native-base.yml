@@ -42,7 +42,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: saltos-build
-          key: native-base-x86_64-tc-${{ hashFiles('recipes/**', 'os/bootstrap/build-order.toml') }}
+          key: native-base-x86_64-tc-${{ hashFiles('recipes/**', 'os/bootstrap/**', 'src/halite/**', 'src/salt/**') }}
       - name: Build cross-toolchain + temp-tools
         run: |
           export PATH="$PWD/build/src/salt:$PATH"
@@ -62,7 +62,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: saltos-build
-          key: native-base-x86_64-tc-${{ hashFiles('recipes/**', 'os/bootstrap/build-order.toml') }}
+          key: native-base-x86_64-tc-${{ hashFiles('recipes/**', 'os/bootstrap/**', 'src/halite/**', 'src/salt/**') }}
       - name: Pack stage output
         run: |
           sudo tar -C saltos-build --zstd -cf saltos-build-x86_64.tar.zst .
