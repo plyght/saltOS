@@ -191,8 +191,7 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
       fprintf(stderr, "salt: warning: ignoring source.sha256 for local source directory %s\n",
               localpath.c_str());
   } else if (!is_sha256_hex(sha)) {
-    fprintf(stderr, "salt: source.sha256 must be 64 lowercase hex digits, got '%s'\n",
-            sha.c_str());
+    fprintf(stderr, "salt: source.sha256 must be 64 lowercase hex digits, got '%s'\n", sha.c_str());
     salt_toml_free(t);
     return 1;
   }
@@ -203,7 +202,8 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
       copy = "cd '" + srcpath +
              "' && git -c 'safe.directory=*' ls-files -z --cached --others --exclude-standard | "
              "tar --null -T - -cf - | "
-             "tar -C '" + abssrc + "' -xf -";
+             "tar -C '" +
+             abssrc + "' -xf -";
     else
       copy = "cp -a '" + srcpath + "/.' '" + src + "/'";
     if (system(copy.c_str()) != 0) {
@@ -267,8 +267,7 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
   env.push_back("SALT_ARCH='" + arch + "'");
   env.push_back("SALT_JOBS=" + std::string(getenv("SALT_JOBS") ? getenv("SALT_JOBS") : "4"));
   env.push_back("SALT_NO_NETWORK=1");
-  printf("==> running build (%s%s)\n", build_system.c_str(),
-         root.empty() ? "" : ", chrooted");
+  printf("==> running build (%s%s)\n", build_system.c_str(), root.empty() ? "" : ", chrooted");
   if (run_shell(abssrc, body, env, root) != SALT_OK) {
     fprintf(stderr, "salt: build failed\n");
     salt_toml_free(t);

@@ -122,8 +122,7 @@ static int lint_common(const char *recipe_path, salt_findings *out, bool strict)
   const char *sha = salt_toml_string(t, "source.sha256", NULL);
   bool local_src = strncmp(url ? url : "", "file://", 7) == 0;
   if (!sha || !sha[0]) {
-    if (!local_src)
-      salt_findings_push(out, SALT_RISK_BLOCK, "source-sha", "missing source.sha256");
+    if (!local_src) salt_findings_push(out, SALT_RISK_BLOCK, "source-sha", "missing source.sha256");
   } else if (!is_hex64(sha)) {
     salt_findings_push(out, SALT_RISK_BLOCK, "source-sha-fmt",
                        "source.sha256 is not a 64 hex digit checksum");
