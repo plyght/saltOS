@@ -156,7 +156,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            mtools dosfstools qemu-system-arm qemu-system-data qemu-efi-aarch64 qemu-utils \
+            mtools dosfstools qemu-system-arm qemu-system-data qemu-efi-aarch64 ipxe-qemu qemu-utils \
             socat netpbm imagemagick zstd curl gpg gpgv squashfs-tools binutils
           if [ -e /dev/kvm ]; then
             echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
