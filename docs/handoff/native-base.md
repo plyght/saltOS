@@ -31,10 +31,14 @@ builder path in `src/salt/cmd_build.cpp`.
   chroot (`libz.so.1: cannot open shared object file`, surfaced as glibc configure
   "cannot compute suffix of object files"). In-tree zlib is linked statically now.
 
+- build-order: base-stage glibc now builds after python (its configure needs bison and
+  python3, which the temp-tools sysroot lacks; everything before it links against the
+  cross-stage glibc 2.41, same version/compiler).
+
 ## In progress
 
 - native-base for `2f7fd10` got through the toolchain job; the base job failed on the
-  cc1/libz issue fixed above. Next run (latest main) must be watched: toolchain rebuilds
+  cc1/libz issue, then (8b72323) on glibc configure missing bison/python; both fixed above. Next run (latest main) must be watched: toolchain rebuilds
   gcc, then base, then ISO+QEMU (~hours). Reproduce a base-job failure locally by
   `gh run download <id> -n saltos-build-x86_64`, untar into `saltos-build`, and run
   bootstrap.sh with `STAGES=base OUT=$PWD/saltos-build`.

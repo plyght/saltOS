@@ -38,7 +38,6 @@ packages = [
 
 [base]
 packages = [
-  "glibc",
   "zlib",
   "gmp",
   "mpfr",
@@ -64,6 +63,7 @@ packages = [
   "openssl",
   "sqlite",
   "python",
+  "glibc",
   "cmake",
   "ninja",
   "meson",
