@@ -18,6 +18,7 @@ resume-from-cold state for whoever continues the work.
 | `5e2018c` | arch-aware `build/vendor.sh`: x86_64 tarballs vs aarch64 Vicinae AppImage (unsquashed at build, no FUSE) / Helium arm64 tar.xz verified with `gpgv` against `build/helium-signing-key.asc` / arm64 gum |
 | `12feb43` | aarch64 edition: `build/arch-mirror.sh aarch64` (Arch Linux ARM rootfs + `core extra alarm aur`), `strata/arch-aarch64.toml`, arm64-efi `grub-mkrescue`, `serial_tty()` -> `ttyAMA0`, `stratum_stock_accounts` drops stock rootfs users (`alarm`, `debian`, ...) |
 | `924e368` | `ARCH=aarch64 build/test-vm.sh` (qemu-system-aarch64, AAVMF, KVM if writable `/dev/kvm` else TCG + long timeouts), `build-aarch64` job on `ubuntu-24.04-arm`, docs |
+| `615f83c` | `ipxe-qemu` on the arm64 runner (first `build-aarch64` run died on a missing `efi-virtio.rom`) |
 
 Verified for each of the above before pushing: `cmake -G Ninja -B build
 -DCMAKE_BUILD_TYPE=Release && cmake --build build && ctest --test-dir build
@@ -31,40 +32,30 @@ all `ALL OK` as of `feb6a39` (`SALTOS_SWAY_SESSION_OK`, LUKS unlock, `salt
 rollback`, Windows-style ESP+NTFS untouched, `Windows Boot Manager` in GRUB,
 gum configurator driven over serial, swaybg photo screendump).
 
-QEMU/AAVMF aarch64 (TCG, ~45 min install + ~10 min boot): `ALL OK` once with
-the ISO built from `5e2018c`+`12feb43` minus the stock-account change
-(`SALTOS_SWAY_SESSION_OK`, theme switch, wallpaper next/credits, 2434-colour
-screendump, sudo, runit).
+QEMU/AAVMF aarch64 (TCG, ~45 min install + ~10 min boot, ISO built from
+`924e368`): `ALL OK (erase)` -- `SALTOS_SWAY_SESSION_OK`, theme switch,
+wallpaper next/credits, 82528-colour screendump, real-uid Sway, sudo, runit,
+and `SALTOS_STRATUM_IDENTITY_OK` (the configured user's uid resolves to their
+name inside the Arch Linux ARM stratum; the stock `alarm` account is gone).
+
+omakase-iso run 35549759545 (`615f83c`): x86_64 build + erase, encrypt,
+alongside and interactive legs green -- that also covers
+`stratum_stock_accounts()` and `SALTOS_STRATUM_IDENTITY_OK` on x86_64.
 
 ## In progress (exact state)
 
-A second aarch64 ISO built from `924e368` (`/home/ubuntu/omk/arm/
-saltos-omakase-aarch64.iso` on the session VM, 2.6 GB) was booting under
-`ARCH=aarch64 bash os/omakase/build/test-vm.sh <iso> /home/ubuntu/omk/arm/test2`
-to re-verify after the last two source changes:
-
-1. `stratum_stock_accounts()` in `os/omakase/live/saltos-install` (removes
-   uid>=1000 users shipped by the stratum rootfs that are not in the host
-   `/etc/passwd`, locks stratum root);
-2. the new `SALTOS_STRATUM_IDENTITY_OK` assertion in `build/test-vm.sh`
-   (`salt run arch id -un` == configured user, and the user's uid resolves to
-   that name inside the stratum).
-
-The run had reached the live ISO (installer running on tty1, cidata erase
-install in progress) when the session was checkpointed; no result yet. The
-same two changes have NOT been exercised on x86_64 either. Neither change is
-reachable from the native build or ctest, so the ARM/x86 QEMU runs (or the
-`omakase-iso` workflow on main) are the only verification.
-
-The `omakase-iso` workflow run for the push that contains this file is the
-authoritative CI state for `build-aarch64`; it had not run on `ubuntu-24.04-arm`
-before this push, so expect first-run breakage (see "Known risks").
+`build-aarch64` in run 35549759545 was still in its QEMU step (TCG on the
+GitHub ARM runner, no `/dev/kvm`; `INSTALL_TIMEOUT=7200 BOOT_TIMEOUT=2400`)
+when this was written. The ISO build itself took ~3 min there (native arm64
+mmdebstrap). Check its conclusion with
+`gh run view 35549759545 --repo plyght/saltOS`.
 
 ## Remaining, in priority order
 
 1. Watch the `omakase-iso` workflow on main (`gh run list --repo plyght/saltOS
-   --workflow omakase-iso.yml`). Fix `build-aarch64` if red; fix
-   `install-paths` if the stock-account change broke x86_64.
+   --workflow omakase-iso.yml`). Fix `build-aarch64` if red (a TCG timeout
+   would mean raising the `INSTALL_TIMEOUT`/`BOOT_TIMEOUT` the job sets when
+   `/dev/kvm` is not writable, or shortening the install).
 2. If `SALTOS_STRATUM_IDENTITY_OK` fails: check `install-serial.log` for
    "removing stock account" / "could not remove"; `userdel -r` runs through
    `in_stratum` (chroot with `/proc` bound) and `deluser` is the Debian
@@ -103,11 +94,10 @@ AAVMF, `-machine virt`, `ttyAMA0`; without `/dev/kvm` set
 
 ## Known risks / failures
 
-- `build-aarch64` on GitHub has not completed a run yet. Likely first-run
-  issues: apt package names on `ubuntu-24.04-arm` (`qemu-efi-aarch64`,
-  `grub-efi-arm64-bin`), `/dev/kvm` availability on ARM runners (the job
-  falls back to TCG with 240 min timeout), docker `--platform linux/arm64`
-  for the Arch Linux ARM mirror.
+- `build-aarch64` on GitHub has not completed a green run yet (see "In
+  progress"). `ubuntu-24.04-arm` has no writable `/dev/kvm`, so the QEMU step
+  runs under TCG with a 240 min job timeout; locally the same install took
+  ~55 min under TCG on 8 cores.
 - `ArchLinuxARM-aarch64-latest.tar.gz` is unpinned upstream; the mirror
   builder records its sha256 in `bootstrap.sha256` and `iso.sh` pins the
   recipe on the ISO to that hash, so a rebuild always matches its own ISO.
