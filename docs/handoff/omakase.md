@@ -38,24 +38,21 @@ wallpaper next/credits, 82528-colour screendump, real-uid Sway, sudo, runit,
 and `SALTOS_STRATUM_IDENTITY_OK` (the configured user's uid resolves to their
 name inside the Arch Linux ARM stratum; the stock `alarm` account is gone).
 
-omakase-iso run 35549759545 (`615f83c`): x86_64 build + erase, encrypt,
-alongside and interactive legs green -- that also covers
-`stratum_stock_accounts()` and `SALTOS_STRATUM_IDENTITY_OK` on x86_64.
+omakase-iso run 35549759545 (`615f83c`) is fully green: x86_64 build + erase,
+encrypt, alongside, interactive legs and `build-aarch64` (TCG on the GitHub
+ARM runner, no `/dev/kvm`; ISO build ~3 min with native arm64 mmdebstrap,
+QEMU step ~2 h). That covers `stratum_stock_accounts()` and
+`SALTOS_STRATUM_IDENTITY_OK` on both architectures.
 
 ## In progress (exact state)
 
-`build-aarch64` in run 35549759545 was still in its QEMU step (TCG on the
-GitHub ARM runner, no `/dev/kvm`; `INSTALL_TIMEOUT=7200 BOOT_TIMEOUT=2400`)
-when this was written. The ISO build itself took ~3 min there (native arm64
-mmdebstrap). Check its conclusion with
-`gh run view 35549759545 --repo plyght/saltOS`.
+Nothing in flight; the working tree is clean.
 
 ## Remaining, in priority order
 
-1. Watch the `omakase-iso` workflow on main (`gh run list --repo plyght/saltOS
-   --workflow omakase-iso.yml`). Fix `build-aarch64` if red (a TCG timeout
-   would mean raising the `INSTALL_TIMEOUT`/`BOOT_TIMEOUT` the job sets when
-   `/dev/kvm` is not writable, or shortening the install).
+1. Keep the `omakase-iso` workflow on main green (`gh run list --repo
+   plyght/saltOS --workflow omakase-iso.yml`); `build-aarch64` runs ~2 h under
+   TCG and has a 240 min job timeout.
 2. If `SALTOS_STRATUM_IDENTITY_OK` fails: check `install-serial.log` for
    "removing stock account" / "could not remove"; `userdel -r` runs through
    `in_stratum` (chroot with `/proc` bound) and `deluser` is the Debian
@@ -94,10 +91,9 @@ AAVMF, `-machine virt`, `ttyAMA0`; without `/dev/kvm` set
 
 ## Known risks / failures
 
-- `build-aarch64` on GitHub has not completed a green run yet (see "In
-  progress"). `ubuntu-24.04-arm` has no writable `/dev/kvm`, so the QEMU step
-  runs under TCG with a 240 min job timeout; locally the same install took
-  ~55 min under TCG on 8 cores.
+- `ubuntu-24.04-arm` has no writable `/dev/kvm`, so the `build-aarch64` QEMU
+  step runs under TCG (~2 h) with a 240 min job timeout; locally the same
+  install took ~55 min under TCG on 8 cores.
 - `ArchLinuxARM-aarch64-latest.tar.gz` is unpinned upstream; the mirror
   builder records its sha256 in `bootstrap.sha256` and `iso.sh` pins the
   recipe on the ISO to that hash, so a rebuild always matches its own ISO.
