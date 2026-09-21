@@ -35,6 +35,8 @@ builder path in `src/salt/cmd_build.cpp`.
   python3, which the temp-tools sysroot lacks; everything before it links against the
   cross-stage glibc 2.41, same version/compiler).
 
+- build-order: popt and rsync now precede linux (kernel `headers_install` needs rsync).
+
 ## In progress
 
 - native-base for `2f7fd10` got through the toolchain job; the base job failed on the
