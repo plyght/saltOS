@@ -644,7 +644,14 @@ static void ensure_ca_certificates(salt_strata_db *db, const salt_stratum_recipe
                  NULL};
     salt_stratum_run(&s, &opts, v, &st);
   } else if (strcmp(pm, "pacman") == 0) {
-    char *v[] = {(char *)"pacman", (char *)"-Sy", (char *)"--noconfirm", (char *)"ca-certificates",
+    /* The bootstrap tarball lags the mirror, and Arch does not support partial
+     * upgrades: `-Sy <pkg>` pulls current libraries onto an older rootfs
+     * (e.g. a new gpgme against the shipped gnupg, which breaks signature
+     * checks). Refresh the keyring first so newly signed packages verify, then
+     * bring the whole root up to the synced database. */
+    char *v[] = {(char *)"/bin/sh", (char *)"-c",
+                 (char *)"pacman -Sy --noconfirm --needed $(pacman -Qq | grep -- '-keyring$') && "
+                         "pacman -Su --noconfirm --needed ca-certificates",
                  NULL};
     salt_stratum_run(&s, &opts, v, &st);
   } else if (strcmp(pm, "xbps") == 0) {
