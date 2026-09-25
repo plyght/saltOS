@@ -2,6 +2,7 @@
 
 extern "C" {
 #include "salt/toml.h"
+#include "salt/conf.h"
 #include "salt/util.h"
 }
 
@@ -87,8 +88,17 @@ std::string quote(const std::string &s) {
       case '\t':
         out += "\\t";
         break;
+      case '\r':
+        out += "\\r";
+        break;
       default:
-        out.push_back(c);
+        if (static_cast<unsigned char>(c) < 0x20) {
+          char esc[8];
+          snprintf(esc, sizeof(esc), "\\%03u", static_cast<unsigned>(c));
+          out += esc;
+        } else {
+          out.push_back(c);
+        }
     }
   }
   out += "\"";
@@ -123,7 +133,7 @@ std::string join(std::initializer_list<const char *> allowed) {
 
 std::string usage_text() {
   return "usage: salt-setup [options]\n"
-         "  --from <system.toml>     non-interactive install; every answer comes from the file\n"
+         "  --from <system.lua>      non-interactive install; every answer comes from the file\n"
          "  --profile <file>         preseed answers from a profile (repeatable; later wins)\n"
          "  --set <section.key=val>  override one value (repeatable, applied last)\n"
          "  --disk <dev>             target disk (install.disk)\n"
@@ -220,10 +230,11 @@ bool set_value(Config &cfg, const std::string &dotted, const std::string &value,
   return true;
 }
 
-bool load_toml(const std::string &text, Config &cfg, std::string &err) {
-  salt_toml *root = salt_toml_parse(text.c_str(), text.size());
+bool load_config(const std::string &text, const std::string &name, Config &cfg,
+                 std::string &err) {
+  salt_toml *root = salt_conf_parse(text.c_str(), text.size(), name.c_str());
   if (!root) {
-    err = "invalid TOML";
+    err = salt_last_error();
     return false;
   }
   for (const auto &f : fields()) {
@@ -270,7 +281,7 @@ bool load_toml(const std::string &text, Config &cfg, std::string &err) {
   return true;
 }
 
-bool load_toml_file(const std::string &path, Config &cfg, std::string &err) {
+bool load_config_file(const std::string &path, Config &cfg, std::string &err) {
   salt_buf b;
   salt_buf_init(&b);
   if (salt_read_file(path.c_str(), &b) != SALT_OK) {
@@ -280,7 +291,7 @@ bool load_toml_file(const std::string &path, Config &cfg, std::string &err) {
   }
   std::string text(b.data ? b.data : "", b.len);
   salt_buf_free(&b);
-  if (!load_toml(text, cfg, err)) {
+  if (!load_config(text, path, cfg, err)) {
     err = path + ": " + err;
     return false;
   }
@@ -418,8 +429,8 @@ bool validate(const Config &cfg, bool interactive, std::string &err) {
   return true;
 }
 
-std::string to_toml(const Config &cfg, bool include_secrets) {
-  std::string out;
+std::string to_lua(const Config &cfg, bool include_secrets) {
+  std::string out = "-- saltOS system configuration (written by salt-setup)\nreturn {\n";
   std::string section;
   for (const auto &f : fields()) {
     if (f.secret && !include_secrets) continue;
@@ -429,16 +440,18 @@ std::string to_toml(const Config &cfg, bool include_secrets) {
     std::string name = key.substr(dot + 1);
     if (f.kind == Kind::Str && (cfg.*(f.s)).empty()) continue;
     if (sec != section) {
-      if (!out.empty()) out += "\n";
-      out += "[" + sec + "]\n";
+      if (!section.empty()) out += "  },\n";
+      out += "  " + sec + " = {\n";
       section = sec;
     }
     if (f.kind == Kind::Str)
-      out += name + " = " + quote(cfg.*(f.s)) + "\n";
+      out += "    " + name + " = " + quote(cfg.*(f.s)) + ",\n";
     else
-      out += name + " = " + (cfg.*(f.b) ? "true" : "false") + "\n";
+      out += "    " + name + " = " + (cfg.*(f.b) ? "true" : "false") + ",\n";
   }
-  out += "\n[[stratum]]\nname = " + quote(cfg.distro) + "\nrole = \"primary\"\nexpose = true\n";
+  if (!section.empty()) out += "  },\n";
+  out += "  stratum = {\n    { name = " + quote(cfg.distro) +
+         ", role = \"primary\", expose = true },\n  },\n}\n";
   return out;
 }
 

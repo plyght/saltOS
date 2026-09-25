@@ -1,0 +1,30 @@
+local version = "0.22.5"
+
+return {
+  name = "gettext",
+  version = version,
+  release = 1,
+  summary = "GNU internationalization and localization library and tools",
+  license = "GPL-3.0-or-later",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://ftp.gnu.org/gnu/gettext/gettext-" .. version .. ".tar.xz",
+    sha256 = "fe10c37353213d78a5b83d48af231e005c4da84db5ce88037d88355938259640",
+  },
+  build = {
+    system = "autotools",
+    deps = { "gcc", "make", "ncurses" },
+    script = [[
+#!/bin/sh
+./configure --prefix=/usr --disable-static --docdir=/usr/share/doc/gettext
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+]],
+  },
+  package = {
+    deps = { "glibc", "ncurses" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

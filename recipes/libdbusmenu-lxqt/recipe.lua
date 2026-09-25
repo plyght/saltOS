@@ -1,0 +1,30 @@
+local version = "0.2.0"
+
+return {
+  name = "libdbusmenu-lxqt",
+  version = version,
+  release = 1,
+  summary = "Qt implementation of the DBusMenu protocol",
+  license = "LGPL-2.0-or-later",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://github.com/lxqt/libdbusmenu-lxqt/releases/download/" .. version .. "/libdbusmenu-lxqt-" .. version .. ".tar.xz",
+    sha256 = "8c22a77c7f69061e5b880cc76ddfc9391b80ee7449485806adecb7123501d84e",
+  },
+  build = {
+    system = "cmake",
+    deps = { "cmake", "ninja", "pkgconf", "gcc", "qt6-base", "dbus" },
+    script = [[
+#!/bin/sh
+cmake -G Ninja -S "$SALT_SRC" -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_INSTALL_SYSCONFDIR=/etc -DWITH_DOC=OFF
+cmake --build build -j"$SALT_JOBS"
+DESTDIR="$SALT_DEST" cmake --install build
+]],
+  },
+  package = {
+    deps = { "glibc", "qt6-base" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

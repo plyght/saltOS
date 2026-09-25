@@ -1,0 +1,41 @@
+local version = "2.40.1"
+
+return {
+  name = "util-linux",
+  version = version,
+  release = 2,
+  summary = "Miscellaneous system utilities for Linux",
+  license = "GPL-2.0-or-later",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://www.kernel.org/pub/linux/utils/util-linux/v2.40/util-linux-" .. version .. ".tar.xz",
+    sha256 = "59e676aa53ccb44b6c39f0ffe01a8fa274891c91bef1474752fad92461def24f",
+  },
+  build = {
+    system = "autotools",
+    deps = { "gcc", "make", "ncurses", "zlib", "glibc" },
+    script = [[
+#!/bin/sh
+./configure --prefix=/usr \
+    --libdir=/usr/lib \
+    --disable-chfn-chsh \
+    --disable-login \
+    --disable-nologin \
+    --disable-su \
+    --disable-setpriv \
+    --disable-runuser \
+    --disable-pylibmount \
+    --disable-static \
+    --disable-use-tty-group \
+    --without-python
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+]],
+  },
+  package = {
+    deps = { "ncurses", "zlib", "glibc" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

@@ -32,59 +32,30 @@ static void test_defaults(void) {
   CHECK(err.find("install.disk") != std::string::npos, "missing disk reported");
 }
 
-static void test_full_toml(void) {
-  const char *toml =
-      "[system]\n"
-      "hostname = \"box\"\n"
-      "locale = \"de_DE.UTF-8\"\n"
-      "timezone = \"Europe/Berlin\"\n"
-      "keymap = \"de-latin1\"\n"
-      "xkb_layout = \"de\"\n"
-      "\n"
-      "[install]\n"
-      "disk = \"/dev/vda\"\n"
-      "mode = \"alongside\"\n"
-      "filesystem = \"ext4\"\n"
-      "encrypt = true\n"
-      "passphrase = \"secret\"\n"
-      "swap = \"partition\"\n"
-      "swap_size = \"2G\"\n"
-      "root_size = \"40G\"\n"
-      "desktop = \"none\"\n"
-      "\n"
-      "[boot]\n"
-      "firmware = \"both\"\n"
-      "os_prober = false\n"
-      "cmdline = \"console=ttyS0,115200\"\n"
-      "shim = \"no\"\n"
-      "\n"
-      "[user]\n"
-      "name = \"alice\"\n"
-      "password = \"pw\"\n"
-      "root_password_hash = \"$6$abc\"\n"
-      "shell = \"/bin/sh\"\n"
-      "sudo = false\n"
-      "autologin = true\n"
-      "\n"
-      "[network]\n"
-      "mode = \"wifi\"\n"
-      "wifi_ssid = \"home\"\n"
-      "wifi_psk = \"psk\"\n"
-      "\n"
-      "[kernel]\n"
-      "source = \"arch\"\n"
-      "\n"
-      "[[stratum]]\n"
-      "name = \"debian\"\n"
-      "role = \"secondary\"\n"
-      "\n"
-      "[[stratum]]\n"
-      "name = \"arch\"\n"
-      "role = \"primary\"\n"
-      "expose = true\n";
+static const char *kFullLua =
+    "-- every key salt-setup understands\n"
+    "local lang = \"de\"\n"
+    "return {\n"
+    "  system = { hostname = \"box\", locale = lang .. \"_DE.UTF-8\", timezone = \"Europe/Berlin\",\n"
+    "             keymap = \"de-latin1\", xkb_layout = lang },\n"
+    "  install = { disk = \"/dev/vda\", mode = \"alongside\", filesystem = \"ext4\", encrypt = true,\n"
+    "              passphrase = \"secret\", swap = \"partition\", swap_size = \"2G\",\n"
+    "              root_size = \"40G\", desktop = \"none\" },\n"
+    "  boot = { firmware = \"both\", os_prober = false, cmdline = \"console=ttyS0,115200\", shim = \"no\" },\n"
+    "  user = { name = \"alice\", password = \"pw\", root_password_hash = \"$6$abc\", shell = \"/bin/sh\",\n"
+    "           sudo = false, autologin = true },\n"
+    "  network = { mode = \"wifi\", wifi_ssid = \"home\", wifi_psk = \"psk\" },\n"
+    "  kernel = { source = \"arch\" },\n"
+    "  stratum = {\n"
+    "    { name = \"debian\", role = \"secondary\" },\n"
+    "    { name = \"arch\", role = \"primary\", expose = true },\n"
+    "  },\n"
+    "}\n";
+
+static void test_full_config(void) {
   Config c;
   std::string err;
-  CHECK(setup::load_toml(toml, c, err), "full toml loads");
+  CHECK(setup::load_config(kFullLua, "system.lua", c, err), err.c_str());
   CHECK(c.hostname == "box", "hostname");
   CHECK(c.locale == "de_DE.UTF-8", "locale");
   CHECK(c.timezone == "Europe/Berlin", "timezone");
@@ -117,6 +88,15 @@ static void test_full_toml(void) {
   CHECK(setup::validate(c, false, err), err.c_str());
 }
 
+static void test_legacy_toml(void) {
+  const char *toml = "[install]\ndisk = \"/dev/sdb\"\n\n[[stratum]]\nname = \"void\"\nrole = \"primary\"\n";
+  Config c;
+  std::string err;
+  CHECK(setup::load_config(toml, "system.toml", c, err), "legacy system.toml still loads");
+  CHECK(c.disk == "/dev/sdb" && c.distro == "void", "legacy values");
+  CHECK(!setup::load_config("return 42", "bad.lua", c, err), "non-table Lua rejected");
+}
+
 static void test_roundtrip(void) {
   Config c;
   c.disk = "/dev/sda";
@@ -127,22 +107,22 @@ static void test_roundtrip(void) {
   c.encrypt = true;
   c.swap = "zram";
   std::string err;
-  std::string pub = setup::to_toml(c, false);
-  CHECK(pub.find("password") == std::string::npos, "secrets omitted from public toml");
+  std::string pub = setup::to_lua(c, false);
+  CHECK(pub.find("password") == std::string::npos, "secrets omitted from public config");
   CHECK(pub.find("psk") == std::string::npos, "wifi psk omitted");
   CHECK(pub.find("passphrase") == std::string::npos, "passphrase omitted");
-  CHECK(pub.find("[[stratum]]\nname = \"void\"\nrole = \"primary\"") != std::string::npos,
+  CHECK(pub.find("{ name = \"void\", role = \"primary\", expose = true }") != std::string::npos,
         "stratum block");
   CHECK(pub.find("encrypt = true") != std::string::npos, "encrypt written");
-  std::string full = setup::to_toml(c, true);
+  std::string full = setup::to_lua(c, true);
   Config back;
-  CHECK(setup::load_toml(full, back, err), "roundtrip parses");
+  CHECK(setup::load_config(full, "system.lua", back, err), err.c_str());
   CHECK(back.disk == c.disk, "roundtrip disk");
   CHECK(back.distro == c.distro, "roundtrip distro");
   CHECK(back.password == "pw", "roundtrip password");
   CHECK(back.swap == "zram", "roundtrip swap");
   CHECK(back.encrypt, "roundtrip encrypt");
-  CHECK(setup::to_toml(back, true) == full, "roundtrip stable");
+  CHECK(setup::to_lua(back, true) == full, "roundtrip stable");
 }
 
 static void test_set_and_validate(void) {
@@ -183,8 +163,8 @@ static void test_set_and_validate(void) {
   CHECK(!setup::validate(c, false, err), "no sudo and no root password rejected");
   c.root_password = "toor";
   CHECK(setup::validate(c, false, err), err.c_str());
-  CHECK(setup::to_toml(c, false).find("toor") == std::string::npos, "root password omitted");
-  CHECK(setup::to_toml(c, true).find("root_password = \"toor\"") != std::string::npos,
+  CHECK(setup::to_lua(c, false).find("toor") == std::string::npos, "root password omitted");
+  CHECK(setup::to_lua(c, true).find("root_password = \"toor\"") != std::string::npos,
         "root password kept with secrets");
   c.sudo = true;
   c.root_password.clear();
@@ -264,7 +244,8 @@ static void test_sizes(void) {
 
 int main(void) {
   test_defaults();
-  test_full_toml();
+  test_full_config();
+  test_legacy_toml();
   test_roundtrip();
   test_set_and_validate();
   test_cli();

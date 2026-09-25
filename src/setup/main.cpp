@@ -385,8 +385,8 @@ std::vector<std::string> list_strata(const std::string &root) {
   struct dirent *de;
   while ((de = readdir(dh)) != nullptr) {
     std::string n = de->d_name;
-    if (n.size() > 5 && n.compare(n.size() - 5, 5, ".toml") == 0)
-      names.push_back(n.substr(0, n.size() - 5));
+    if (n.size() > 4 && n.compare(n.size() - 4, 4, ".lua") == 0)
+      names.push_back(n.substr(0, n.size() - 4));
   }
   closedir(dh);
   std::sort(names.begin(), names.end());
@@ -570,7 +570,7 @@ void delive(const std::string &mnt, const setup::Config &cfg) {
         "usr/lib/saltos/autoinstall.sh", "usr/lib/saltos/autoinstall-calamares.sh",
         "usr/share/applications/saltos-installer.desktop",
         "usr/share/applications/saltos-setup.desktop", "etc/calamares",
-        "etc/salt/live-profile.toml", "etc/motd"})
+        "etc/salt/live-profile.lua", "etc/motd"})
     run_quiet({"rm", "-rf", mnt + "/" + f});
   std::vector<std::string> drop = {"agetty-serial", "stratum-e2e", "installer-check",
                                    "desktop-check", "saltos-autoinstall"};
@@ -1259,7 +1259,7 @@ void configure_desktop(const std::string &mnt, const setup::Config &cfg) {
 
 void bootstrap_stratum(const std::string &mnt, const setup::Config &cfg) {
   info("bootstrapping " + cfg.distro + " stratum into the target");
-  std::string recipe = mnt + "/etc/salt/strata/" + cfg.distro + ".toml";
+  std::string recipe = mnt + "/etc/salt/strata/" + cfg.distro + ".lua";
   if (!salt_path_exists(recipe.c_str())) fail("stratum recipe not found: " + recipe);
   salt_strata_db *db = nullptr;
   if (salt_strata_db_open(mnt.c_str(), &db) != SALT_OK) fail(salt_last_error());
@@ -1390,9 +1390,9 @@ void write_system_config(const std::string &mnt, const setup::Config &cfg) {
   info("writing reproducible system config");
   std::string sys_dir = mnt + "/etc/salt";
   salt_mkdirs(sys_dir.c_str(), 0755);
-  write_file(sys_dir + "/system.toml", setup::to_toml(cfg, false), 0644);
+  write_file(sys_dir + "/system.lua", setup::to_lua(cfg, false), 0644);
   if (chroot_run(mnt, {"salt", "lock", "--output", "/etc/salt/system.lock.toml"}) != 0)
-    info("lockfile capture incomplete; system.toml written, run 'salt lock' later");
+    info("lockfile capture incomplete; system.lua written, run 'salt lock' later");
   chroot_run(mnt, {"salt", "deployments", "--register-current"});
 }
 
@@ -1554,8 +1554,8 @@ int main(int argc, char **argv) {
 
   setup::Config cfg;
   for (const auto &p : opts.profiles)
-    if (!setup::load_toml_file(p, cfg, err)) fail(err);
-  if (!opts.from.empty() && !setup::load_toml_file(opts.from, cfg, err)) fail(err);
+    if (!setup::load_config_file(p, cfg, err)) fail(err);
+  if (!opts.from.empty() && !setup::load_config_file(opts.from, cfg, err)) fail(err);
   for (const auto &kv : opts.sets) {
     size_t eq = kv.find('=');
     if (!setup::set_value(cfg, kv.substr(0, eq), kv.substr(eq + 1), err)) fail(err);
@@ -1564,7 +1564,7 @@ int main(int argc, char **argv) {
 
   if (opts.dump_config) {
     if (!setup::validate(cfg, true, err)) fprintf(stderr, "%s: warning: %s\n", kProg, err.c_str());
-    fputs(setup::to_toml(cfg, false).c_str(), stdout);
+    fputs(setup::to_lua(cfg, false).c_str(), stdout);
     return 0;
   }
 

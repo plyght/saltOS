@@ -1,0 +1,24 @@
+local version = "5.45"
+
+return {
+  name = "file",
+  version = version,
+  release = 1,
+  summary = "File type identification utility providing libmagic",
+  license = "BSD-2-Clause",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://astron.com/pub/file/file-" .. version .. ".tar.gz",
+    sha256 = "fc97f51029bb0e2c9f4e3bffefdaf678f0e039ee872b9de5c002a6d09c784d82",
+  },
+  build = {
+    system = "autotools",
+    deps = { "gcc", "make", "zlib", "glibc" },
+  },
+  package = {
+    deps = { "zlib", "glibc" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

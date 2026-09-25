@@ -75,7 +75,7 @@ static bool is_sha256_hex(const std::string &s) {
 
 static std::string recipe_file(const std::string &dir) {
   std::string p = dir;
-  if (salt_is_dir(dir.c_str())) p = path_join(dir, "recipe.toml");
+  if (salt_is_dir(dir.c_str())) p = path_join(dir, "recipe.lua");
   return p;
 }
 

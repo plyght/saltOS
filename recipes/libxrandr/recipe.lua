@@ -1,0 +1,30 @@
+local version = "1.5.4"
+
+return {
+  name = "libxrandr",
+  version = version,
+  release = 1,
+  summary = "X11 libXrandr library",
+  license = "MIT",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://www.x.org/releases/individual/lib/libXrandr-" .. version .. ".tar.xz",
+    sha256 = "1ad5b065375f4a85915aa60611cc6407c060492a214d7f9daf214be752c3b4d3",
+  },
+  build = {
+    system = "autotools",
+    deps = { "pkgconf", "gcc", "make", "libx11", "libxext", "libxrender", "xorgproto" },
+    script = [[
+#!/bin/sh
+./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var --disable-static
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+]],
+  },
+  package = {
+    deps = { "glibc", "libx11", "libxext", "libxrender" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

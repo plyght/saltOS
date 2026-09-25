@@ -14,9 +14,8 @@ extern "C" {
 #include <vector>
 
 int gc_keep_from_conf(const Options &o, std::vector<int64_t> &pinned_out) {
-  std::string conf = path_join(o.root, "etc/salt/salt.conf");
   int keep = 3;
-  salt_toml *t = salt_toml_parse_file(conf.c_str());
+  salt_toml *t = load_salt_conf(o.root, "salt");
   if (t) {
     keep = (int)salt_toml_int(t, "gc.keep", keep);
     const salt_toml *arr = salt_toml_path(t, "gc.pinned");

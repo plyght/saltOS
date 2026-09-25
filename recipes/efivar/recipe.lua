@@ -1,0 +1,29 @@
+local version = "39"
+
+return {
+  name = "efivar",
+  version = version,
+  release = 2,
+  summary = "Library and tools to manipulate UEFI variables",
+  license = "LGPL-2.1-or-later",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://github.com/rhboot/efivar/archive/refs/tags/" .. version .. ".tar.gz",
+    sha256 = "c9edd15f2eeeea63232f3e669a48e992c7be9aff57ee22672ac31f5eca1609a6",
+  },
+  build = {
+    system = "make",
+    deps = { "gcc", "make", "pkgconf" },
+    script = [[
+#!/bin/sh
+make ENABLE_DOCS=0 -j"$SALT_JOBS"
+make ENABLE_DOCS=0 DESTDIR="$SALT_DEST" libdir=/usr/lib bindir=/usr/bin install
+]],
+  },
+  package = {
+    deps = { "glibc" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

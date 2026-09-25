@@ -1,4 +1,5 @@
 #include "salt/toml.h"
+#include "salt/conf.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -673,11 +674,53 @@ salt_toml *salt_toml_parse(const char *text, size_t len) {
 }
 
 salt_toml *salt_toml_parse_file(const char *path) {
+  size_t n = strlen(path);
+  if (n >= 4 && strcmp(path + n - 4, ".lua") == 0) return salt_conf_load(path);
   salt_buf b;
   if (salt_read_file(path, &b) != SALT_OK) return NULL;
   salt_toml *t = salt_toml_parse(b.data ? b.data : "", b.len);
   salt_buf_free(&b);
   return t;
+}
+
+salt_toml *salt_toml_new(salt_toml_type type) {
+  return node_new(type);
+}
+
+salt_toml *salt_toml_new_string(const char *s, size_t len) {
+  char *c = malloc(len + 1);
+  if (!c) return NULL;
+  memcpy(c, s, len);
+  c[len] = '\0';
+  salt_toml *n = node_string(c);
+  if (!n) free(c);
+  return n;
+}
+
+salt_toml *salt_toml_new_int(long long v) {
+  salt_toml *n = node_new(SALT_TOML_INT);
+  if (n) n->u.i = v;
+  return n;
+}
+
+salt_toml *salt_toml_new_bool(bool v) {
+  salt_toml *n = node_new(SALT_TOML_BOOL);
+  if (n) n->u.b = v;
+  return n;
+}
+
+int salt_toml_table_put(salt_toml *table, const char *key, salt_toml *val) {
+  if (!table || table->type != SALT_TOML_TABLE || !val) return SALT_ERR;
+  if (table_get_mut(table, key)) {
+    salt_toml_free(val);
+    return SALT_ERR;
+  }
+  return table_set(table, salt_strdup(key), val);
+}
+
+int salt_toml_array_push(salt_toml *array, salt_toml *val) {
+  if (!array || array->type != SALT_TOML_ARRAY || !val) return SALT_ERR;
+  return array_push(array, val);
 }
 
 salt_toml_type salt_toml_typeof(const salt_toml *t) {

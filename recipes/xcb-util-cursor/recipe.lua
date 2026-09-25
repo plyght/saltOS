@@ -1,0 +1,39 @@
+local version = "0.1.5"
+
+return {
+  name = "xcb-util-cursor",
+  version = version,
+  release = 1,
+  summary = "XCB cursor library",
+  license = "MIT",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://xorg.freedesktop.org/archive/individual/lib/xcb-util-cursor-" .. version .. ".tar.xz",
+    sha256 = "0caf99b0d60970f81ce41c7ba694e5eaaf833227bb2cbcdb2f6dc9666a663c57",
+  },
+  build = {
+    system = "autotools",
+    deps = {
+      "pkgconf",
+      "gcc",
+      "make",
+      "libxcb",
+      "xcb-util",
+      "xcb-util-image",
+      "xcb-util-renderutil",
+      "util-macros",
+    },
+    script = [[
+#!/bin/sh
+./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var --disable-static
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+]],
+  },
+  package = {
+    deps = { "glibc", "libxcb", "xcb-util", "xcb-util-image", "xcb-util-renderutil" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

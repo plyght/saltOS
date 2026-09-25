@@ -13,13 +13,17 @@ extern "C" {
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <unistd.h>
 #include <map>
 #include <set>
 #include <string>
 #include <vector>
 
 static std::string system_config_path(const Options &o) {
-  return path_join(o.root, "etc/salt/system.toml");
+  std::string lua = path_join(o.root, "etc/salt/system.lua");
+  std::string legacy = path_join(o.root, "etc/salt/system.toml");
+  if (access(lua.c_str(), F_OK) != 0 && access(legacy.c_str(), F_OK) == 0) return legacy;
+  return lua;
 }
 
 static void config_usage() {
@@ -138,7 +142,7 @@ static bool config_load(const std::string &path, SystemConfig &cfg, std::string 
   bool ok = false;
   do {
     if (!config_check_keys(
-            t, "system.toml",
+            t, "system.lua",
             {"schema", "system", "kernel", "stratum", "native", "strata", "expose", "policy"}, err))
       break;
     if (salt_toml_get(t, "schema") && salt_toml_int(t, "schema", 0) != 1) {
@@ -439,7 +443,7 @@ static int apply_native(const Options &o, const SystemConfig &cfg, const TxnFlag
 
   int rc = 0;
   if (plan.install.empty() && plan.remove.empty())
-    printf("native: already matches system.toml (%zu package%s)\n", matched,
+    printf("native: already matches system.lua (%zu package%s)\n", matched,
            matched == 1 ? "" : "s");
   else
     rc = native_transaction(o, c, &ctx, db, plan, "config-apply", f);
@@ -584,7 +588,7 @@ static int apply_expose(const Options &o, const SystemConfig &cfg, const TxnFlag
     printf("unexposed %s (no longer in [expose])\n", e.alias);
   }
   if (rc == 0 && matched == cfg.expose.size() && !f.dry_run)
-    printf("expose: already matches system.toml (%zu alias%s)\n", matched,
+    printf("expose: already matches system.lua (%zu alias%s)\n", matched,
            matched == 1 ? "" : "es");
   salt_exposed_list_free(&cur);
   salt_strata_db_close(db);

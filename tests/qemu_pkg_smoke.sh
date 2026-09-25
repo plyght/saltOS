@@ -59,32 +59,26 @@ rm -rf "$R"; mkdir -p "$R/src" "$R/recipes" "$R/www"
 touch "$R/src/.keep"
 recipe() { # dir name version deps
   mkdir -p "$R/recipes/$1"
-  cat > "$R/recipes/$1/recipe.toml" <<EOF
-name = "$2"
-version = "$3"
-release = 1
-arch = ["x86_64", "aarch64"]
-summary = "vm test package $2"
-license = "MIT"
-
-[source]
-url = "file://$R/src"
-sha256 = "TODO-sha256"
-
-[build]
-system = "custom"
-script = """
+  cat > "$R/recipes/$1/recipe.lua" <<EOF
+return {
+  name = "$2",
+  version = "$3",
+  release = 1,
+  arch = { "x86_64", "aarch64" },
+  summary = "vm test package $2",
+  license = "MIT",
+  source = { url = "file://$R/src" },
+  build = {
+    system = "custom",
+    script = [[
 mkdir -p "\$SALT_DEST/usr/bin"
 printf '#!/bin/sh\\necho $2 $3\\n' > "\$SALT_DEST/usr/bin/$2"
 chmod +x "\$SALT_DEST/usr/bin/$2"
-"""
-
-[package]
-deps = [$4]
-conflicts = []
-
-[reproducibility]
-status = "verified"
+]],
+  },
+  package = { deps = { $4 }, conflicts = {} },
+  reproducibility = { status = "verified" },
+}
 EOF
 }
 export SALT_OUT="$R/out" SALT_WORK="$R/work"

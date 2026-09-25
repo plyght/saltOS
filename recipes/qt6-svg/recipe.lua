@@ -1,0 +1,30 @@
+local version = "6.7.2"
+
+return {
+  name = "qt6-svg",
+  version = version,
+  release = 2,
+  summary = "Qt SVG module",
+  license = "LGPL-3.0-only",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://download.qt.io/archive/qt/6.7/" .. version .. "/submodules/qtsvg-everywhere-src-" .. version .. ".tar.xz",
+    sha256 = "fb0d1286a35be3583fee34aeb5843c94719e07193bdf1d4d8b0dc14009caef01",
+  },
+  build = {
+    system = "cmake",
+    deps = { "cmake", "ninja", "pkgconf", "gcc", "qt6-base" },
+    script = [[
+#!/bin/sh
+cmake -G Ninja -S "$SALT_SRC" -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_INSTALL_SYSCONFDIR=/etc -DQT_BUILD_EXAMPLES=OFF -DQT_BUILD_TESTS=OFF
+cmake --build build -j"$SALT_JOBS"
+DESTDIR="$SALT_DEST" cmake --install build
+]],
+  },
+  package = {
+    deps = { "glibc", "qt6-base" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

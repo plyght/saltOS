@@ -1,0 +1,30 @@
+local version = "1.8.10"
+
+return {
+  name = "libx11",
+  version = version,
+  release = 2,
+  summary = "X11 client library",
+  license = "MIT",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://www.x.org/releases/individual/lib/libX11-" .. version .. ".tar.xz",
+    sha256 = "2b3b3dad9347db41dca56beb7db5878f283bde1142f04d9f8e478af435dfdc53",
+  },
+  build = {
+    system = "autotools",
+    deps = { "pkgconf", "gcc", "make", "libxcb", "xorgproto", "xtrans" },
+    script = [[
+#!/bin/sh
+./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var --disable-static --disable-specs
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+]],
+  },
+  package = {
+    deps = { "glibc", "libxcb" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

@@ -1,0 +1,33 @@
+local version = "3.6"
+
+return {
+  name = "parted",
+  version = version,
+  release = 1,
+  summary = "GNU partition editor",
+  license = "GPL-3.0-or-later",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://ftp.gnu.org/gnu/parted/parted-" .. version .. ".tar.xz",
+    sha256 = "3b43dbe33cca0f9a18601ebab56b7852b128ec1a3df3a9b30ccde5e73359e612",
+  },
+  build = {
+    system = "autotools",
+    deps = { "gcc", "make", "util-linux", "readline", "ncurses" },
+    script = [[
+#!/bin/sh
+./configure --prefix=/usr \
+    --disable-static \
+    --disable-device-mapper
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+]],
+  },
+  package = {
+    deps = { "glibc", "util-linux", "readline" },
+  },
+  reproducibility = {
+    status = "unverified",
+    reason = "not yet built and bit-compared in a clean environment",
+  },
+}

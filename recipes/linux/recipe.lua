@@ -1,0 +1,77 @@
+local version = "6.12.30"
+
+return {
+  name = "linux",
+  version = version,
+  release = 3,
+  summary = "Linux kernel",
+  license = "GPL-2.0-only",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-" .. version .. ".tar.xz",
+    sha256 = "df046a48971e40ce0b2e003e7e55b6b1e7da2912120eb216d5d6c8450c9cf82e",
+  },
+  build = {
+    system = "kernel",
+    deps = { "gcc", "make", "binutils", "bc", "flex", "bison", "openssl", "perl", "elfutils", "zstd" },
+    script = [[
+#!/bin/sh
+if [ "$SALT_ARCH" = "aarch64" ]; then
+  karch=arm64
+  kimage=arch/arm64/boot/Image.gz
+else
+  karch=x86_64
+  kimage=arch/x86/boot/bzImage
+fi
+make ARCH="$karch" mrproper
+make ARCH="$karch" defconfig
+scripts/config --enable BTRFS_FS
+scripts/config --enable EFI
+scripts/config --enable EFI_STUB
+scripts/config --enable BLK_DEV_INITRD
+scripts/config --enable RD_GZIP
+scripts/config --enable RD_ZSTD
+scripts/config --enable DEVTMPFS
+scripts/config --enable DEVTMPFS_MOUNT
+scripts/config --enable SERIAL_8250
+scripts/config --enable SERIAL_8250_CONSOLE
+scripts/config --enable BLK_DEV_LOOP
+scripts/config --enable BLK_DEV_SR
+scripts/config --enable ISO9660_FS
+scripts/config --enable SQUASHFS
+scripts/config --enable SQUASHFS_XZ
+scripts/config --enable SQUASHFS_ZSTD
+scripts/config --enable OVERLAY_FS
+scripts/config --enable VFAT_FS
+scripts/config --enable NLS_CODEPAGE_437
+scripts/config --enable NLS_ISO8859_1
+scripts/config --enable VIRTIO
+scripts/config --enable VIRTIO_PCI
+scripts/config --enable VIRTIO_BLK
+scripts/config --enable VIRTIO_NET
+scripts/config --enable VIRTIO_CONSOLE
+scripts/config --enable DRM
+scripts/config --enable DRM_BOCHS
+scripts/config --enable DRM_VIRTIO_GPU
+scripts/config --enable DRM_FBDEV_EMULATION
+scripts/config --enable FRAMEBUFFER_CONSOLE
+scripts/config --set-str CONFIG_LOCALVERSION "-saltos"
+make ARCH="$karch" olddefconfig
+make ARCH="$karch" -j"$SALT_JOBS"
+make ARCH="$karch" -j"$SALT_JOBS" modules
+kver=$(make ARCH="$karch" -s kernelrelease)
+install -Dm644 "$kimage" "$SALT_DEST/boot/vmlinuz-$kver"
+install -Dm644 .config "$SALT_DEST/boot/config-$kver"
+install -Dm644 System.map "$SALT_DEST/boot/System.map-$kver"
+make ARCH="$karch" INSTALL_MOD_PATH="$SALT_DEST/usr" modules_install
+make ARCH="$karch" INSTALL_HDR_PATH="$SALT_DEST/usr" headers_install
+]],
+  },
+  package = {
+    deps = { "glibc", "kmod" },
+  },
+  reproducibility = {
+    status = "unverified",
+    reason = "kernel build embeds build host, timestamp, and toolchain identifiers that are not yet normalized",
+  },
+}

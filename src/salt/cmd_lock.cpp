@@ -13,6 +13,7 @@ extern "C" {
 
 #include <cstdio>
 #include <cstring>
+#include <unistd.h>
 #include <ctime>
 #include <map>
 #include <set>
@@ -34,7 +35,10 @@ std::string lock_path_for(const Options &o, const std::string &override_path) {
 }
 
 static std::string system_config_path(const Options &o) {
-  return path_join(o.root, "etc/salt/system.toml");
+  std::string lua = path_join(o.root, "etc/salt/system.lua");
+  std::string legacy = path_join(o.root, "etc/salt/system.toml");
+  if (access(lua.c_str(), F_OK) != 0 && access(legacy.c_str(), F_OK) == 0) return legacy;
+  return lua;
 }
 
 static std::string strip_sha_prefix(const std::string &s) {

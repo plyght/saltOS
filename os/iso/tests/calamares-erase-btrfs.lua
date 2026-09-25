@@ -1,0 +1,39 @@
+return {
+  system = {
+    hostname = "saltos-gui",
+    locale = "en_US.UTF-8",
+    timezone = "UTC",
+    keymap = "us",
+  },
+  install = {
+    disk = "/dev/vda",
+    mode = "erase",
+    filesystem = "btrfs",
+    encrypt = false,
+    swap = "file",
+    swap_size = "512M",
+    desktop = "keep",
+  },
+  boot = {
+    firmware = "auto",
+    os_prober = false,
+    cmdline = "console=tty0 console=ttyS0,115200",
+  },
+  user = {
+    name = "tester",
+    password = "saltos",
+    sudo = true,
+  },
+  network = {
+    mode = "dhcp",
+  },
+  kernel = {
+    source = "native",
+  },
+  stratum = {
+    {
+      name = "debian",
+      role = "primary",
+    },
+  },
+}

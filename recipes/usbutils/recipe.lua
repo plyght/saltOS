@@ -1,0 +1,31 @@
+local version = "017"
+
+return {
+  name = "usbutils",
+  version = version,
+  release = 2,
+  summary = "USB device listing and inspection utilities",
+  license = "GPL-2.0-or-later",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://www.kernel.org/pub/linux/utils/usb/usbutils/usbutils-" .. version .. ".tar.xz",
+    sha256 = "a6a25ffdcf9103e38d7a44732aca17073f4e602b92e4ae55625231a82702e05b",
+  },
+  build = {
+    system = "autotools",
+    deps = { "gcc", "make", "pkgconf", "libusb" },
+    script = [[
+#!/bin/sh
+./configure --prefix=/usr \
+    --datadir=/usr/share/hwdata
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+]],
+  },
+  package = {
+    deps = { "glibc", "libusb" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

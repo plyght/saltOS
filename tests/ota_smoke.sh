@@ -19,28 +19,25 @@ step() { echo "ota_smoke: $1"; }
 recipe() {
 	name=$1; ver=$2; payload=$3
 	mkdir -p "$WORK/recipes/$name-$ver"
-	cat > "$WORK/recipes/$name-$ver/recipe.toml" <<EOF
-name = "$name"
-version = "$ver"
-release = 1
-arch = ["x86_64", "aarch64"]
-summary = "ota smoke package"
-license = "MIT"
-
-[source]
-url = "file://$WORK/src"
-sha256 = ""
-
-[build]
-system = "custom"
-# the test compares installed payloads byte-for-byte with the input binaries
-strip = false
-script = """
+	cat > "$WORK/recipes/$name-$ver/recipe.lua" <<EOF
+return {
+  name = "$name",
+  version = "$ver",
+  release = 1,
+  arch = { "x86_64", "aarch64" },
+  summary = "ota smoke package",
+  license = "MIT",
+  source = { url = "file://$WORK/src" },
+  build = {
+    system = "custom",
+    -- the test compares installed payloads byte-for-byte with the input binaries
+    strip = false,
+    script = [[
 $payload
-"""
-
-[package]
-deps = []
+]],
+  },
+  package = { deps = {} },
+}
 EOF
 	"$SALT_BIN" build "$WORK/recipes/$name-$ver" >/dev/null
 }
@@ -71,8 +68,8 @@ G() { echo "$1-$2-1-$ARCH.grain"; }
 "$SALT_BIN" keygen "$WORK/keys" repo >/dev/null
 "$SALT_BIN" keygen "$WORK/keys" other >/dev/null
 PUB=$(head -1 "$WORK/keys/repo.pub")
-printf 'repo = "current"\nsource = "file://%s"\nkey = "%s"\n' "$REPO" "$PUB" > "$ROOT/etc/salt/repo.conf"
-printf '[ota]\nenabled = true\ninterval = "60"\nreboot_on_kernel = false\n\n[deploy]\nkeep = 2\n' > "$ROOT/etc/salt/salt.conf"
+printf 'return {\n  repo = "current",\n  source = "file://%s",\n  key = "%s",\n}\n' "$REPO" "$PUB" > "$ROOT/etc/salt/repo.lua"
+printf 'return {\n  ota = { enabled = true, interval = "60", reboot_on_kernel = false },\n  deploy = { keep = 2 },\n}\n' > "$ROOT/etc/salt/salt.lua"
 
 cat > "$WORK/bin/salt" <<EOF
 #!/bin/sh
@@ -80,7 +77,7 @@ exec "$SALT_BIN" --root "$ROOT" "\$@"
 EOF
 chmod +x "$WORK/bin/salt"
 export SALT_BIN_WRAPPED="$WORK/bin/salt"
-export SALT_STATE_DIR="$ROOT/var/lib/salt" SALTOS_CONF="$ROOT/etc/salt/salt.conf"
+export SALT_STATE_DIR="$ROOT/var/lib/salt" SALTOS_CONF="$ROOT/etc/salt/salt.lua"
 export SALTOS_OTA_LOG="$WORK/salt-ota.log" SALTOS_OTA_LOCK="$WORK/ota.lock"
 export SALTOS_OTA_STATE="$ROOT/var/lib/salt/ota-state" SALTOS_HEALTH_DIR="$WORK/health.d"
 ota() { SALT_BIN="$SALT_BIN_WRAPPED" sh "$OTA" "$@"; }

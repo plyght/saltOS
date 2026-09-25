@@ -1,0 +1,30 @@
+local version = "4.1.0"
+
+return {
+  name = "libqtxdg",
+  version = version,
+  release = 2,
+  summary = "Qt implementation of freedesktop.org XDG specifications",
+  license = "LGPL-2.1-or-later",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://github.com/lxqt/libqtxdg/releases/download/" .. version .. "/libqtxdg-" .. version .. ".tar.xz",
+    sha256 = "0604d397d9561a6a6148930a2b131f2bdee86cec6cca304f7513a8ec7b8e8809",
+  },
+  build = {
+    system = "cmake",
+    deps = { "cmake", "ninja", "pkgconf", "gcc", "qt6-base", "qt6-svg", "glib", "lxqt-build-tools" },
+    script = [[
+#!/bin/sh
+cmake -G Ninja -S "$SALT_SRC" -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_INSTALL_SYSCONFDIR=/etc -DBUILD_TESTS=OFF -DBUILD_DEV_UTILS=OFF
+cmake --build build -j"$SALT_JOBS"
+DESTDIR="$SALT_DEST" cmake --install build
+]],
+  },
+  package = {
+    deps = { "glibc", "qt6-base", "qt6-svg", "glib" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

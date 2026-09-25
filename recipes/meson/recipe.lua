@@ -1,0 +1,33 @@
+local version = "1.6.0"
+
+return {
+  name = "meson",
+  version = version,
+  release = 2,
+  summary = "High productivity build system",
+  license = "Apache-2.0",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://github.com/mesonbuild/meson/releases/download/" .. version .. "/meson-" .. version .. ".tar.gz",
+    sha256 = "999b65f21c03541cf11365489c1fad22e2418bb0c3d50ca61139f2eec09d5496",
+  },
+  build = {
+    system = "custom",
+    deps = { "python", "ninja" },
+    script = [[
+#!/bin/sh
+sitedir=$(python3 -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
+install -d "$SALT_DEST$sitedir"
+cp -r mesonbuild "$SALT_DEST$sitedir/"
+python3 -m compileall -q -d "$sitedir/mesonbuild" "$SALT_DEST$sitedir/mesonbuild"
+install -Dm755 meson.py "$SALT_DEST/usr/bin/meson"
+install -Dm644 man/meson.1 "$SALT_DEST/usr/share/man/man1/meson.1"
+]],
+  },
+  package = {
+    deps = { "python", "ninja" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

@@ -3,6 +3,8 @@
 
 #include <cstdint>
 #include <string>
+
+#include "salt/toml.h"
 #include <vector>
 
 extern "C" {
@@ -87,6 +89,9 @@ int cmd_clean(const Options &o, const std::vector<std::string> &args);
 
 std::string arch_detect();
 std::string path_join(const std::string &a, const std::string &b);
+/* etc/salt/<name>.lua under root (evaluated; errors are reported), falling back
+ * to the legacy TOML etc/salt/<name>.conf. NULL when neither exists. */
+salt_toml *load_salt_conf(const std::string &root, const char *name);
 RepoConf load_repo_conf(const Options &o);
 std::string db_path_for(const Options &o);
 std::string cache_dir_for(const Options &o);
@@ -135,6 +140,7 @@ int cmd_list(const Options &o, const std::vector<std::string> &args);
 
 int cmd_build(const Options &o, const std::vector<std::string> &args);
 int cmd_lint(const Options &o, const std::vector<std::string> &args);
+int cmd_eval(const Options &o, const std::vector<std::string> &args);
 int cmd_sign(const Options &o, const std::vector<std::string> &args);
 int cmd_repo(const Options &o, const std::vector<std::string> &args);
 int cmd_keygen(const Options &o, const std::vector<std::string> &args);

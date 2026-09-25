@@ -1,0 +1,25 @@
+return {
+  name = "opensuse",
+  family = "opensuse",
+  arch = "{arch}",
+  package_manager = "zypper",
+  root = "/strata/opensuse",
+  trust = "official",
+  bootstrap = {
+    method = "oci",
+    url = "opensuse/leap:15.6",
+    sha256 = "",
+    strip = 0,
+  },
+  integration = {
+    graphics = true,
+    audio = true,
+    dbus = true,
+  },
+  repository = {
+    {
+      name = "oss",
+      url = "https://download.opensuse.org/distribution/leap/15.6/repo/oss/",
+    },
+  },
+}

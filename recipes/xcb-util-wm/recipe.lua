@@ -1,0 +1,30 @@
+local version = "0.4.2"
+
+return {
+  name = "xcb-util-wm",
+  version = version,
+  release = 1,
+  summary = "XCB ICCCM/EWMH utilities",
+  license = "MIT",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://xorg.freedesktop.org/archive/individual/lib/xcb-util-wm-" .. version .. ".tar.xz",
+    sha256 = "62c34e21d06264687faea7edbf63632c9f04d55e72114aa4a57bb95e4f888a0b",
+  },
+  build = {
+    system = "autotools",
+    deps = { "pkgconf", "gcc", "make", "libxcb", "util-macros" },
+    script = [[
+#!/bin/sh
+./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var --disable-static
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+]],
+  },
+  package = {
+    deps = { "glibc", "libxcb" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

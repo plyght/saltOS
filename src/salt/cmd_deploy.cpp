@@ -40,8 +40,7 @@ struct BootConf {
 
 BootConf load_boot_conf(const std::string &root) {
   BootConf c;
-  std::string path = path_join(root, "etc/salt/boot.conf");
-  salt_toml *t = salt_toml_parse_file(path.c_str());
+  salt_toml *t = load_salt_conf(root, "boot");
   if (!t) return c;
   auto str = [&](const char *k, std::string &dst) {
     const char *v = salt_toml_string(t, k, nullptr);
@@ -65,9 +64,8 @@ BootConf load_boot_conf(const std::string &root) {
 }
 
 long long deploy_keep(const std::string &root) {
-  std::string conf = path_join(root, "etc/salt/salt.conf");
   long long keep = 5;
-  salt_toml *t = salt_toml_parse_file(conf.c_str());
+  salt_toml *t = load_salt_conf(root, "salt");
   if (t) {
     keep = salt_toml_int(t, "deploy.keep", keep);
     salt_toml_free(t);
@@ -731,10 +729,10 @@ int cmd_boot(const Options &o, const std::vector<std::string> &args) {
   BootConf c = load_boot_conf(o.root);
   if (c.loader == "none") {
     if (sub == "status") {
-      printf("loader:   none (no /etc/salt/boot.conf)\n");
+      printf("loader:   none (no /etc/salt/boot.lua)\n");
       return 0;
     }
-    fprintf(stderr, "salt: no boot loader configured in /etc/salt/boot.conf\n");
+    fprintf(stderr, "salt: no boot loader configured in /etc/salt/boot.lua\n");
     return 1;
   }
   if (c.loader == "tryboot") {
@@ -746,7 +744,7 @@ int cmd_boot(const Options &o, const std::vector<std::string> &args) {
     return 2;
   }
   if (c.loader != "grub") {
-    fprintf(stderr, "salt: unknown boot loader '%s' in boot.conf\n", c.loader.c_str());
+    fprintf(stderr, "salt: unknown boot loader '%s' in boot.lua\n", c.loader.c_str());
     return 1;
   }
   if (sub == "status") return grub_status(o, c);

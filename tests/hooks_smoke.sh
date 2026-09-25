@@ -31,58 +31,55 @@ done
 recipe() {
 	name=$1; ver=$2; hooks=$3
 	mkdir -p "$WORK/recipes/$name-$ver"
-	cat > "$WORK/recipes/$name-$ver/recipe.toml" <<EOF
-name = "$name"
-version = "$ver"
-release = 1
-arch = ["x86_64", "aarch64"]
-summary = "hooks smoke package"
-license = "MIT"
-
-[source]
-url = "file://$WORK/src"
-
-[build]
-system = "custom"
-script = """
+	cat > "$WORK/recipes/$name-$ver/recipe.lua" <<EOF
+return {
+  name = "$name",
+  version = "$ver",
+  release = 1,
+  arch = { "x86_64", "aarch64" },
+  summary = "hooks smoke package",
+  license = "MIT",
+  source = { url = "file://$WORK/src" },
+  build = {
+    system = "custom",
+    script = [[
 mkdir -p "\$SALT_DEST/usr/share/$name"
 echo $ver > "\$SALT_DEST/usr/share/$name/version"
-"""
-
-[package]
-deps = []
-
-$hooks
-
-[reproducibility]
-status = "verified"
+]],
+  },
+  package = { deps = {} },
+  $hooks
+  reproducibility = { status = "verified" },
+}
 EOF
 }
 
 step "build: hooks are packaged; unknown hooks and scripts/ are rejected"
-recipe greet 1.0 '[hooks]
-post_install = """
+recipe greet 1.0 'hooks = {
+    post_install = [[
 echo "$SALT_HOOK $SALT_PKG $SALT_VERSION home=$HOME leak=${LEAK:-none}" >> /var/hooks.log
 test -f /usr/share/greet/version
-"""
-pre_remove = """
+]],
+    pre_remove = [[
 echo "$SALT_HOOK $SALT_PKG $SALT_VERSION" >> /var/hooks.log
-"""
-post_remove = """
+]],
+    post_remove = [[
 test ! -e /usr/share/greet/version
 echo "$SALT_HOOK $SALT_PKG" >> /var/hooks.log
-"""'
-recipe greet 2.0 '[hooks]
-post_upgrade = """
+]],
+  },'
+recipe greet 2.0 'hooks = {
+    post_upgrade = [[
 echo "$SALT_HOOK $SALT_PKG $SALT_OLD_VERSION -> $SALT_VERSION" >> /var/hooks.log
-"""'
-recipe broken 1.0 '[hooks]
-post_install = """
+]],
+  },'
+recipe broken 1.0 'hooks = {
+    post_install = [[
 echo about to fail >> /var/hooks.log
 exit 3
-"""'
-recipe bogus 1.0 '[hooks]
-post_frobnicate = "true"'
+]],
+  },'
+recipe bogus 1.0 'hooks = { post_frobnicate = "true" },'
 recipe loose 1.0 ''
 mkdir -p "$WORK/recipes/loose-1.0/scripts" && echo true > "$WORK/recipes/loose-1.0/scripts/postinst"
 for r in greet-1.0 greet-2.0 broken-1.0; do
@@ -100,7 +97,7 @@ publish() {
 	"$SALT_BIN" repo publish "$WORK/repo/$ARCH" >/dev/null
 	S sync >/dev/null 2>&1
 }
-printf 'repo = "current"\nsource = "file://%s/repo"\n' "$WORK" > "$ROOT/etc/salt/repo.conf"
+printf 'return {\n  repo = "current",\n  source = "file://%s/repo",\n}\n' "$WORK" > "$ROOT/etc/salt/repo.lua"
 
 step "post_install runs chrooted with a clean environment"
 publish greet-1.0 broken-1.0

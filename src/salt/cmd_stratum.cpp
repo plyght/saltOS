@@ -27,18 +27,18 @@ static void stratum_usage() {
 
 std::string resolve_stratum_recipe(const Options &o, const std::string &arg) {
   if (arg.find('/') != std::string::npos ||
-      (arg.size() >= 5 && arg.compare(arg.size() - 5, 5, ".toml") == 0))
+      (arg.size() >= 4 && arg.compare(arg.size() - 4, 4, ".lua") == 0))
     return arg;
-  // Prefer an arch-specific recipe (e.g. arch-aarch64.toml) over the generic
+  // Prefer an arch-specific recipe (e.g. arch-aarch64.lua) over the generic
   // one. This is how `salt stratum add arch` transparently uses Arch Linux ARM
   // on aarch64 hosts (mainline Arch is x86_64-only) while still resolving the
-  // plain arch.toml on x86_64. Any stratum may ship a <name>-<arch>.toml.
+  // plain arch.lua on x86_64. Any stratum may ship a <name>-<arch>.lua.
   std::string ha = arch_detect();
   std::vector<std::string> cands;
   for (const std::string &name : {arg + "-" + ha, arg}) {
-    cands.push_back(path_join(o.root, "etc/salt/strata/" + name + ".toml"));
-    cands.push_back(path_join(o.root, "usr/share/salt/strata/" + name + ".toml"));
-    cands.push_back("strata/" + name + ".toml");
+    cands.push_back(path_join(o.root, "etc/salt/strata/" + name + ".lua"));
+    cands.push_back(path_join(o.root, "usr/share/salt/strata/" + name + ".lua"));
+    cands.push_back("strata/" + name + ".lua");
   }
   for (auto &c : cands)
     if (salt_path_exists(c.c_str())) return c;

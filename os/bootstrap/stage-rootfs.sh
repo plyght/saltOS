@@ -15,7 +15,7 @@ esac
 WORK="$OUT/$ARCH"
 PKGDIR="$WORK/packages"
 ROOTFS="${ROOTFS:-$WORK/rootfs}"
-ORDER="$REPO_ROOT/os/bootstrap/build-order.toml"
+ORDER="$REPO_ROOT/os/bootstrap/build-order.lua"
 RUNIT_SRC="$REPO_ROOT/os/runit/sv"
 
 log() { printf '[stage-rootfs %s] %s\n' "$ARCH" "$*"; }
@@ -35,14 +35,7 @@ for d in bin sbin lib; do
 done
 
 stage_packages() {
-  awk -v stage="[$1]" '
-    $0 == stage { inblock=1; next }
-    /^\[/ { inblock=0 }
-    inblock && /"/ {
-      line=$0; gsub(/[",]/, "", line); gsub(/^[ \t]+|[ \t]+$/, "", line)
-      if (line != "packages = [" && line != "" && line != "]") print line
-    }
-  ' "$ORDER"
+  "$SALT" eval "$ORDER" "$1.packages"
 }
 
 # Identity files first: package hooks (e.g. sddm's system user) add to them.
@@ -131,19 +124,19 @@ cat > "$ROOTFS/etc/shells" <<'EOF'
 /bin/bash
 EOF
 
-cat > "$ROOTFS/etc/salt/repo.conf" <<'EOF'
-[repo]
-url = "file:///var/cache/salt/repo"
-key = "/etc/salt/trusted.pub"
+cat > "$ROOTFS/etc/salt/repo.lua" <<'EOF'
+return {
+  repo = "current",
+  source = "file:///var/cache/salt/repo",
+  key = "/etc/salt/trusted.pub",
+}
 EOF
 
-cat > "$ROOTFS/etc/salt/salt.conf" <<'EOF'
-[install]
-auto_expose = "prompt"
-
-[strata]
-expose_pm = true
-auto_service = true
+cat > "$ROOTFS/etc/salt/salt.lua" <<'EOF'
+return {
+  install = { auto_expose = "prompt" },
+  strata = { expose_pm = true, auto_service = true },
+}
 EOF
 
 log "wiring stratum plane (shims on PATH + builtin recipes)"
@@ -154,7 +147,7 @@ if [ -f "$REPO_ROOT/os/profile.d/salt-shims.sh" ]; then
   chmod 0644 "$ROOTFS/etc/profile.d/salt-shims.sh"
 fi
 if [ -d "$REPO_ROOT/strata" ]; then
-  cp "$REPO_ROOT"/strata/*.toml "$ROOTFS/etc/salt/strata/" 2>/dev/null || true
+  cp "$REPO_ROOT"/strata/*.lua "$ROOTFS/etc/salt/strata/" 2>/dev/null || true
 fi
 
 log "rootfs ready at $ROOTFS"

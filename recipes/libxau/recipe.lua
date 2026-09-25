@@ -1,0 +1,30 @@
+local version = "1.0.11"
+
+return {
+  name = "libxau",
+  version = version,
+  release = 1,
+  summary = "X11 libXau library",
+  license = "MIT",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://www.x.org/releases/individual/lib/libXau-" .. version .. ".tar.xz",
+    sha256 = "f3fa3282f5570c3f6bd620244438dbfbdd580fc80f02f549587a0f8ab329bbeb",
+  },
+  build = {
+    system = "autotools",
+    deps = { "pkgconf", "gcc", "make", "xorgproto" },
+    script = [[
+#!/bin/sh
+./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var --disable-static
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+]],
+  },
+  package = {
+    deps = { "glibc" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

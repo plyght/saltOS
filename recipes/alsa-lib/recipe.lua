@@ -1,0 +1,24 @@
+local version = "1.2.12"
+
+return {
+  name = "alsa-lib",
+  version = version,
+  release = 1,
+  summary = "Advanced Linux Sound Architecture library",
+  license = "LGPL-2.1-or-later",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://www.alsa-project.org/files/pub/lib/alsa-lib-" .. version .. ".tar.bz2",
+    sha256 = "4868cd908627279da5a634f468701625be8cc251d84262c7e5b6a218391ad0d2",
+  },
+  build = {
+    system = "autotools",
+    deps = { "gcc", "make" },
+  },
+  package = {
+    deps = { "glibc" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

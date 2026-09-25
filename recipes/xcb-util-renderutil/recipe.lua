@@ -1,0 +1,30 @@
+local version = "0.3.10"
+
+return {
+  name = "xcb-util-renderutil",
+  version = version,
+  release = 1,
+  summary = "XCB render extension utilities",
+  license = "MIT",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://xorg.freedesktop.org/archive/individual/lib/xcb-util-renderutil-" .. version .. ".tar.xz",
+    sha256 = "3e15d4f0e22d8ddbfbb9f5d77db43eacd7a304029bf25a6166cc63caa96d04ba",
+  },
+  build = {
+    system = "autotools",
+    deps = { "pkgconf", "gcc", "make", "libxcb", "util-macros" },
+    script = [[
+#!/bin/sh
+./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var --disable-static
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+]],
+  },
+  package = {
+    deps = { "glibc", "libxcb" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

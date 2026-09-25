@@ -1,6 +1,7 @@
 #include "salt/trust.h"
 #include "salt/pkg.h"
 #include "salt/toml.h"
+#include "salt/conf.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -69,8 +70,8 @@ bool salt_findings_has_block(const salt_findings *f) {
   return false;
 }
 
-static char *recipe_toml_path(const char *recipe_path) {
-  if (salt_is_dir(recipe_path)) return salt_join_path(recipe_path, "recipe.toml");
+static char *recipe_file_path(const char *recipe_path) {
+  if (salt_is_dir(recipe_path)) return salt_join_path(recipe_path, "recipe.lua");
   return salt_strdup(recipe_path);
 }
 
@@ -83,16 +84,18 @@ static bool is_hex64(const char *s) {
 }
 
 static int lint_common(const char *recipe_path, salt_findings *out, bool strict) {
-  char *path = recipe_toml_path(recipe_path);
+  char *path = recipe_file_path(recipe_path);
   salt_buf text;
   if (salt_read_file(path, &text) != SALT_OK) {
-    salt_findings_push(out, SALT_RISK_BLOCK, "no-recipe", "recipe.toml not found");
+    salt_findings_push(out, SALT_RISK_BLOCK, "no-recipe", "recipe.lua not found");
     free(path);
     return SALT_ERR_NOTFOUND;
   }
-  salt_toml *t = salt_toml_parse(text.data, text.len);
+  salt_toml *t = salt_conf_parse(text.data ? text.data : "", text.len, path);
   if (!t) {
-    salt_findings_push(out, SALT_RISK_BLOCK, "parse", "recipe.toml is not valid TOML");
+    char msg[512];
+    snprintf(msg, sizeof(msg), "recipe does not evaluate: %s", salt_last_error());
+    salt_findings_push(out, SALT_RISK_BLOCK, "parse", msg);
     salt_buf_free(&text);
     free(path);
     return SALT_ERR_FORMAT;
@@ -168,10 +171,10 @@ static bool regex_search(const char *pattern, const char *text) {
 }
 
 int salt_supplychain_scan(const salt_scan_input *in, salt_findings *out) {
-  char *path = recipe_toml_path(in->recipe_path);
+  char *path = recipe_file_path(in->recipe_path);
   salt_buf text;
   if (salt_read_file(path, &text) != SALT_OK) {
-    salt_findings_push(out, SALT_RISK_BLOCK, "no-recipe", "recipe.toml not found");
+    salt_findings_push(out, SALT_RISK_BLOCK, "no-recipe", "recipe.lua not found");
     free(path);
     return SALT_ERR_NOTFOUND;
   }
@@ -207,7 +210,7 @@ int salt_supplychain_scan(const salt_scan_input *in, salt_findings *out) {
     salt_findings_push(out, SALT_RISK_WARN, "obfuscation",
                        "recipe contains eval/pipe-to-shell/base64 decoding");
 
-  salt_toml *t = salt_toml_parse(body, text.len);
+  salt_toml *t = salt_conf_parse(body, text.len, path);
   const char *script = t ? salt_toml_string(t, "build.script", NULL) : NULL;
   if (script && (strstr(script, "curl") || strstr(script, "wget") || strstr(script, "git clone") ||
                  strstr(script, "http://") || strstr(script, "https://")))
@@ -249,7 +252,7 @@ int salt_supplychain_scan(const salt_scan_input *in, salt_findings *out) {
   }
 
   if (in->prev_recipe_text && t) {
-    salt_toml *prev = salt_toml_parse(in->prev_recipe_text, strlen(in->prev_recipe_text));
+    salt_toml *prev = salt_conf_parse(in->prev_recipe_text, strlen(in->prev_recipe_text), path);
     if (prev) {
       const char *old_url = salt_toml_string(prev, "source.url", "");
       const char *new_url = salt_toml_string(t, "source.url", "");

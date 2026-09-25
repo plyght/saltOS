@@ -1,0 +1,24 @@
+local version = "2.6.4"
+
+return {
+  name = "flex",
+  version = version,
+  release = 1,
+  summary = "Fast lexical analyzer generator",
+  license = "BSD-2-Clause",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://github.com/westes/flex/releases/download/v" .. version .. "/flex-" .. version .. ".tar.gz",
+    sha256 = "e87aae032bf07c26f85ac0ed3250998c37621d95f8bd748b31f15b33c45ee995",
+  },
+  build = {
+    system = "autotools",
+    deps = { "gcc", "make", "m4" },
+  },
+  package = {
+    deps = { "glibc", "m4" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

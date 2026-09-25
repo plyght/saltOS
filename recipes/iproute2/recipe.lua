@@ -1,0 +1,31 @@
+local version = "6.9.0"
+
+return {
+  name = "iproute2",
+  version = version,
+  release = 1,
+  summary = "Networking and traffic control utilities",
+  license = "GPL-2.0-only",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://www.kernel.org/pub/linux/utils/net/iproute2/iproute2-" .. version .. ".tar.xz",
+    sha256 = "2f643d09ea11a4a2a043c92e2b469b5f73228cbf241ae806760296ed0ec413d0",
+  },
+  build = {
+    system = "make",
+    deps = { "gcc", "make", "bison", "flex", "elfutils" },
+    script = [[
+#!/bin/sh
+sed -i /ARPD/d Makefile
+rm -f man/man8/arpd.8
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" SBINDIR=/usr/sbin install
+]],
+  },
+  package = {
+    deps = { "glibc", "elfutils" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

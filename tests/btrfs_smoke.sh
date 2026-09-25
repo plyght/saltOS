@@ -15,32 +15,26 @@ ARCH="$("$SALT" --version | sed -n 's/.*(\([a-z0-9_]*\)).*/\1/p')"
 
 recipe() { # name version
   mkdir -p "$WORK/recipes/$1-$2"
-  cat > "$WORK/recipes/$1-$2/recipe.toml" <<EOF
-name = "$1"
-version = "$2"
-release = 1
-arch = ["x86_64", "aarch64"]
-summary = "btrfs smoke package $1"
-license = "MIT"
-
-[source]
-url = "file://$WORK/src"
-sha256 = "TODO-sha256"
-
-[build]
-system = "custom"
-script = """
+  cat > "$WORK/recipes/$1-$2/recipe.lua" <<EOF
+return {
+  name = "$1",
+  version = "$2",
+  release = 1,
+  arch = { "x86_64", "aarch64" },
+  summary = "btrfs smoke package $1",
+  license = "MIT",
+  source = { url = "file://$WORK/src" },
+  build = {
+    system = "custom",
+    script = [[
 mkdir -p "\$SALT_DEST/usr/bin"
 printf '#!/bin/sh\\necho $1 $2\\n' > "\$SALT_DEST/usr/bin/$1"
 chmod +x "\$SALT_DEST/usr/bin/$1"
-"""
-
-[package]
-deps = []
-conflicts = []
-
-[reproducibility]
-status = "verified"
+]],
+  },
+  package = { deps = {}, conflicts = {} },
+  reproducibility = { status = "verified" },
+}
 EOF
 }
 
@@ -74,10 +68,12 @@ cleanup() {
 }
 
 mkdir -p "$ROOT/etc/salt"
-cat > "$ROOT/etc/salt/repo.conf" <<EOF
-repo = "current"
-source = "file://$WORK/out"
-key = "$(cat "$WORK/keys/repo.pub")"
+cat > "$ROOT/etc/salt/repo.lua" <<EOF
+return {
+  repo = "current",
+  source = "file://$WORK/out",
+  key = "$(cat "$WORK/keys/repo.pub")",
+}
 EOF
 
 fail() { echo "btrfs_smoke: FAIL: $*" >&2; exit 1; }

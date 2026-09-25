@@ -1,0 +1,30 @@
+local version = "0.4.1"
+
+return {
+  name = "xcb-util-image",
+  version = version,
+  release = 1,
+  summary = "XCB image utilities",
+  license = "MIT",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://xorg.freedesktop.org/archive/individual/lib/xcb-util-image-" .. version .. ".tar.xz",
+    sha256 = "ccad8ee5dadb1271fd4727ad14d9bd77a64e505608766c4e98267d9aede40d3d",
+  },
+  build = {
+    system = "autotools",
+    deps = { "pkgconf", "gcc", "make", "libxcb", "xcb-util", "util-macros" },
+    script = [[
+#!/bin/sh
+./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var --disable-static
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+]],
+  },
+  package = {
+    deps = { "glibc", "libxcb", "xcb-util" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

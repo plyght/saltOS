@@ -1,0 +1,30 @@
+local version = "1.2.4"
+
+return {
+  name = "libxscrnsaver",
+  version = version,
+  release = 1,
+  summary = "X11 Screen Saver extension library",
+  license = "MIT",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://www.x.org/releases/individual/lib/libXScrnSaver-" .. version .. ".tar.xz",
+    sha256 = "75cd2859f38e207a090cac980d76bc71e9da99d48d09703584e00585abc920fe",
+  },
+  build = {
+    system = "autotools",
+    deps = { "pkgconf", "gcc", "make", "libx11", "libxext", "xorgproto" },
+    script = [[
+#!/bin/sh
+./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var --disable-static
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+]],
+  },
+  package = {
+    deps = { "glibc", "libx11", "libxext" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

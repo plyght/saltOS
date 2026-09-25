@@ -32,6 +32,15 @@ size_t salt_toml_table_len(const salt_toml *table);
 const char *salt_toml_table_key(const salt_toml *table, size_t i);
 const salt_toml *salt_toml_table_val(const salt_toml *table, size_t i);
 
+/* Building a tree by hand (used by the Lua configuration loader). The put and
+ * push calls take ownership of val; table_put rejects a duplicate key. */
+salt_toml *salt_toml_new(salt_toml_type type);
+salt_toml *salt_toml_new_string(const char *s, size_t len);
+salt_toml *salt_toml_new_int(long long v);
+salt_toml *salt_toml_new_bool(bool v);
+int salt_toml_table_put(salt_toml *table, const char *key, salt_toml *val);
+int salt_toml_array_push(salt_toml *array, salt_toml *val);
+
 const char *salt_toml_as_string(const salt_toml *t);
 long long salt_toml_as_int(const salt_toml *t, long long fallback);
 bool salt_toml_as_bool(const salt_toml *t, bool fallback);

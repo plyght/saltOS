@@ -62,11 +62,12 @@ struct CliOptions {
 int parse_cli(int argc, char **argv, CliOptions &opts, std::string &err);
 std::string usage_text();
 
-bool load_toml(const std::string &text, Config &cfg, std::string &err);
-bool load_toml_file(const std::string &path, Config &cfg, std::string &err);
+// Load a configuration (Lua, or TOML data for older files); name picks the format.
+bool load_config(const std::string &text, const std::string &name, Config &cfg, std::string &err);
+bool load_config_file(const std::string &path, Config &cfg, std::string &err);
 bool set_value(Config &cfg, const std::string &dotted, const std::string &value, std::string &err);
 bool validate(const Config &cfg, bool interactive, std::string &err);
-std::string to_toml(const Config &cfg, bool include_secrets);
+std::string to_lua(const Config &cfg, bool include_secrets);
 
 bool parse_size_mib(const std::string &s, unsigned long long &mib);
 bool parse_bool(const std::string &s, bool &out);

@@ -1,0 +1,24 @@
+local version = "5.3.0"
+
+return {
+  name = "gawk",
+  version = version,
+  release = 1,
+  summary = "GNU implementation of the AWK programming language",
+  license = "GPL-3.0-or-later",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://ftp.gnu.org/gnu/gawk/gawk-" .. version .. ".tar.xz",
+    sha256 = "ca9c16d3d11d0ff8c69d79dc0b47267e1329a69b39b799895604ed447d3ca90b",
+  },
+  build = {
+    system = "autotools",
+    deps = { "gcc", "make", "glibc" },
+  },
+  package = {
+    deps = { "glibc" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

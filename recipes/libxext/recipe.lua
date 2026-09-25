@@ -1,0 +1,30 @@
+local version = "1.3.6"
+
+return {
+  name = "libxext",
+  version = version,
+  release = 1,
+  summary = "X11 libXext library",
+  license = "MIT",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://www.x.org/releases/individual/lib/libXext-" .. version .. ".tar.xz",
+    sha256 = "edb59fa23994e405fdc5b400afdf5820ae6160b94f35e3dc3da4457a16e89753",
+  },
+  build = {
+    system = "autotools",
+    deps = { "pkgconf", "gcc", "make", "libx11", "xorgproto" },
+    script = [[
+#!/bin/sh
+./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var --disable-static
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+]],
+  },
+  package = {
+    deps = { "glibc", "libx11" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

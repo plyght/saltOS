@@ -1,0 +1,24 @@
+local version = "2.7.6"
+
+return {
+  name = "patch",
+  version = version,
+  release = 1,
+  summary = "GNU patch utility for applying diff files",
+  license = "GPL-3.0-or-later",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://ftp.gnu.org/gnu/patch/patch-" .. version .. ".tar.xz",
+    sha256 = "ac610bda97abe0d9f6b7c963255a11dcb196c25e337c61f94e4778d632f1d8fd",
+  },
+  build = {
+    system = "autotools",
+    deps = { "gcc", "make", "glibc" },
+  },
+  package = {
+    deps = { "glibc" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

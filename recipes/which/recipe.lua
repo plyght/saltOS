@@ -1,0 +1,24 @@
+local version = "2.21"
+
+return {
+  name = "which",
+  version = version,
+  release = 1,
+  summary = "Utility to show the full path of executables found in PATH",
+  license = "GPL-3.0-or-later",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://ftp.gnu.org/gnu/which/which-" .. version .. ".tar.gz",
+    sha256 = "f4a245b94124b377d8b49646bf421f9155d36aa7614b6ebf83705d3ffc76eaad",
+  },
+  build = {
+    system = "autotools",
+    deps = { "gcc", "make", "glibc" },
+  },
+  package = {
+    deps = { "glibc" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

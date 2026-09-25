@@ -1,0 +1,30 @@
+local version = "0.18"
+
+return {
+  name = "xdg-user-dirs",
+  version = version,
+  release = 1,
+  summary = "Well-known user directories",
+  license = "GPL-2.0-or-later",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://user-dirs.freedesktop.org/releases/xdg-user-dirs-" .. version .. ".tar.gz",
+    sha256 = "ec6f06d7495cdba37a732039f9b5e1578bcb296576fde0da40edb2f52220df3c",
+  },
+  build = {
+    system = "autotools",
+    deps = { "pkgconf", "gcc", "make" },
+    script = [[
+#!/bin/sh
+./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var --disable-static --disable-documentation
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+]],
+  },
+  package = {
+    deps = { "glibc" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

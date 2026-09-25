@@ -15,6 +15,7 @@ add_library(halite STATIC
   src/trust.c
   src/stratum.c
   src/run.c
+  src/conf.c
 )
 
 target_include_directories(halite PUBLIC
@@ -28,6 +29,8 @@ target_include_directories(halite PRIVATE
 target_link_directories(halite PUBLIC
   ${SALT_DEP_LIBRARY_DIRS}
 )
+
+target_link_libraries(halite PRIVATE saltlua)
 
 target_link_libraries(halite PUBLIC
   ${SALT_DEP_LIBS}

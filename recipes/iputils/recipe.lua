@@ -1,0 +1,38 @@
+local version = "20240117"
+
+return {
+  name = "iputils",
+  version = version,
+  release = 3,
+  summary = "Network monitoring tools including ping",
+  license = "GPL-2.0-or-later",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://github.com/iputils/iputils/archive/" .. version .. "/iputils-" .. version .. ".tar.gz",
+    sha256 = "a5d66e2997945b2541b8f780a7f5a5ec895d53a517ae1dc4f3ab762573edea9a",
+  },
+  build = {
+    system = "meson",
+    deps = { "gcc", "make", "meson", "ninja" },
+    script = [[
+#!/bin/sh
+meson setup build \
+    --prefix=/usr --libdir=lib \
+    --buildtype=release \
+    -DSKIP_TESTS=true \
+    -DBUILD_HTML_MANS=false \
+    -DBUILD_MANS=false \
+    -DNO_SETCAP_OR_SUID=true \
+    -DUSE_CAP=false \
+    -DUSE_IDN=false
+ninja -C build
+DESTDIR="$SALT_DEST" ninja -C build install
+]],
+  },
+  package = {
+    deps = { "glibc" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

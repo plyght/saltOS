@@ -1,0 +1,30 @@
+local version = "0.4.6"
+
+return {
+  name = "libxcomposite",
+  version = version,
+  release = 1,
+  summary = "X11 libXcomposite library",
+  license = "MIT",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://www.x.org/releases/individual/lib/libXcomposite-" .. version .. ".tar.xz",
+    sha256 = "fe40bcf0ae1a09070eba24088a5eb9810efe57453779ec1e20a55080c6dc2c87",
+  },
+  build = {
+    system = "autotools",
+    deps = { "pkgconf", "gcc", "make", "libx11", "libxfixes", "xorgproto" },
+    script = [[
+#!/bin/sh
+./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var --disable-static
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+]],
+  },
+  package = {
+    deps = { "glibc", "libx11", "libxfixes" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

@@ -1,0 +1,30 @@
+local version = "0.18"
+
+return {
+  name = "hicolor-icon-theme",
+  version = version,
+  release = 1,
+  summary = "Fallback freedesktop icon theme",
+  license = "GPL-2.0-only",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://icon-theme.freedesktop.org/releases/hicolor-icon-theme-" .. version .. ".tar.xz",
+    sha256 = "db0e50a80aa3bf64bb45cbca5cf9f75efd9348cf2ac690b907435238c3cf81d7",
+  },
+  build = {
+    system = "meson",
+    deps = { "meson", "ninja", "pkgconf", "gcc" },
+    script = [[
+#!/bin/sh
+meson setup build --prefix=/usr --libdir=lib --buildtype=release -Ddefault_library=shared
+ninja -C build -j"$SALT_JOBS"
+DESTDIR="$SALT_DEST" ninja -C build install
+]],
+  },
+  package = {
+    deps = {},
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

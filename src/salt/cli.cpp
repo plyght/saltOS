@@ -1,4 +1,5 @@
 #include "cli.hpp"
+#include "salt/conf.h"
 
 extern "C" {
 #include "salt/util.h"
@@ -56,10 +57,27 @@ std::string strata_db_path_for(const Options &o) {
   return path_join(o.root, "var/lib/salt/strata.sqlite");
 }
 
+salt_toml *load_salt_conf(const std::string &root, const char *name) {
+  std::string lua = path_join(root, std::string("etc/salt/") + name + ".lua");
+  if (access(lua.c_str(), F_OK) == 0) {
+    salt_toml *t = salt_conf_load(lua.c_str());
+    if (!t) fprintf(stderr, "salt: warning: ignoring %s: %s\n", lua.c_str(), salt_last_error());
+    return t;
+  }
+  std::string legacy = path_join(root, std::string("etc/salt/") + name + ".conf");
+  if (access(legacy.c_str(), F_OK) != 0) return nullptr;
+  static bool noted = false;
+  if (!noted) {
+    fprintf(stderr, "salt: note: reading legacy %s; saltOS configuration is now Lua (%s.lua)\n",
+            legacy.c_str(), name);
+    noted = true;
+  }
+  return salt_toml_parse_file(legacy.c_str());
+}
+
 RepoConf load_repo_conf(const Options &o) {
   RepoConf rc;
-  std::string conf = path_join(o.root, "etc/salt/repo.conf");
-  salt_toml *t = salt_toml_parse_file(conf.c_str());
+  salt_toml *t = load_salt_conf(o.root, "repo");
   if (t) {
     rc.name = salt_toml_string(t, "repo", "current");
     rc.source = salt_toml_string(t, "source", "");
@@ -93,9 +111,8 @@ PkgRef parse_pkgref(const std::string &arg) {
 
 std::string auto_expose_mode(const Options &o) {
   if (!o.expose_mode.empty()) return o.expose_mode;
-  std::string conf = path_join(o.root, "etc/salt/salt.conf");
   std::string mode = "prompt";
-  salt_toml *t = salt_toml_parse_file(conf.c_str());
+  salt_toml *t = load_salt_conf(o.root, "salt");
   if (t) {
     const char *v = salt_toml_string(t, "install.auto_expose", "prompt");
     if (v && v[0]) mode = v;
@@ -107,9 +124,8 @@ std::string auto_expose_mode(const Options &o) {
 
 bool expose_pm_enabled(const Options &o) {
   if (o.expose_mode == "never") return false;
-  std::string conf = path_join(o.root, "etc/salt/salt.conf");
   bool en = true;
-  salt_toml *t = salt_toml_parse_file(conf.c_str());
+  salt_toml *t = load_salt_conf(o.root, "salt");
   if (t) {
     en = salt_toml_bool(t, "strata.expose_pm", true);
     salt_toml_free(t);
@@ -120,9 +136,8 @@ bool expose_pm_enabled(const Options &o) {
 bool expose_all_enabled(const Options &o) {
   if (o.expose_mode == "never") return false;
   if (o.expose_mode == "always") return true;
-  std::string conf = path_join(o.root, "etc/salt/salt.conf");
-  bool en = false;  // off by default; saltOS images opt in via salt.conf
-  salt_toml *t = salt_toml_parse_file(conf.c_str());
+  bool en = false;  // off by default; saltOS images opt in via salt.lua
+  salt_toml *t = load_salt_conf(o.root, "salt");
   if (t) {
     en = salt_toml_bool(t, "strata.expose_all", false);
     salt_toml_free(t);
@@ -132,9 +147,8 @@ bool expose_all_enabled(const Options &o) {
 
 bool auto_service_enabled(const Options &o) {
   if (o.expose_mode == "never") return false;
-  std::string conf = path_join(o.root, "etc/salt/salt.conf");
   bool en = true;
-  salt_toml *t = salt_toml_parse_file(conf.c_str());
+  salt_toml *t = load_salt_conf(o.root, "salt");
   if (t) {
     en = salt_toml_bool(t, "strata.auto_service", true);
     salt_toml_free(t);
@@ -185,6 +199,7 @@ static void usage() {
           "maintainer commands:\n"
           "  build <recipe-dir>   build a package from a recipe\n"
           "  lint <recipe-dir>    lint a recipe\n"
+          "  eval <file> [key]    evaluate a Lua config file and print it (or one key)\n"
           "  sign <file>          sign a file with the repo secret key\n"
           "  repo publish <dir> [<url-base>]\n"
           "                       build and sign a repository index; with <url-base> each\n"
@@ -234,6 +249,7 @@ static int dispatch(const Options &o, const std::string &cmd,
   if (cmd == "list") return cmd_list(o, args);
   if (cmd == "build") return cmd_build(o, args);
   if (cmd == "lint") return cmd_lint(o, args);
+  if (cmd == "eval") return cmd_eval(o, args);
   if (cmd == "sign") return cmd_sign(o, args);
   if (cmd == "repo") return cmd_repo(o, args);
   if (cmd == "keygen") return cmd_keygen(o, args);

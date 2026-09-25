@@ -1,0 +1,30 @@
+local version = "1.1.0"
+
+return {
+  name = "menu-cache",
+  version = version,
+  release = 2,
+  summary = "Caching mechanism for freedesktop.org menus",
+  license = "LGPL-2.1-or-later",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://downloads.sourceforge.net/lxde/menu-cache-" .. version .. ".tar.xz",
+    sha256 = "ed02eb459dcb398f69b9fa5bf4dd813020405afc84331115469cdf7be9273ec7",
+  },
+  build = {
+    system = "autotools",
+    deps = { "pkgconf", "gcc", "make", "glib", "libfm-extra" },
+    script = [[
+#!/bin/sh
+./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var --disable-static
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+]],
+  },
+  package = {
+    deps = { "glibc", "glib", "libfm-extra" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

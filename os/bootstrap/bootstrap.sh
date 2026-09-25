@@ -15,7 +15,7 @@ case "$ARCH" in
   *) echo "unsupported ARCH: $ARCH" >&2; exit 2 ;;
 esac
 
-ORDER="$REPO_ROOT/os/bootstrap/build-order.toml"
+ORDER="$REPO_ROOT/os/bootstrap/build-order.lua"
 WORK="$OUT/$ARCH"
 TOOLS="$OUT/tools"
 SYSROOT="$WORK/sysroot"
@@ -39,21 +39,10 @@ stage_repo() {
 log() { printf '[bootstrap %s] %s\n' "$ARCH" "$*"; }
 
 stage_packages() {
-  stage="$1"
-  awk -v stage="[$stage]" '
-    $0 == stage { inblock=1; next }
-    /^\[/ { inblock=0 }
-    inblock && /"/ {
-      line=$0
-      gsub(/[",]/, "", line)
-      gsub(/^[ \t]+|[ \t]+$/, "", line)
-      if (line != "packages = [" && line != "" && line != "]")
-        print line
-    }
-  ' "$ORDER"
+  "$SALT" eval "$ORDER" "$1.packages"
 }
 
-# A grain is reused only while its recipe directory (recipe.toml, patches,
+# A grain is reused only while its recipe directory (recipe.lua, patches,
 # files) and the builder revision are unchanged, so a restored cache can never
 # hand back a package built from an older recipe. BOOTSTRAP_BUILDER_REV is set
 # by CI to a hash of the salt build sources.
@@ -71,8 +60,8 @@ build_one() {
     echo "missing recipe: $name" >&2
     return 1
   fi
-  version=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$recipe/recipe.toml" | head -n1)
-  release=$(sed -n 's/^release = \([0-9][0-9]*\)$/\1/p' "$recipe/recipe.toml" | head -n1)
+  version=$("$SALT" eval "$recipe/recipe.lua" version)
+  release=$("$SALT" eval "$recipe/recipe.lua" release || echo 1)
   grain="$PKGDIR/$name-$version-${release:-1}-$ARCH.grain"
   stamp=$(recipe_stamp "$recipe")
   if [ -f "$grain" ] && [ "$(cat "$grain.stamp" 2>/dev/null)" = "$stamp" ]; then

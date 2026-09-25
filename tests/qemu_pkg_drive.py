@@ -43,8 +43,8 @@ def snapshot_count(ser):
 
 
 def write_repo_conf(ser, source, pubkey):
-    ser.run("printf 'repo = \"current\"\\nsource = \"%s\"\\nkey = \"%s\"\\n' | sudo -n tee /etc/salt/repo.conf"
-            % (source, pubkey), check=0)
+    ser.run("printf 'return {\\n  repo = \"current\",\\n  source = \"%s\",\\n  key = \"%s\",\\n}\\n'"
+            " | sudo -n tee /etc/salt/repo.lua" % (source, pubkey), check=0)
 
 
 def main():

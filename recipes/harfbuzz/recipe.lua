@@ -1,0 +1,30 @@
+local version = "9.0.0"
+
+return {
+  name = "harfbuzz",
+  version = version,
+  release = 2,
+  summary = "OpenType text shaping engine",
+  license = "MIT",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://github.com/harfbuzz/harfbuzz/releases/download/" .. version .. "/harfbuzz-" .. version .. ".tar.xz",
+    sha256 = "a41b272ceeb920c57263ec851604542d9ec85ee3030506d94662067c7b6ab89e",
+  },
+  build = {
+    system = "meson",
+    deps = { "meson", "ninja", "pkgconf", "gcc", "freetype", "glib" },
+    script = [[
+#!/bin/sh
+meson setup build --prefix=/usr --libdir=lib --buildtype=release -Ddefault_library=shared -Dtests=disabled -Ddocs=disabled -Dintrospection=disabled -Dcairo=disabled -Dglib=enabled -Dfreetype=enabled -Dbenchmark=disabled
+ninja -C build -j"$SALT_JOBS"
+DESTDIR="$SALT_DEST" ninja -C build install
+]],
+  },
+  package = {
+    deps = { "glibc", "freetype", "glib" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

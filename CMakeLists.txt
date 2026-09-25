@@ -42,6 +42,7 @@ else()
   set(SALT_DEP_LIBS ${ZSTD_LIBRARIES} ${SODIUM_LIBRARIES} ${SQLITE3_LIBRARIES})
 endif()
 
+add_subdirectory(src/third_party/lua)
 add_subdirectory(src/halite)
 add_subdirectory(src/salt)
 add_subdirectory(src/setup)

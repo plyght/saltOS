@@ -1,0 +1,24 @@
+local version = "1.4.19"
+
+return {
+  name = "m4",
+  version = version,
+  release = 1,
+  summary = "GNU macro processor",
+  license = "GPL-3.0-or-later",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://ftp.gnu.org/gnu/m4/m4-" .. version .. ".tar.xz",
+    sha256 = "63aede5c6d33b6d9b13511cd0be2cac046f2e70fd0a07aa9573a04a82783af96",
+  },
+  build = {
+    system = "autotools",
+    deps = { "gcc", "make" },
+  },
+  package = {
+    deps = { "glibc" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

@@ -1,0 +1,30 @@
+local version = "1.4.0"
+
+return {
+  name = "xf86-input-libinput",
+  version = version,
+  release = 1,
+  summary = "libinput-based X.org input driver",
+  license = "MIT",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://www.x.org/releases/individual/driver/xf86-input-libinput-" .. version .. ".tar.xz",
+    sha256 = "3a3d14cd895dc75b59ae2783b888031956a0bac7a1eff16d240dbb9d5df3e398",
+  },
+  build = {
+    system = "autotools",
+    deps = { "pkgconf", "gcc", "make", "xorg-server", "libinput" },
+    script = [[
+#!/bin/sh
+./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var --disable-static
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+]],
+  },
+  package = {
+    deps = { "glibc", "xorg-server", "libinput" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

@@ -1,0 +1,30 @@
+local version = "2.13.4"
+
+return {
+  name = "libxml2",
+  version = version,
+  release = 1,
+  summary = "XML parsing library",
+  license = "MIT",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://download.gnome.org/sources/libxml2/2.13/libxml2-" .. version .. ".tar.xz",
+    sha256 = "65d042e1c8010243e617efb02afda20b85c2160acdbfbcb5b26b80cec6515650",
+  },
+  build = {
+    system = "autotools",
+    deps = { "pkgconf", "gcc", "make", "zlib", "xz" },
+    script = [[
+#!/bin/sh
+./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var --disable-static --without-python --with-history=no
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+]],
+  },
+  package = {
+    deps = { "glibc", "zlib", "xz" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

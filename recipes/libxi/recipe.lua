@@ -1,0 +1,30 @@
+local version = "1.8.2"
+
+return {
+  name = "libxi",
+  version = version,
+  release = 1,
+  summary = "X11 libXi library",
+  license = "MIT",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://www.x.org/releases/individual/lib/libXi-" .. version .. ".tar.xz",
+    sha256 = "d0e0555e53d6e2114eabfa44226ba162d2708501a25e18d99cfb35c094c6c104",
+  },
+  build = {
+    system = "autotools",
+    deps = { "pkgconf", "gcc", "make", "libx11", "libxext", "libxfixes", "xorgproto" },
+    script = [[
+#!/bin/sh
+./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var --disable-static
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+]],
+  },
+  package = {
+    deps = { "glibc", "libx11", "libxext", "libxfixes" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}

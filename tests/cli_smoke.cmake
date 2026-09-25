@@ -20,31 +20,26 @@ message(STATUS "smoke: arch=${ARCH}")
 
 function(write_recipe dir name version deps conflicts)
   file(MAKE_DIRECTORY "${dir}")
-  file(WRITE "${dir}/recipe.toml"
-"name = \"${name}\"
-version = \"${version}\"
-release = 1
-arch = [\"x86_64\", \"aarch64\"]
-summary = \"smoke test package ${name}\"
-license = \"MIT\"
-
-[source]
-url = \"file://${SRC}\"
-
-[build]
-system = \"custom\"
-script = \"\"\"
+  file(WRITE "${dir}/recipe.lua"
+"return {
+  name = \"${name}\",
+  version = \"${version}\",
+  release = 1,
+  arch = { \"x86_64\", \"aarch64\" },
+  summary = \"smoke test package ${name}\",
+  license = \"MIT\",
+  source = { url = \"file://${SRC}\" },
+  build = {
+    system = \"custom\",
+    script = [[
 mkdir -p \"$SALT_DEST/usr/bin\"
 printf '#!/bin/sh\\necho ${name} ${version}\\n' > \"$SALT_DEST/usr/bin/${name}\"
 chmod +x \"$SALT_DEST/usr/bin/${name}\"
-\"\"\"
-
-[package]
-deps = [${deps}]
-conflicts = [${conflicts}]
-
-[reproducibility]
-status = \"verified\"
+]],
+  },
+  package = { deps = { ${deps} }, conflicts = { ${conflicts} } },
+  reproducibility = { status = \"verified\" },
+}
 ")
 endfunction()
 
@@ -119,10 +114,12 @@ endif()
 file(READ "${KEYS}/repo.pub" PUBKEY)
 string(STRIP "${PUBKEY}" PUBKEY)
 file(MAKE_DIRECTORY "${ROOT}/etc/salt")
-file(WRITE "${ROOT}/etc/salt/repo.conf"
-"repo = \"current\"
-source = \"file://${OUT}\"
-key = \"${PUBKEY}\"
+file(WRITE "${ROOT}/etc/salt/repo.lua"
+"return {
+  repo = \"current\",
+  source = \"file://${OUT}\",
+  key = \"${PUBKEY}\",
+}
 ")
 
 execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" sync COMMAND_ERROR_IS_FATAL ANY)
@@ -212,7 +209,7 @@ endif()
 execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" lock diff COMMAND_ERROR_IS_FATAL ANY)
 execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" config diff COMMAND_ERROR_IS_FATAL ANY)
 execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes config apply COMMAND_ERROR_IS_FATAL ANY)
-file(WRITE "${ROOT}/etc/salt/system.toml" "[system]\nhostname = \"smoke\"\n")
+file(WRITE "${ROOT}/etc/salt/system.lua" "return { system = { hostname = \"smoke\" } }\n")
 expect_fail_output("config apply refuses a stale lock" "--relock" "${SALT_BIN}" --root "${ROOT}" --yes config apply)
 execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes config apply --relock COMMAND_ERROR_IS_FATAL ANY)
 execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes config apply COMMAND_ERROR_IS_FATAL ANY)
@@ -221,18 +218,19 @@ if(NOT RELOCKED MATCHES "config_hash = \"sha256:")
   message(FATAL_ERROR "--relock did not record the config hash")
 endif()
 
-file(WRITE "${ROOT}/etc/salt/system.toml"
-"schema = 1
-[system]
-hostname = \"smoke\"
-[native]
-repo = \"current\"
-packages = [\"greeter\"]
-[native.pin]
-greeter = \"1.0-1\"
-[policy]
-require_signed_native = true
-on_missing_artifact = \"fail\"
+file(WRITE "${ROOT}/etc/salt/system.lua"
+"-- declarative host config
+local pinned = \"1.0-1\"
+return {
+  schema = 1,
+  system = { hostname = \"smoke\" },
+  native = {
+    repo = \"current\",
+    packages = { \"greeter\" },
+    pin = { greeter = pinned },
+  },
+  policy = { require_signed_native = true, on_missing_artifact = \"fail\" },
+}
 ")
 expect_output("config check" "ok" "${SALT_BIN}" --root "${ROOT}" config check)
 execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes config apply --relock --dry-run
@@ -259,45 +257,41 @@ expect_fail_output("policy require_signed_native refuses an unsigned index" "req
                    "${SALT_BIN}" --root "${ROOT}" --yes config apply)
 file(RENAME "${ROOT}/var/lib/salt/repo/${ARCH}/index.toml.sig.off" "${ROOT}/var/lib/salt/repo/${ARCH}/index.toml.sig")
 
-file(WRITE "${ROOT}/etc/salt/system.toml"
-"[native]
-packages = [\"greeter\"]
-[native.pin]
-greeter = \"9.9\"
+file(WRITE "${ROOT}/etc/salt/system.lua"
+"return { native = { packages = { \"greeter\" }, pin = { greeter = \"9.9\" } } }
 ")
 expect_fail_output("config apply refuses an unavailable pin" "does not offer"
                    "${SALT_BIN}" --root "${ROOT}" --yes config apply --relock)
-file(WRITE "${ROOT}/etc/salt/system.toml"
-"[native]
-packages = [\"greeter\", \"no-such-package\"]
+file(WRITE "${ROOT}/etc/salt/system.lua"
+"return { native = { packages = { \"greeter\", \"no-such-package\" } } }
 ")
 expect_fail_output("config apply fails on a missing root by default" "not in the repository index"
                    "${SALT_BIN}" --root "${ROOT}" --yes config apply --relock)
-file(WRITE "${ROOT}/etc/salt/system.toml"
-"[native]
-packages = [\"greeter\", \"no-such-package\"]
-[policy]
-on_missing_artifact = \"skip\"
+file(WRITE "${ROOT}/etc/salt/system.lua"
+"return {
+  native = { packages = { \"greeter\", \"no-such-package\" } },
+  policy = { on_missing_artifact = \"skip\" },
+}
 ")
 expect_output("policy on_missing_artifact = skip" "skipping: native package no-such-package"
               "${SALT_BIN}" --root "${ROOT}" --yes config apply --relock)
-file(WRITE "${ROOT}/etc/salt/system.toml" "[native]\npackages = [\"greeter\"]\n[policy]\non_missing_artifact = \"ignore\"\n")
+file(WRITE "${ROOT}/etc/salt/system.lua" "return { native = { packages = { \"greeter\" } }, policy = { on_missing_artifact = \"ignore\" } }\n")
 expect_fail_output("config rejects an unknown policy value" "on_missing_artifact"
                    "${SALT_BIN}" --root "${ROOT}" config check)
-file(WRITE "${ROOT}/etc/salt/system.toml" "[native]\npackages = [\"greeter\"]\n[policy]\nfrobnicate = true\n")
+file(WRITE "${ROOT}/etc/salt/system.lua" "return { native = { packages = { \"greeter\" } }, policy = { frobnicate = true } }\n")
 expect_fail_output("config rejects an unknown policy key" "unknown key"
                    "${SALT_BIN}" --root "${ROOT}" config check)
-file(WRITE "${ROOT}/etc/salt/system.toml" "[native]\npackages = [\"greeter\"]\n[native.pin]\nhello = \"1.0\"\n")
+file(WRITE "${ROOT}/etc/salt/system.lua" "return { native = { packages = { \"greeter\" }, pin = { hello = \"1.0\" } } }\n")
 expect_fail_output("config rejects a pin outside the native set" "not part of the declared native set"
                    "${SALT_BIN}" --root "${ROOT}" --yes config apply --relock)
-file(WRITE "${ROOT}/etc/salt/system.toml" "[native]\npackages = [\"greeter\"]\n[expose]\n\"nowhere/rg\" = \"rg\"\n")
+file(WRITE "${ROOT}/etc/salt/system.lua" "return { native = { packages = { \"greeter\" } }, expose = { [\"nowhere/rg\"] = \"rg\" } }\n")
 expect_fail_output("config apply reports an unknown expose stratum" "unknown stratum nowhere"
                    "${SALT_BIN}" --root "${ROOT}" --yes config apply --relock)
-file(WRITE "${ROOT}/etc/salt/system.toml" "[native]\npackages = [\"greeter\"]\n[expose]\nrg = \"rg\"\n")
+file(WRITE "${ROOT}/etc/salt/system.lua" "return { native = { packages = { \"greeter\" } }, expose = { rg = \"rg\" } }\n")
 expect_fail_output("config rejects a malformed expose key" "stratum/command"
                    "${SALT_BIN}" --root "${ROOT}" config check)
 
-file(WRITE "${ROOT}/etc/salt/system.toml" "[system]\nhostname = \"smoke\"\n[native]\npackages = [\"hello\"]\n")
+file(WRITE "${ROOT}/etc/salt/system.lua" "return { system = { hostname = \"smoke\" }, native = { packages = { \"hello\" } } }\n")
 execute_process(COMMAND "${SALT_BIN}" --root "${ROOT}" --yes config apply --relock COMMAND_ERROR_IS_FATAL ANY)
 if(NOT EXISTS "${ROOT}/usr/bin/hello" OR EXISTS "${ROOT}/usr/bin/greeter" OR EXISTS "${ROOT}/usr/bin/libgreet")
   message(FATAL_ERROR "config apply did not swap the native set back to hello")

@@ -6,6 +6,7 @@ add_executable(salt
   cmd_deploy.cpp
   cmd_repo.cpp
   cmd_build.cpp
+  cmd_eval.cpp
   cmd_trust.cpp
   cmd_stratum.cpp
   cmd_run.cpp

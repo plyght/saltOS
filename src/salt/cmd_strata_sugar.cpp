@@ -315,7 +315,7 @@ int ensure_stratum(const Options &o, const std::string &name, const std::string 
   if (path.empty()) {
     fprintf(stderr, "salt: no stratum '%s' and no built-in recipe to bootstrap it from.\n",
             name.c_str());
-    fprintf(stderr, "      add one explicitly with 'salt stratum add <recipe.toml>'\n");
+    fprintf(stderr, "      add one explicitly with 'salt stratum add <recipe.lua>'\n");
     salt_strata_db_close(db);
     return 1;
   }

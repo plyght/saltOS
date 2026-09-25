@@ -73,7 +73,7 @@ int cmd_sync(const Options &o, const std::vector<std::string> &args) {
   (void)args;
   RepoConf c = load_repo_conf(o);
   if (c.source.empty()) {
-    fprintf(stderr, "salt: no repository source configured (etc/salt/repo.conf or --repo)\n");
+    fprintf(stderr, "salt: no repository source configured (etc/salt/repo.lua or --repo)\n");
     return 1;
   }
   std::string idxp = index_path_for(o);
