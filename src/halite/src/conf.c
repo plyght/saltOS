@@ -65,10 +65,9 @@ static const char *host_arch(void) {
 /* Build the sandbox environment table on top of the stack. */
 static void push_env(lua_State *L) {
   static const char *const base_ok[] = {
-      "assert",  "error",        "ipairs",       "next",     "pairs",    "pcall",
-      "rawequal", "rawget",      "rawlen",       "rawset",   "select",   "tonumber",
-      "tostring", "type",        "xpcall",       "setmetatable", "getmetatable", "_VERSION",
-      NULL};
+      "assert", "error",        "ipairs",       "next",     "pairs",    "pcall",    "rawequal",
+      "rawget", "rawlen",       "rawset",       "select",   "tonumber", "tostring", "type",
+      "xpcall", "setmetatable", "getmetatable", "_VERSION", NULL};
   static const char *const libs_ok[] = {"string", "table", "math", "utf8", NULL};
 
   lua_newtable(L);
@@ -186,8 +185,7 @@ static salt_toml *convert(lua_State *L, int idx, int depth, const char *where) {
     case LUA_TTABLE:
       return convert_table(L, idx, depth, where);
     default:
-      salt_set_error("%s: a %s cannot be stored in configuration", where,
-                     luaL_typename(L, idx));
+      salt_set_error("%s: a %s cannot be stored in configuration", where, luaL_typename(L, idx));
       return NULL;
   }
 }

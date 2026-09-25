@@ -36,13 +36,17 @@ static const char *kFullLua =
     "-- every key salt-setup understands\n"
     "local lang = \"de\"\n"
     "return {\n"
-    "  system = { hostname = \"box\", locale = lang .. \"_DE.UTF-8\", timezone = \"Europe/Berlin\",\n"
+    "  system = { hostname = \"box\", locale = lang .. \"_DE.UTF-8\", timezone = "
+    "\"Europe/Berlin\",\n"
     "             keymap = \"de-latin1\", xkb_layout = lang },\n"
-    "  install = { disk = \"/dev/vda\", mode = \"alongside\", filesystem = \"ext4\", encrypt = true,\n"
+    "  install = { disk = \"/dev/vda\", mode = \"alongside\", filesystem = \"ext4\", encrypt = "
+    "true,\n"
     "              passphrase = \"secret\", swap = \"partition\", swap_size = \"2G\",\n"
     "              root_size = \"40G\", desktop = \"none\" },\n"
-    "  boot = { firmware = \"both\", os_prober = false, cmdline = \"console=ttyS0,115200\", shim = \"no\" },\n"
-    "  user = { name = \"alice\", password = \"pw\", root_password_hash = \"$6$abc\", shell = \"/bin/sh\",\n"
+    "  boot = { firmware = \"both\", os_prober = false, cmdline = \"console=ttyS0,115200\", shim = "
+    "\"no\" },\n"
+    "  user = { name = \"alice\", password = \"pw\", root_password_hash = \"$6$abc\", shell = "
+    "\"/bin/sh\",\n"
     "           sudo = false, autologin = true },\n"
     "  network = { mode = \"wifi\", wifi_ssid = \"home\", wifi_psk = \"psk\" },\n"
     "  kernel = { source = \"arch\" },\n"
@@ -89,7 +93,8 @@ static void test_full_config(void) {
 }
 
 static void test_legacy_toml(void) {
-  const char *toml = "[install]\ndisk = \"/dev/sdb\"\n\n[[stratum]]\nname = \"void\"\nrole = \"primary\"\n";
+  const char *toml =
+      "[install]\ndisk = \"/dev/sdb\"\n\n[[stratum]]\nname = \"void\"\nrole = \"primary\"\n";
   Config c;
   std::string err;
   CHECK(setup::load_config(toml, "system.toml", c, err), "legacy system.toml still loads");

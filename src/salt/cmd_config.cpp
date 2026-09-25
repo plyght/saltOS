@@ -588,8 +588,7 @@ static int apply_expose(const Options &o, const SystemConfig &cfg, const TxnFlag
     printf("unexposed %s (no longer in [expose])\n", e.alias);
   }
   if (rc == 0 && matched == cfg.expose.size() && !f.dry_run)
-    printf("expose: already matches system.lua (%zu alias%s)\n", matched,
-           matched == 1 ? "" : "es");
+    printf("expose: already matches system.lua (%zu alias%s)\n", matched, matched == 1 ? "" : "es");
   salt_exposed_list_free(&cur);
   salt_strata_db_close(db);
   return rc;

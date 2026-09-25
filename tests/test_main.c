@@ -446,16 +446,16 @@ static void test_conf_lua(void) {
     salt_toml_free(t);
   }
   const char *rejected[] = {
-      "return 1",                            /* not a table */
-      "return { 1, 2 }",                     /* a list at the top */
-      "return { x = 1.5 }",                  /* floats */
-      "return { f = print }",                /* functions */
-      "return { a = 1, 2 }",                 /* mixed table */
-      "return { x = os.getenv('HOME') }",    /* os is not in the sandbox */
-      "return { x = require('os') }",        /* no require */
-      "while true do end",                   /* instruction limit */
+      "return 1",                                    /* not a table */
+      "return { 1, 2 }",                             /* a list at the top */
+      "return { x = 1.5 }",                          /* floats */
+      "return { f = print }",                        /* functions */
+      "return { a = 1, 2 }",                         /* mixed table */
+      "return { x = os.getenv('HOME') }",            /* os is not in the sandbox */
+      "return { x = require('os') }",                /* no require */
+      "while true do end",                           /* instruction limit */
       "local t = {} for i = 1, 1e9 do t[i] = i end", /* memory limit */
-      "\x1bLua",                             /* no bytecode */
+      "\x1bLua",                                     /* no bytecode */
   };
   for (size_t i = 0; i < sizeof(rejected) / sizeof(rejected[0]); i++) {
     salt_toml *r = salt_conf_eval(rejected[i], strlen(rejected[i]), "bad.lua");
