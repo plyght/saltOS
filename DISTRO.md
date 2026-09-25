@@ -1359,16 +1359,18 @@ Decided:
 - **Boot contract:** `salt` is the sole authority over `/boot`, GRUB, and initramfs generation. The kernel is a declared, replaceable input (`[kernel] source`), defaulting to the native kernel, with no per-distro boot integration required.
 - **Reproducibility model:** declarative `system.toml` (intent) + fully pinned `system.lock.toml` (resolution); `salt config apply` reproduces a system. Source-level reproducibility for the native plane, content-pinned reinstall for foreign strata.
 
-Still open:
+- **Host rollback boot menu:** GRUB entries per deployment (see `docs/rollback.md`); no separate boot-environment selector.
+- **Package manager and builder:** one `salt` binary; `salt build` stays a subcommand.
+- **Recipe build phases:** shell. Known build systems (`autotools`, `cmake`, `meson`, …) supply the default incantation and an optional `script` covers the rest; `salt lint` and `salt trust scan` review it. No restricted build DSL.
+- **Native package scripts:** allowed only when declared and restricted. A recipe declares install hooks explicitly (`[hooks]` in `recipe.toml`); they run inside the target root with a fixed environment and no network, are recorded in the grain manifest, and every new or changed hook is flagged by `salt trust scan` and in review. Undeclared scripts are rejected.
+- **First desktop browser:** native. Helium ships as a native grain in the desktop stage; strata browsers remain installable and exposable.
+- **Strata desktop integration:** socket/GPU/audio passthrough plus host fonts, icon and cursor themes, GTK/Qt theme settings and the XDG desktop portal are shared into every stratum by default (read-only); MIME associations and host `/etc` stay isolated.
+- **First release signing:** the first public experimental release ships unsigned and says so; release and repository signing keys are introduced before any non-experimental release.
 
-- Should glibc remain the permanent host libc?
-- Should the package database use SQLite permanently?
-- Should native package scripts be banned entirely or allowed with strict declarations?
-- Should host rollback use GRUB snapshot boot entries or a custom deployment selector?
-- Should the native package manager and builder be one binary or separate tools?
-- Should native package recipes allow shell build phases or use a restricted build DSL?
-- Should the first desktop browser be native or stratum-backed?
-- How much desktop integration should strata get by default beyond the current socket/GPU passthrough?
+Still open (revisit after the first experimental release):
+
+- **Host libc:** glibc for now; a musl edition is not ruled out.
+- **Package database:** SQLite for now; revisit once real-world usage exists.
 
 ## 26. Definition of Success
 
