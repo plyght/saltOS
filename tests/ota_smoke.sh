@@ -33,6 +33,8 @@ sha256 = ""
 
 [build]
 system = "custom"
+# the test compares installed payloads byte-for-byte with the input binaries
+strip = false
 script = """
 $payload
 """

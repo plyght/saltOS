@@ -108,6 +108,63 @@ static int run_shell(const std::string &workdir, const std::string &script,
   return rc == 0 ? SALT_OK : SALT_ERR;
 }
 
+/* Post-install payload pass, run on the host over $SALT_DEST.
+ *
+ * Hardlinks: the grain format stores regular files and symlinks only, so every
+ * extra link to an inode would be packaged as a full copy (git's ~150
+ * hardlinked builtins alone were 2.6 GB). Keep the first path of each inode and
+ * turn the rest into relative symlinks to it.
+ *
+ * Strip: ELF files lose their debug info. Executables and shared objects get
+ * --strip-unneeded; the dynamic loader, libc, libpthread and libthread_db,
+ * static archives and objects only get --strip-debug (debuggers and the
+ * dynamic loader need their symbol tables). Kernel modules and firmware are
+ * left alone. $SALT_STRIP selects the strip binary; a file strip cannot handle
+ * (another architecture, an odd ELF) is left as it is. */
+static const char *kFinalizePayload = R"SH(
+set -u
+cd "$SALT_DEST" || exit 1
+find . -type f -links +1 -printf '%i %p\n' | sort -k1,1n -k2 | while read -r ino path; do
+  if [ "$ino" = "${seen:-}" ]; then
+    rm -f "$path" && ln -sr "$first" "$path"
+  else
+    seen=$ino first=$path
+  fi
+done
+[ "$DO_STRIP" = 1 ] || exit 0
+command -v "$STRIP" >/dev/null 2>&1 || { echo "salt: $STRIP not found; payload left unstripped" >&2; exit 0; }
+find . -type f ! -path './usr/lib/modules/*' ! -path './lib/modules/*' \
+  ! -path './usr/lib/firmware/*' ! -path './lib/firmware/*' ! -path './usr/lib/debug/*' |
+while read -r f; do
+  magic=$(head -c 4 "$f" 2>/dev/null | od -An -c | tr -d ' ')
+  case "$f" in
+    *.a) [ "$(head -c 7 "$f" 2>/dev/null)" = '!<arch>' ] || continue; mode=--strip-debug ;;
+    *) [ "$magic" = '177ELF' ] || continue
+       case "${f##*/}" in
+         ld-linux*|ld-*.so*|libc.so*|libc-*.so|libpthread*|libthread_db*|*.o) mode=--strip-debug ;;
+         *) mode=--strip-unneeded ;;
+       esac ;;
+  esac
+  perm=$(stat -c %a "$f")
+  chmod u+w "$f"
+  "$STRIP" "$mode" "$f" 2>/dev/null || true
+  chmod "$perm" "$f"
+done
+exit 0
+)SH";
+
+static int finalize_payload(const std::string &work, const std::string &dest, bool strip) {
+  std::string tmp = path_join(work, ".salt-finalize.sh");
+  if (salt_write_file(tmp.c_str(), kFinalizePayload, strlen(kFinalizePayload), 0755) != SALT_OK)
+    return SALT_ERR;
+  const char *s = getenv("SALT_STRIP");
+  std::string cmd = "SALT_DEST='" + dest + "' STRIP='" + std::string(s && *s ? s : "strip") +
+                    "' DO_STRIP=" + (strip ? "1" : "0") + " sh '" + tmp + "'";
+  int rc = system(cmd.c_str());
+  unlink(tmp.c_str());
+  return rc == 0 ? SALT_OK : SALT_ERR;
+}
+
 static std::string default_build(const std::string &system) {
   if (system == "autotools")
     return "./configure --prefix=/usr\nmake -j\"$SALT_JOBS\"\nmake DESTDIR=\"$SALT_DEST\" install";
@@ -274,6 +331,13 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
     return 1;
   }
   unlink(path_join(dest, "usr/share/info/dir").c_str());
+  bool do_strip = salt_toml_bool(t, "build.strip", true);
+  printf("==> finalizing payload (%s)\n", do_strip ? "hardlinks, strip" : "hardlinks, no strip");
+  if (finalize_payload(work, absdest, do_strip) != SALT_OK) {
+    fprintf(stderr, "salt: payload finalization failed\n");
+    salt_toml_free(t);
+    return 1;
+  }
 
   salt_pkg_meta meta;
   salt_pkg_meta_init(&meta);

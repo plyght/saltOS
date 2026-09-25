@@ -69,8 +69,8 @@ serial log prints `SALTOS_X_OK xorg + twm + xterm running, all from source, no D
 ## Left / known gaps
 
 - Local host has no `makeinfo`, so info-page related conflicts only appear in CI.
-- Binaries are not stripped; the native rootfs is ~6 GB (git-core alone 2.6 GB).
-  The builder has no strip step yet.
+- `salt build` now strips ELF payloads and turns hardlinks into symlinks (the rootfs
+  was ~6 GB unstripped, git-core alone 2.6 GB from hardlinked builtins).
 - selfhost-desktop proves Xorg + twm + xterm, not the LXQt + SDDM target stack.
 - Lint's clang-tidy needs clang >= 17 (`-std=gnu++23`); Ubuntu 24.04 default clang-tidy
   cannot run it locally, rely on the lint workflow.

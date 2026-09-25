@@ -91,6 +91,20 @@ unpinned or hashless sources are rejected.
 | `system` | string | One of `make`, `autotools`, `cmake`, `meson`, `kernel`, `custom`. |
 | `deps` | array of strings | Build-time dependencies. |
 | `script` | string | Optional build script. **Required when `system = "custom"`.** |
+| `strip` | bool | Default `true`. Set `false` to ship ELF files with their debug info. |
+
+After the build, `salt build` finalizes `$SALT_DEST` on the host before
+packaging:
+
+- **hardlinks** become relative symlinks to the first path of each inode (the
+  grain format stores files and symlinks only, so extra links would otherwise be
+  packaged as full copies);
+- **ELF files are stripped** unless `strip = false`: executables and shared
+  objects with `--strip-unneeded`; the dynamic loader, `libc`, `libpthread`,
+  `libthread_db`, objects and static archives with `--strip-debug`. Kernel
+  modules and firmware are untouched. `SALT_STRIP` names the strip binary
+  (default `strip`); files it cannot handle are left as they are;
+- `usr/share/info/dir` is removed (every texinfo package would ship it).
 
 For the well-known build systems, `salt build` knows the standard
 configure/build/install incantation, so `script` can be omitted. For
