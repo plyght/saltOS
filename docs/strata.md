@@ -230,6 +230,22 @@ its stratum, wiring up Wayland/X11 sockets, audio sockets, D-Bus session access,
 fonts, icons, and GPU device access according to the stratum's `[integration]`
 permissions.
 
+Every stratum also sees the host's desktop look, read-only and beside its own
+files (a stratum's own copies always win):
+
+| Host | Inside the stratum | Found through |
+| --- | --- | --- |
+| `/usr/share/fonts` | `/usr/local/share/fonts/saltos-host` | fontconfig's default `/usr/local/share/fonts` scan |
+| `/usr/share/icons` | `/usr/share/saltos-host/icons` | `XDG_DATA_DIRS`, `XCURSOR_PATH` (icon and cursor themes) |
+| `/usr/share/themes` | `/usr/share/saltos-host/themes` | `XDG_DATA_DIRS` (GTK themes) |
+
+`salt run` sets `XDG_DATA_DIRS=/usr/local/share:/usr/share:/usr/share/saltos-host`
+and appends the host icon dir to `XCURSOR_PATH`. Theme *settings*
+(`~/.config/gtk-3.0/settings.ini`, `gtk-4.0`, `qt6ct`, `kdeglobals`) come along
+with `/home`, and the XDG desktop portal (file choosers, screenshots, screen
+sharing) is reached over the session bus in `/run/user/<uid>`, which is shared.
+MIME associations and the rest of host `/etc` stay isolated.
+
 ## 7. Component providers and adoption
 
 Beyond running apps, a stratum can provide a system component that saltOS

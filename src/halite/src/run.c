@@ -113,6 +113,17 @@ static void salt_run_bind_file(const char *src, const char *dst_in_root) {
   free(dst);
 }
 
+/* Read-only variant for host assets a stratum may use but must not modify. */
+static void salt_run_bind_ro(const char *src, const char *dst_in_root) {
+  struct stat st;
+  if (stat(src, &st) != 0 || !S_ISDIR(st.st_mode)) return;
+  if (salt_run_bind_dir(src, dst_in_root) != 0) return;
+  char *dst = salt_run_full_path(dst_in_root);
+  if (!dst) return;
+  mount(NULL, dst, NULL, MS_BIND | MS_REMOUNT | MS_RDONLY, NULL);
+  free(dst);
+}
+
 static void salt_run_mount_proc(void) {
   char *proc = salt_run_full_path("/proc");
   if (!proc) {
@@ -162,6 +173,18 @@ static void salt_run_setup_mounts(const salt_run_opts *opts, bool bind_workdir) 
   salt_run_bind_dir("/opt", "/opt");
   salt_run_bind_dir("/mnt", "/mnt");
   salt_run_bind_dir("/media", "/media");
+
+  /* Desktop integration: host fonts, icon/cursor themes and GTK/Qt themes,
+   * read-only, beside (never over) the stratum's own. Fonts land under
+   * /usr/local/share/fonts, which every distro's fontconfig scans; icons and
+   * themes under /usr/share/saltos-host, appended to XDG_DATA_DIRS and
+   * XCURSOR_PATH at exec so the stratum's own copies still win. Theme
+   * *settings* (gtk-3.0/settings.ini, qt6ct, kdeglobals) live in ~/.config,
+   * which /home already shares; the XDG desktop portal is reached over the
+   * session bus in /run/user. */
+  salt_run_bind_ro("/usr/share/fonts", "/usr/local/share/fonts/saltos-host");
+  salt_run_bind_ro("/usr/share/icons", "/usr/share/saltos-host/icons");
+  salt_run_bind_ro("/usr/share/themes", "/usr/share/saltos-host/themes");
 
   salt_run_bind_file("/etc/resolv.conf", "/etc/resolv.conf");
   salt_run_bind_file("/etc/hosts", "/etc/hosts");
@@ -527,6 +550,20 @@ static void salt_run_child(const salt_stratum *s, const salt_run_opts *opts, cha
   if (run_user && run_user[0] != '\0') {
     setenv("USER", run_user, 1);
     setenv("LOGNAME", run_user, 1);
+  }
+
+  /* Host icons/themes (bound read-only in setup_mounts) come after the
+   * stratum's own data dirs. The host's own XDG_DATA_DIRS names host paths, so
+   * it is replaced rather than extended. */
+  setenv("XDG_DATA_DIRS", "/usr/local/share:/usr/share:/usr/share/saltos-host", 1);
+  {
+    const char *h = getenv("HOME");
+    char cursor[1024];
+    snprintf(cursor, sizeof(cursor),
+             "%s/.local/share/icons:%s/.icons:/usr/share/icons:/usr/share/pixmaps:"
+             "/usr/share/saltos-host/icons",
+             h ? h : "", h ? h : "");
+    setenv("XCURSOR_PATH", cursor, 1);
   }
 
   /* If the inherited $SHELL doesn't exist in the stratum (e.g. host /bin/bash

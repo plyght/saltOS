@@ -84,6 +84,20 @@ jobs:
           echo "::endgroup::"
           echo "$out" | grep -iq '${{ matrix.id }}'
 
+      - name: Host fonts, icon and GTK themes are shared read-only
+        run: |
+          salt=build/src/salt/salt
+          sudo mkdir -p /usr/share/fonts/saltos-ci /usr/share/icons/SaltCI /usr/share/themes/SaltCI
+          sudo touch /usr/share/fonts/saltos-ci/ci.ttf /usr/share/icons/SaltCI/index.theme /usr/share/themes/SaltCI/index.theme
+          sudo "$salt" run ${{ matrix.id }} /bin/sh -c '
+            set -e
+            test -f /usr/local/share/fonts/saltos-host/saltos-ci/ci.ttf
+            test -f /usr/share/saltos-host/icons/SaltCI/index.theme
+            test -f /usr/share/saltos-host/themes/SaltCI/index.theme
+            case "$XDG_DATA_DIRS" in *:/usr/share/saltos-host) ;; *) echo "XDG_DATA_DIRS=$XDG_DATA_DIRS"; exit 1 ;; esac
+            if touch /usr/share/saltos-host/icons/write-test 2>/dev/null; then echo "host icons are writable"; exit 1; fi
+          '
+
       - name: Refresh the foreign package manager
         run: |
           salt=build/src/salt/salt
