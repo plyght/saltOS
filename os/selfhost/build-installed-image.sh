@@ -151,7 +151,7 @@ fi
 # Optional: register the base as OTA-updatable grains. When REGISTER_BASE_GRAINS=1
 # (and SALT_BIN + OTA_URL are provided), build signed salt/saltos-base/kernel
 # grains, install them into the image so the package DB tracks the base at its
-# built version, and point repo.conf at the OTA source. Then `salt update` on the
+# built version, and point repo.lua at the OTA source. Then `salt update` on the
 # running system can replace the base in place. Off by default so the baked image
 # is unaffected; the same grains can also be produced standalone with
 # build-base-grains.sh and registered later.
@@ -167,12 +167,12 @@ if [ "${REGISTER_BASE_GRAINS:-0}" = 1 ] && [ -n "${SALT_BIN:-}" ] && [ -n "${OTA
   SALT="$SALT_BIN" SEC_KEY="$SEC" ARCH="$ARCH" VERSION="$VERSION" \
     OUT="$GREPO" WORK="$OUT/base-grains-work" ROOTFS="$MNT" KERNEL="$MNT/boot/$KERNEL_NAME" \
     sh "$(dirname "$0")/build-base-grains.sh"
-  printf 'repo = "current"\nsource = "file://%s/%s"\nkey = "%s"\n' "$GREPO" "$ARCH" "$PUBKEY" \
-    > "$MNT/etc/salt/repo.conf"
+  printf 'return {\n  repo = "current",\n  source = "file://%s/%s",\n  key = "%s",\n}\n' "$GREPO" "$ARCH" "$PUBKEY" \
+    > "$MNT/etc/salt/repo.lua"
   "$SALT_BIN" --root "$MNT" sync || true
   "$SALT_BIN" --root "$MNT" --yes install salt saltos-base linux-saltos || true
-  printf 'repo = "current"\nsource = "%s"\nkey = "%s"\n' "$OTA_URL" "$PUBKEY" \
-    > "$MNT/etc/salt/repo.conf"
+  printf 'return {\n  repo = "current",\n  source = "%s",\n  key = "%s",\n}\n' "$OTA_URL" "$PUBKEY" \
+    > "$MNT/etc/salt/repo.lua"
   echo "base registered as grains; OTA source set to $OTA_URL"
 fi
 

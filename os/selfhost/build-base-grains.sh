@@ -35,29 +35,36 @@ export SALT_OUT="$WORK/out"
 export SALT_WORK="$WORK/build"
 mkdir -p "$SALT_OUT" "$SALT_WORK"
 
+# Escape a value for use inside a double-quoted Lua string.
+lua_str() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+
 # --- salt grain ------------------------------------------------------------
 stage="$WORK/stage-salt"; mkdir -p "$stage"
 cp "$SALT" "$stage/salt"
-cat > "$WORK/salt.recipe.toml" <<EOF
-name = "salt"
-version = "$VERSION"
-release = 1
-summary = "saltOS package manager and stratum runtime"
-license = "MIT"
-arch = ["x86_64", "aarch64"]
-[source]
-url = "file://$stage"
-sha256 = ""
-[build]
-system = "custom"
-script = """
+cat > "$WORK/salt.recipe.lua" <<EOF
+return {
+  name = "salt",
+  version = "$(lua_str "$VERSION")",
+  release = 1,
+  summary = "saltOS package manager and stratum runtime",
+  license = "MIT",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "file://$(lua_str "$stage")",
+    sha256 = "",
+  },
+  build = {
+    system = "custom",
+    script = [[
 mkdir -p "\$SALT_DEST/usr/bin"
 cp "\$SALT_SRC/salt" "\$SALT_DEST/usr/bin/salt"
 chmod 0755 "\$SALT_DEST/usr/bin/salt"
-"""
-[package]
+]],
+  },
+  package = {},
+}
 EOF
-"$SALT" build "$WORK/salt.recipe.toml"
+"$SALT" build "$WORK/salt.recipe.lua"
 
 # --- saltos-base grain (config layer) -------------------------------------
 # If a ROOTFS is given, assemble the base config payload from it (the runit
@@ -73,31 +80,35 @@ if [ -z "${BASE_SRC:-}" ] && [ -n "${ROOTFS:-}" ] && [ -d "$ROOTFS" ]; then
       cp -a "$ROOTFS/$p" "$BASE_SRC/$p"
     fi
   done
-  # Never ship host/OTA-specific state in the base grain -- repo.conf (the OTA
+  # Never ship host/OTA-specific state in the base grain -- repo.lua (the OTA
   # source + trusted key) and any local DB are per-install and must survive a
   # `salt update` of saltos-base, not be overwritten by it.
-  rm -f "$BASE_SRC/etc/salt/repo.conf"
+  rm -f "$BASE_SRC/etc/salt/repo.lua" "$BASE_SRC/etc/salt/repo.conf"
   rm -rf "$BASE_SRC/etc/salt/db" "$BASE_SRC/var"
 fi
 if [ -n "${BASE_SRC:-}" ] && [ -d "$BASE_SRC" ]; then
-  cat > "$WORK/saltos-base.recipe.toml" <<EOF
-name = "saltos-base"
-version = "$VERSION"
-release = 1
-summary = "saltOS base config: runit services, console login, defaults"
-license = "MIT"
-arch = ["x86_64", "aarch64"]
-[source]
-url = "file://$BASE_SRC"
-sha256 = ""
-[build]
-system = "custom"
-script = """
+  cat > "$WORK/saltos-base.recipe.lua" <<EOF
+return {
+  name = "saltos-base",
+  version = "$(lua_str "$VERSION")",
+  release = 1,
+  summary = "saltOS base config: runit services, console login, defaults",
+  license = "MIT",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "file://$(lua_str "$BASE_SRC")",
+    sha256 = "",
+  },
+  build = {
+    system = "custom",
+    script = [[
 cp -a "\$SALT_SRC/." "\$SALT_DEST/"
-"""
-[package]
+]],
+  },
+  package = {},
+}
 EOF
-  "$SALT" build "$WORK/saltos-base.recipe.toml"
+  "$SALT" build "$WORK/saltos-base.recipe.lua"
 fi
 
 # --- kernel grain (optional) ----------------------------------------------
@@ -114,46 +125,54 @@ if [ -n "${KERNEL_TREE:-}" ] && [ -n "${KERNEL_RELEASE:-}" ]; then
   [ -d "$KERNEL_TREE/usr/lib/modules/$KERNEL_RELEASE" ] && \
     cp -a "$KERNEL_TREE/usr/lib/modules/$KERNEL_RELEASE" "$kstage/usr/lib/modules/"
   KVERSION="${KERNEL_VERSION:-$(printf '%s' "$KERNEL_RELEASE" | sed -E 's/[_-].*//')}"
-  cat > "$WORK/linux-saltos.recipe.toml" <<EOF
-name = "linux-saltos"
-version = "$KVERSION"
-release = 1
-summary = "saltOS Linux kernel $KERNEL_RELEASE with modules"
-license = "GPL-2.0"
-arch = ["x86_64", "aarch64"]
-[source]
-url = "file://$kstage"
-sha256 = ""
-[build]
-system = "custom"
-script = """
+  cat > "$WORK/linux-saltos.recipe.lua" <<EOF
+return {
+  name = "linux-saltos",
+  version = "$(lua_str "$KVERSION")",
+  release = 1,
+  summary = "saltOS Linux kernel $(lua_str "$KERNEL_RELEASE") with modules",
+  license = "GPL-2.0",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "file://$(lua_str "$kstage")",
+    sha256 = "",
+  },
+  build = {
+    system = "custom",
+    script = [[
 cp -a "\$SALT_SRC/." "\$SALT_DEST/"
-"""
-[package]
+]],
+  },
+  package = {},
+}
 EOF
-  "$SALT" build "$WORK/linux-saltos.recipe.toml"
+  "$SALT" build "$WORK/linux-saltos.recipe.lua"
 elif [ -n "${KERNEL:-}" ] && [ -f "$KERNEL" ]; then
   kstage="$WORK/stage-kernel"; mkdir -p "$kstage/boot"
   cp "$KERNEL" "$kstage/boot/$(basename "$KERNEL")"
-  cat > "$WORK/linux-saltos.recipe.toml" <<EOF
-name = "linux-saltos"
-version = "$VERSION"
-release = 1
-summary = "saltOS Linux kernel image"
-license = "GPL-2.0"
-arch = ["x86_64", "aarch64"]
-[source]
-url = "file://$kstage"
-sha256 = ""
-[build]
-system = "custom"
-script = """
+  cat > "$WORK/linux-saltos.recipe.lua" <<EOF
+return {
+  name = "linux-saltos",
+  version = "$(lua_str "$VERSION")",
+  release = 1,
+  summary = "saltOS Linux kernel image",
+  license = "GPL-2.0",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "file://$(lua_str "$kstage")",
+    sha256 = "",
+  },
+  build = {
+    system = "custom",
+    script = [[
 mkdir -p "\$SALT_DEST/boot"
 cp -a "\$SALT_SRC/boot/." "\$SALT_DEST/boot/"
-"""
-[package]
+]],
+  },
+  package = {},
+}
 EOF
-  "$SALT" build "$WORK/linux-saltos.recipe.toml"
+  "$SALT" build "$WORK/linux-saltos.recipe.lua"
 fi
 
 # --- publish a signed repo -------------------------------------------------

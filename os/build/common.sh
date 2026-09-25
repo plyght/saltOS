@@ -24,7 +24,7 @@ saltos_install_controlplane() {
   # var/lib/salt must exist or the strata/native sqlite DBs can't be created.
   mkdir -p "$ROOTFS/etc/salt/strata" "$ROOTFS/usr/local/salt/shims" \
     "$ROOTFS/strata" "$ROOTFS/var/lib/salt"
-  cp "$REPO"/strata/*.toml "$ROOTFS/etc/salt/strata/" 2>/dev/null || true
+  cp "$REPO"/strata/*.lua "$ROOTFS/etc/salt/strata/" 2>/dev/null || true
   # Put the shim dir on PATH for EVERY shell, not just login shells. profile.d
   # only covers login shells (qterminal), so non-login interactive shells (kitty,
   # tmux, IDE terminals) wouldn't see exposed commands. Cover all of them:
@@ -41,8 +41,8 @@ PATH=/usr/local/salt/shims:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbi
 EOF
 }
 
-# Write salt.conf. saltOS images opt into exposing stratum commands globally by
-# default: expose_pm + expose_all + auto_expose=always means installing a tool
+# Write salt.lua and repo.lua. saltOS images opt into exposing stratum commands
+# globally by default: expose_pm + expose_all + auto_expose=always means installing a tool
 # in any stratum makes it a host command automatically.
 saltos_write_config() {
   OTA_SOURCE="${OTA_SOURCE:-$OTA_CHANNEL_URL}"
@@ -53,28 +53,30 @@ saltos_write_config() {
       OTA_KEY=/etc/salt/keys/ota.pub
     fi
   fi
-  cat > "$ROOTFS/etc/salt/repo.conf" <<EOF
-repo = "current"
-source = "${OTA_SOURCE:-}"
-key = "${OTA_KEY:-}"
+  printf 'return {\n  repo = "current",\n  source = "%s",\n  key = "%s",\n}\n' \
+    "$(saltos_lua_escape "${OTA_SOURCE:-}")" "$(saltos_lua_escape "${OTA_KEY:-}")" \
+    > "$ROOTFS/etc/salt/repo.lua"
+  cat > "$ROOTFS/etc/salt/salt.lua" <<'EOF'
+return {
+  install = { auto_expose = "always" },
+  strata = {
+    expose_pm = true,
+    expose_all = true,
+    auto_service = true,
+  },
+  ota = {
+    enabled = true,
+    interval = "86400",
+    reboot_on_kernel = false,
+  },
+  deploy = { keep = 5 },
+}
 EOF
-  cat > "$ROOTFS/etc/salt/salt.conf" <<'EOF'
-[install]
-auto_expose = "always"
+}
 
-[strata]
-expose_pm = true
-expose_all = true
-auto_service = true
-
-[ota]
-enabled = true
-interval = "86400"
-reboot_on_kernel = false
-
-[deploy]
-keep = 5
-EOF
+# Escape a value for use inside a double-quoted Lua string.
+saltos_lua_escape() {
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
 # Passwordless sudo for the salt binary. This is what lets salt self-escalate

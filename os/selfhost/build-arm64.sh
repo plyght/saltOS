@@ -147,16 +147,17 @@ done
 install -Dm755 "$SALT_STATIC" "$ROOTFS/usr/bin/salt"
 install -Dm755 "$REPO/os/selfhost/saltos-install" "$ROOTFS/usr/bin/saltos-install"
 mkdir -p "$ROOTFS/etc/salt/strata" "$ROOTFS/usr/local/salt/shims" "$ROOTFS/etc/profile.d"
-cp "$REPO"/strata/*.toml "$ROOTFS/etc/salt/strata/" 2>/dev/null || true
+cp "$REPO"/strata/*.lua "$ROOTFS/etc/salt/strata/" 2>/dev/null || true
 install -Dm644 "$REPO/os/profile.d/salt-shims.sh" "$ROOTFS/etc/profile.d/salt-shims.sh"
-cat > "$ROOTFS/etc/salt/salt.conf" <<'EOF'
-[install]
-auto_expose = "always"
-
-[strata]
-expose_pm = true
-expose_all = true
-auto_service = true
+cat > "$ROOTFS/etc/salt/salt.lua" <<'EOF'
+return {
+  install = { auto_expose = "always" },
+  strata = {
+    expose_pm = true,
+    expose_all = true,
+    auto_service = true,
+  },
+}
 EOF
 
 # salt's current fetch path shells out to `curl -fsSL`. The self-host proof base
@@ -375,10 +376,12 @@ ln -sf /etc/runit/sv/boot-check "$ROOTFS/etc/runit/runsvdir/current/boot-check"
 ln -sf /sbin/runit-init "$ROOTFS/init"
 
 mkdir -p "$ROOTFS/etc/salt"
-cat > "$ROOTFS/etc/salt/repo.conf" <<'EOF'
-repo = "current"
-source = ""
-key = ""
+cat > "$ROOTFS/etc/salt/repo.lua" <<'EOF'
+return {
+  repo = "current",
+  source = "",
+  key = "",
+}
 EOF
 
 echo "===== sanity: init shell must be static ====="

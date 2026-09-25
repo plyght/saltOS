@@ -129,43 +129,42 @@ chmod +x "$ROOTFS/etc/runit/sv/netdhcp/run"
 enable_sv netdhcp
 
 mkdir -p "$ROOTFS/etc/salt"
-cat > "$ROOTFS/etc/salt/repo.conf" <<EOF
-repo = "current"
-source = "$OTA_SOURCE"
-key = "/etc/salt/keys/ota.pub"
-EOF
+printf 'return {\n  repo = "current",\n  source = "%s",\n  key = "/etc/salt/keys/ota.pub",\n}\n' \
+  "$(saltos_lua_escape "$OTA_SOURCE")" > "$ROOTFS/etc/salt/repo.lua"
 mkdir -p "$ROOTFS/etc/salt/keys"
 if [ -s "$OTA_PUBKEY" ]; then
   install -Dm644 "$OTA_PUBKEY" "$ROOTFS/etc/salt/keys/ota.pub"
 else
   : > "$ROOTFS/etc/salt/keys/ota.pub"
 fi
-cat > "$ROOTFS/etc/salt/salt.conf" <<'EOF'
-[install]
-auto_expose = "always"
-
-[strata]
-expose_pm = true
-expose_all = true
-auto_service = true
-
-[ota]
-enabled = true
-interval = "86400"
-reboot_on_kernel = false
-ab = true
-
-[deploy]
-keep = 5
+cat > "$ROOTFS/etc/salt/salt.lua" <<'EOF'
+return {
+  install = { auto_expose = "always" },
+  strata = {
+    expose_pm = true,
+    expose_all = true,
+    auto_service = true,
+  },
+  ota = {
+    enabled = true,
+    interval = "86400",
+    reboot_on_kernel = false,
+    ab = true,
+  },
+  deploy = { keep = 5 },
+}
 EOF
-cat > "$ROOTFS/etc/salt/boot.conf" <<EOF
-[boot]
-loader = "tryboot"
-title = "saltOS $VERSION"
-root_label = "saltos-root"
-root_subvol = "@"
-snapshots_subvol = "@snapshots"
-tryboot_tool = "/usr/lib/saltos/ab-update.sh"
+cat > "$ROOTFS/etc/salt/boot.lua" <<EOF
+return {
+  boot = {
+    loader = "tryboot",
+    title = "$(saltos_lua_escape "saltOS $VERSION")",
+    root_label = "saltos-root",
+    root_subvol = "@",
+    snapshots_subvol = "@snapshots",
+    tryboot_tool = "/usr/lib/saltos/ab-update.sh",
+  },
+}
 EOF
 mkdir -p "$ROOTFS/etc/salt/health.d"
 

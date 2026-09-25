@@ -5,7 +5,15 @@ prog=${0##*/}
 SALT=${SALT_BIN:-salt}
 AB=${SALTOS_AB_TOOL:-/usr/lib/saltos/ab-update.sh}
 STATE_DIR=${SALT_STATE_DIR:-/var/lib/salt}
-CONF=${SALTOS_CONF:-/etc/salt/salt.conf}
+# salt.lua is the config; systems installed before the Lua switch only have the
+# legacy TOML salt.conf, which is still read when salt.lua is absent.
+if [ -n "${SALTOS_CONF:-}" ]; then
+	CONF=$SALTOS_CONF
+elif [ ! -f /etc/salt/salt.lua ] && [ -f /etc/salt/salt.conf ]; then
+	CONF=/etc/salt/salt.conf
+else
+	CONF=/etc/salt/salt.lua
+fi
 LOG=${SALTOS_OTA_LOG:-/var/log/salt-ota.log}
 LOCK=${SALTOS_OTA_LOCK:-/run/salt-ota.lock}
 STATE=${SALTOS_OTA_STATE:-$STATE_DIR/ota-state}
@@ -44,13 +52,20 @@ run_logged() {
 conf_val() {
 	key=$1; def=$2
 	[ -f "$CONF" ] || { echo "$def"; return; }
-	v=$(awk -F= -v k="$key" '
-		/^[[:space:]]*\[/ { sect=$0; gsub(/[][[:space:]]/, "", sect) }
-		sect == "ota" && $1 ~ "^[[:space:]]*"k"[[:space:]]*$" {
-			gsub(/^[[:space:]]*"|"[[:space:]]*$/, "", $2);
-			gsub(/^[[:space:]]*|[[:space:]]*$/, "", $2);
-			print $2; exit
-		}' "$CONF" 2>/dev/null)
+	case $CONF in
+	*.lua)
+		v=$("$SALT" eval "$CONF" "ota.$key" 2>/dev/null) || v=
+		;;
+	*)
+		v=$(awk -F= -v k="$key" '
+			/^[[:space:]]*\[/ { sect=$0; gsub(/[][[:space:]]/, "", sect) }
+			sect == "ota" && $1 ~ "^[[:space:]]*"k"[[:space:]]*$" {
+				gsub(/^[[:space:]]*"|"[[:space:]]*$/, "", $2);
+				gsub(/^[[:space:]]*|[[:space:]]*$/, "", $2);
+				print $2; exit
+			}' "$CONF" 2>/dev/null)
+		;;
+	esac
 	[ -n "$v" ] && echo "$v" || echo "$def"
 }
 
@@ -262,7 +277,7 @@ usage: $prog <command>
   run [--reboot|--no-reboot]
             sync, apply all updates atomically (salt snapshots the root before
             the transaction and reverts it on failure); arm a new kernel/root
-            for one trial boot and reboot according to [ota] reboot_on_kernel
+            for one trial boot and reboot according to ota.reboot_on_kernel
   check     sync and report available updates without applying them
   status    show OTA configuration, last run, boot trial state and deployments
   confirm [--fallback]

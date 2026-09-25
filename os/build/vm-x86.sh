@@ -113,18 +113,21 @@ mkdir -p "$ROOTFS/etc/sv"
 cp -a "$REPO/os/runit/sv/salt-update" "$ROOTFS/etc/sv/salt-update"
 [ -z "$OTA_SERVICE_CONF" ] || printf '%s\n' "$OTA_SERVICE_CONF" > "$ROOTFS/etc/sv/salt-update/conf"
 mkdir -p "$ROOTFS/etc/salt/health.d"
-cat > "$ROOTFS/etc/salt/boot.conf" <<EOF
-[boot]
-loader = "grub"
-title = "saltOS $VERSION"
-root_label = "$ROOT_LABEL"
-root_subvol = "@"
-snapshots_subvol = "@snapshots"
-cmdline = "rootwait rw console=tty0 console=ttyS0,115200 loglevel=4 net.ifnames=0 panic=30"
-serial = "--unit=0 --speed=115200"
-grubenv = "/boot/efi/EFI/saltos/grubenv"
-grubenv_label = "saltos-esp"
-timeout = 3
+cat > "$ROOTFS/etc/salt/boot.lua" <<EOF
+return {
+  boot = {
+    loader = "grub",
+    title = "$(saltos_lua_escape "saltOS $VERSION")",
+    root_label = "$(saltos_lua_escape "$ROOT_LABEL")",
+    root_subvol = "@",
+    snapshots_subvol = "@snapshots",
+    cmdline = "rootwait rw console=tty0 console=ttyS0,115200 loglevel=4 net.ifnames=0 panic=30",
+    serial = "--unit=0 --speed=115200",
+    grubenv = "/boot/efi/EFI/saltos/grubenv",
+    grubenv_label = "saltos-esp",
+    timeout = 3,
+  },
+}
 EOF
 
 echo "==> creating user 'salt' (passwordless sudo)"
@@ -245,14 +248,15 @@ if [ -n "$OTA_SIGNING_KEY" ]; then
     OUT="$OTA_STAGE/base-repo" WORK="$WORK/base-grains" \
     KERNEL_TREE="$ROOTFS" KERNEL_RELEASE="$KVER" \
     sh "$REPO/os/selfhost/build-base-grains.sh"
-  cp "$ROOTFS/etc/salt/repo.conf" "$WORK/repo.conf"
-  printf 'repo = "current"\nsource = "file://%s"\nkey = "%s"\n' "$OTA_STAGE/base-repo" "${OTA_KEY:-}" \
-    > "$ROOTFS/etc/salt/repo.conf"
+  cp "$ROOTFS/etc/salt/repo.lua" "$WORK/repo.lua"
+  printf 'return {\n  repo = "current",\n  source = "file://%s",\n  key = "%s",\n}\n' \
+    "$(saltos_lua_escape "$OTA_STAGE/base-repo")" "$(saltos_lua_escape "${OTA_KEY:-}")" \
+    > "$ROOTFS/etc/salt/repo.lua"
   rm -rf "$ROOTFS/usr/bin/salt" "$ROOTFS/boot/vmlinuz-$KVER" "$ROOTFS/boot/initramfs-$KVER.img" \
     "$ROOTFS/usr/lib/modules/$KVER"
   "$SALT_BIN" --root "$ROOTFS" sync
   "$SALT_BIN" --root "$ROOTFS" --yes install salt linux-saltos
-  cp "$WORK/repo.conf" "$ROOTFS/etc/salt/repo.conf"
+  cp "$WORK/repo.lua" "$ROOTFS/etc/salt/repo.lua"
   rm -rf "$ROOTFS/var/lib/salt/cache" "$ROOTFS/var/cache/salt"
 fi
 

@@ -193,7 +193,7 @@ def wait_network(ser, url, timeout):
 
 
 def set_repo(ser, url):
-    ser.run("sudo -n sed -i 's#^source = .*#source = \"%s\"#' /etc/salt/repo.conf" % url, check=0)
+    ser.run("sudo -n sed -i 's#^\\([[:space:]]*\\)source = .*#\\1source = \"%s\",#' /etc/salt/repo.lua" % url, check=0)
 
 
 def main():
@@ -233,7 +233,7 @@ def main():
         _, out = ser.run("sudo -n salt deployments", check=0)
         expect("install" in out, "factory deployment recorded")
         _, out = ser.run("sudo -n salt-ota status", check=0)
-        expect(re.search(r"ota.enabled\s*: true", out) is not None, "OTA enabled in salt.conf")
+        expect(re.search(r"ota.enabled\s*: true", out) is not None, "OTA enabled in salt.lua")
         expect(re.search(r"pending:\s+none", out) is not None, "no pending kernel before update")
         ser.run("sudo -n salt boot status", check=0)
         wait_network(ser, good + "/", 180)

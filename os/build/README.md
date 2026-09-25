@@ -47,7 +47,7 @@ Common env knobs: `EDITION` (`console`|`desktop`|`installer`), `VERSION`,
 
 ## Exposed commands work from any user, sudo-free
 
-`salt.conf` enables `expose_all`, so installing a tool in any stratum makes it a
+`salt.lua` enables `expose_all`, so installing a tool in any stratum makes it a
 host command automatically. Running an exposed command (e.g. `nvim`) uses an
 **unprivileged user namespace** — no sudo, no root — and runs as *you*, with your
 real uid and files owned by you, exactly like a normal command.

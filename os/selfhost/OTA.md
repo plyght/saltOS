@@ -35,7 +35,7 @@ Releases, and deploys the signed index to GitHub Pages at
 ## Make an image ship a grain-tracked base
 
 Build the installed image with registration enabled so its package DB tracks the
-base at its built version and `repo.conf` points at your OTA host:
+base at its built version and `/etc/salt/repo.lua` points at your OTA host:
 
 ```sh
 REGISTER_BASE_GRAINS=1 \
@@ -48,7 +48,7 @@ OTA_KEY=$SEC \
 If `OTA_KEY` is omitted a keypair is generated and saved next to the image —
 keep the `.sec` to sign future pushes. With registration off (default), the base
 is baked into the image as before; you can still migrate a running system to
-grain-tracking later by pointing `repo.conf` at the repo and
+grain-tracking later by pointing `/etc/salt/repo.lua` at the repo and
 `salt install salt saltos-base linux-saltos`.
 
 To package a complete kernel (vmlinuz + initramfs + modules) from an installed
@@ -69,7 +69,7 @@ salt rollback [N] # previous generation becomes the root again; reboot
 
 `salt update` selects the **newest** version in the index (natural version
 compare), verifies every grain's hash and signature against the key in
-`repo.conf`, and rejects a tampered/unsigned index or grain leaving the system
+`/etc/salt/repo.lua`, and rejects a tampered/unsigned index or grain leaving the system
 unchanged. Verified end-to-end in QEMU by `os/ota/test-qemu.sh` (workflow
 `ota`): factory image with `salt` + `linux-saltos` registered as grains, a
 newer `salt` and kernel published with `ship.sh`, `salt-ota run`, trial boot of

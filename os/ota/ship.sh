@@ -2,7 +2,7 @@
 # One-command OTA publish: from a salt binary (and optional kernel), build the
 # signed base-grain repo and serve it over HTTP -- keygen, grain build, sign and
 # serve in a single step. The matching client side is one command too: `salt
-# update` (after a one-time repo.conf; see docs/ota.md).
+# update` (after a one-time repo.lua; see docs/ota.md).
 #
 #   SALT=build/src/salt/salt sh os/ota/ship.sh
 #   SALT=... KERNEL=out/Image VERSION=0.1.2 PORT=8099 sh os/ota/ship.sh ./ota-repo
@@ -39,7 +39,7 @@ ARCH=$("$SALT" --version | sed -E 's/.*\((.*)\)/\1/')
 cat <<EOF
 ship: published $REPO ($ARCH), version $VERSION.
 ship: point a client at it (one time):
-        printf 'repo = "current"\\nsource = "http://<this-host>:$PORT"\\nkey = "/etc/salt/keys/ota.pub"\\n' > /etc/salt/repo.conf
+        printf 'return {\\n  repo = "current",\\n  source = "http://<this-host>:$PORT",\\n  key = "/etc/salt/keys/ota.pub",\\n}\\n' > /etc/salt/repo.lua
         # copy $KEYS/ota.pub to the client's /etc/salt/keys/ota.pub
 ship: then on the client just run:  salt update
 EOF
