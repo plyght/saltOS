@@ -40,7 +40,7 @@ configuration in the user's home directory untouched. The exact layout can
 evolve, but the invariant — rollback must not destroy user data by default —
 does not.
 
-The subvolume names are configured in `/etc/salt/boot.conf` (`root_subvol`,
+The subvolume names are configured in `/etc/salt/boot.lua` (`root_subvol`,
 `snapshots_subvol`); the image builders write them together with the root
 label and the kernel command line.
 
@@ -62,7 +62,7 @@ transaction. The lifecycle is:
 5. **Finish.** On success the transaction is marked succeeded, the packages that
    changed (`txn_changes`) and the kernel the deployment carries (`txn_meta`)
    are recorded, the bootloader menu is regenerated, and snapshots beyond
-   `[deploy] keep` (default 5) are pruned — pinned deployments are never pruned.
+   `deploy.keep` in `salt.lua` (default 5) are pruned — pinned deployments are never pruned.
    On any failure, the transaction is rolled back **automatically**: every file
    it touched is put back from the per-transaction backup
    (`salt_txn_revert_files`) and the database changes are reverted,
@@ -195,7 +195,7 @@ Previous deployments
 Each "previous deployment" entry boots the kernel and initramfs *inside* that
 snapshot with `rootflags=subvol=@snapshots/root-N`, so it works even if the
 kernel in `@` is broken. Deployments whose transaction failed are not listed;
-entries are capped by `max_snapshots` in `boot.conf`.
+entries are capped by `max_snapshots` in `boot.lua`.
 
 Kernel upgrades are armed rather than switched: `salt boot try` writes
 `saltos_try=1`, `saltos_try_entry` and `saltos_pending` to the GRUB environment

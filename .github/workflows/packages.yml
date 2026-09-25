@@ -43,7 +43,7 @@ jobs:
           export PATH="$PWD/build/src/salt:$PATH"
           status=0
           for dir in recipes/*/; do
-            [ -f "$dir/recipe.toml" ] || continue
+            [ -f "$dir/recipe.lua" ] || continue
             echo "::group::lint $dir"
             salt lint "$dir" || status=1
             echo "::endgroup::"
@@ -55,7 +55,7 @@ jobs:
           export PATH="$PWD/build/src/salt:$PATH"
           ready=0; pending=0
           for dir in recipes/*/; do
-            [ -f "$dir/recipe.toml" ] || continue
+            [ -f "$dir/recipe.lua" ] || continue
             if salt trust admit "$dir" >/dev/null 2>&1; then
               ready=$((ready+1))
             else
@@ -72,7 +72,7 @@ jobs:
           export SALT_OUT="$PWD/out"
           built=0; failed=0
           for dir in recipes/*/; do
-            [ -f "$dir/recipe.toml" ] || continue
+            [ -f "$dir/recipe.lua" ] || continue
             echo "::group::build $dir"
             if salt build "$dir"; then
               built=$((built+1))

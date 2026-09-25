@@ -14,8 +14,8 @@ installed from the GUI and one installed from the console are identical.
 
 | installer | media | how it runs |
 |---|---|---|
-| `salt-setup` (text) | console/base ISO (autostarts), desktop ISO ("Install saltOS (text installer)" launcher or any terminal), any SSH session | interactive prompts, or fully non-interactive with `--from system.toml` |
-| Calamares (GUI) | desktop live ISO ("Install saltOS" launcher, `saltos-installer`) | Calamares collects the answers, partitions and mounts; its `saltos_setup` job writes `system.toml` and runs `salt-setup --from … --target … --yes` |
+| `salt-setup` (text) | console/base ISO (autostarts), desktop ISO ("Install saltOS (text installer)" launcher or any terminal), any SSH session | interactive prompts, or fully non-interactive with `--from system.lua` |
+| Calamares (GUI) | desktop live ISO ("Install saltOS" launcher, `saltos-installer`) | Calamares collects the answers, partitions and mounts; its `saltos_setup` job writes `system.lua` and runs `salt-setup --from … --target … --yes` |
 
 ## What saltOS owns vs. what the chosen distro provides
 
@@ -43,11 +43,12 @@ path, boot breaks.
 
 The kernel that fills that contract is a *replaceable, declared input*:
 
-```toml
-[kernel]
-source = "native"        # default: the saltOS native kernel package
-# source = "stratum:arch" # advanced: take the kernel from a chosen stratum
-# version = "6.12.30"     # pin a specific native kernel
+```lua
+  kernel = {
+    source = "native",          -- default: the saltOS native kernel package
+    -- source = "stratum:arch", -- advanced: take the kernel from a chosen stratum
+    -- version = "6.12.30",     -- pin a specific native kernel
+  },
 ```
 
 Default is the native kernel. Advanced users may point the kernel slot at a
@@ -65,14 +66,18 @@ Build and CI scripts remain in shell; OS runtime logic does not.
 
 ```
 salt-setup                          # interactive: every option below is asked
-salt-setup --from system.toml       # non-interactive: every answer comes from the file
-salt-setup --profile base.toml      # preseed the prompt defaults; every question is still asked
+salt-setup --from system.lua        # non-interactive: every answer comes from the file
+salt-setup --profile base.lua       # preseed the prompt defaults; every question is still asked
 salt-setup --set install.disk=/dev/nvme0n1 --set user.name=alice
-salt-setup --from cfg.toml --target /mnt/root --yes   # already partitioned + mounted (Calamares path)
+salt-setup --from cfg.lua --target /mnt/root --yes    # already partitioned + mounted (Calamares path)
 salt-setup --dump-config            # print the effective configuration and exit
 ```
 
-Option parsing, TOML parsing/serialisation and validation live in
+The answer file is sandboxed Lua that returns a table, evaluated exactly like
+recipes and `/etc/salt/system.lua` (no file, command or network access; see
+[recipes.md](recipes.md#the-configuration-sandbox)); `salt eval system.lua`
+prints what `salt-setup` will read. Option parsing, Lua config
+loading/serialisation and validation live in
 `src/setup/config.{hpp,cpp}` and are covered by `tests/setup_config_test.cpp`.
 Every interactive question has a key in the file, so headless installs over SSH
 (`docs/headless-vm-ssh.md`) and preseeded profiles (`--profile`, used by the
@@ -80,53 +85,58 @@ opinionated-ISO track) need no prompts.
 
 ### Configuration reference
 
-```toml
-[system]
-hostname = "saltos"
-locale   = "en_US.UTF-8"
-timezone = "Europe/Berlin"
-keymap   = "de"              # console keymap; X/Wayland layout is derived
-# xkb_layout  = "de"         # override the derived X layout
-# xkb_variant = "nodeadkeys"
-
-[install]
-disk       = "/dev/nvme0n1"  # target disk (erase / alongside)
-mode       = "erase"         # erase | alongside | mounted
-filesystem = "btrfs"         # btrfs (default, snapshots) | ext4
-encrypt    = false           # LUKS2 full-disk encryption of the root
-# passphrase      = "..."    # or passphrase_file = "/run/secret"
-swap       = "none"          # none | file | partition | zram
-swap_size  = "auto"          # auto (≈RAM, capped) or e.g. "8G"
-# swap_device = "/dev/sda3"  # required for swap = "partition" with mode = "mounted"
-# root_size = "120G"         # alongside: size of the new root partition
-desktop    = "auto"          # auto | keep (what the live media runs) | none
-
-[boot]
-firmware  = "auto"           # auto | bios | uefi | both  (x86_64: both installs i386-pc and x86_64-efi GRUB)
-os_prober = true             # keep other operating systems in the GRUB menu
-shim      = "auto"           # auto | yes | no  — Secure Boot shim, see below
-# cmdline = "console=ttyS0,115200"
-
-[user]
-name     = "alice"
-password = "..."             # or password_hash = "$6$..."
-shell    = "/bin/bash"
-sudo     = true              # false requires root_password / root_password_hash
-autologin = false
-create   = true
-# root_password = "..."      # or root_password_hash
-
-[network]
-mode = "dhcp"                # dhcp | wifi | none
-# wifi_ssid = "home"         # mode = "wifi": joins from the live session and persists it
-# wifi_psk  = "..."
-
-[kernel]
-source = "native"            # native | stratum:<name>
-
-[[stratum]]
-name = "debian"              # primary stratum: arch, debian, void, fedora, opensuse, alpine
-role = "primary"
+```lua
+return {
+  system = {
+    hostname = "saltos",
+    locale   = "en_US.UTF-8",
+    timezone = "Europe/Berlin",
+    keymap   = "de",               -- console keymap; X/Wayland layout is derived
+    -- xkb_layout  = "de",         -- override the derived X layout
+    -- xkb_variant = "nodeadkeys",
+  },
+  install = {
+    disk       = "/dev/nvme0n1",   -- target disk (erase / alongside)
+    mode       = "erase",          -- erase | alongside | mounted
+    filesystem = "btrfs",          -- btrfs (default, snapshots) | ext4
+    encrypt    = false,            -- LUKS2 full-disk encryption of the root
+    -- passphrase = "...",         -- or passphrase_file = "/run/secret"
+    swap       = "none",           -- none | file | partition | zram
+    swap_size  = "auto",           -- auto (≈RAM, capped) or e.g. "8G"
+    -- swap_device = "/dev/sda3",  -- required for swap = "partition" with mode = "mounted"
+    -- root_size = "120G",         -- alongside: size of the new root partition
+    desktop    = "auto",           -- auto | keep (what the live media runs) | none
+  },
+  boot = {
+    firmware  = "auto",            -- auto | bios | uefi | both  (x86_64: both installs i386-pc and x86_64-efi GRUB)
+    os_prober = true,              -- keep other operating systems in the GRUB menu
+    shim      = "auto",            -- auto | yes | no  — Secure Boot shim, see below
+    -- cmdline = "console=ttyS0,115200",
+  },
+  user = {
+    name      = "alice",
+    password  = "...",             -- or password_hash = "$6$..."
+    shell     = "/bin/bash",
+    sudo      = true,              -- false requires root_password / root_password_hash
+    autologin = false,
+    create    = true,
+    -- root_password = "...",      -- or root_password_hash
+  },
+  network = {
+    mode = "dhcp",                 -- dhcp | wifi | none
+    -- wifi_ssid = "home",         -- mode = "wifi": joins from the live session and persists it
+    -- wifi_psk  = "...",
+  },
+  kernel = {
+    source = "native",             -- native | stratum:<name>
+  },
+  stratum = {
+    {
+      name = "debian",             -- primary stratum: arch, debian, void, fedora, opensuse, alpine
+      role = "primary",
+    },
+  },
+}
 ```
 
 ### Install modes
@@ -152,14 +162,14 @@ role = "primary"
 3. `salt --root "$MNT" stratum add <distro>` bootstraps the chosen distribution
    into `/strata/<distro>` (rootfs / debootstrap / oci per its recipe) and
    auto-exposes its package manager and userland.
-4. Kernel per `[kernel]`, initramfs, GRUB for the detected or requested
+4. Kernel per `kernel`, initramfs, GRUB for the detected or requested
    firmware: `i386-pc` for BIOS, `x86_64-efi` / `arm64-efi` for UEFI (installed
    to the removable path `/EFI/BOOT` and, when NVRAM is writable, registered as
    `saltOS`). Serial consoles in `boot.cmdline` enable GRUB's serial terminal.
 5. Hostname, locale (`locale.gen` + `locale.conf`), timezone, console keymap +
    X keyboard layout, users, passwords, sudo, autologin, swap (file / partition
    / zram runit service), network (NetworkManager DHCP, persisted Wi-Fi).
-6. Write `/etc/salt/system.toml` (intent) and `/etc/salt/system.lock.toml`
+6. Write `/etc/salt/system.lua` (intent) and `/etc/salt/system.lock.toml`
    (fully pinned) so the install is reproducible. See `reproducibility.md`.
 7. Enable runit services (NetworkManager, chronyd, dbus, seatd, getty; sddm
    only when a desktop is installed) and strip live-only pieces (live user,
@@ -176,10 +186,10 @@ and summary. The exec sequence is `partition → mount → saltos_setup → umou
 `saltos_setup` (`os/installer/modules/saltos_setup/main.py`) is a small Python
 job that reads Calamares' global storage (locale, keyboard, users, partitions,
 the chosen stratum and desktop, the detected firmware) and translates it into a
-`system.toml` under `/run/saltos-installer/`. It then runs
+`system.lua` under `/run/saltos-installer/`. It then runs
 
 ```
-salt-setup --from /run/saltos-installer/system.toml --target <rootMountPoint> --yes
+salt-setup --from /run/saltos-installer/system.lua --target <rootMountPoint> --yes
 ```
 
 streaming its output into the Calamares log and mapping each `==> ` step to the
@@ -229,7 +239,7 @@ their display manager is exposed from there, not from the native base.
 
 ## Reproducibility
 
-The installer's output is captured as `system.toml` + `system.lock.toml`. On
+The installer's output is captured as `system.lua` + `system.lock.toml`. On
 another machine, `salt config apply system.lock.toml` reproduces the same base
 distribution snapshot, the same exposed userland, and the same kernel/boot
 contract. The native plane targets source-level reproducibility; the stratum

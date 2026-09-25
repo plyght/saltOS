@@ -20,7 +20,7 @@ normalizing `arm64` -> `aarch64`, `amd64` -> `x86_64`).
 ```
 src/halite/        C core library (halite), headers in include/salt/
 src/salt/          C++23 CLI (salt)
-recipes/<name>/    package recipes (recipe.toml [+ patches/, files/])
+recipes/<name>/    package recipes (recipe.lua [+ patches/, files/])
 repo/<arch>/       built repository (index.toml, index.toml.sig, packages/)
 os/runit/          runit service definitions and the svc wrapper
 os/btrfs/          subvolume layout + snapshot/rollback helpers
@@ -42,35 +42,55 @@ docs/              documentation
 - No new code comments, banners, headers, license text, or attribution prose anywhere.
 - Native tooling only. No npm/yarn. Permissive-licensed deps only, no telemetry.
 
-## Recipe format (`recipes/<name>/recipe.toml`)
+## Configuration formats
 
-```toml
-name = "zlib"
-version = "1.3.1"
-release = 1
-summary = "Compression library"
-license = "Zlib"
-arch = ["x86_64", "aarch64"]
+Human-authored configuration is Lua: recipes (`recipes/<name>/recipe.lua`),
+strata recipes (`strata/<name>.lua`), `os/bootstrap/build-order.lua`, and on a
+system `/etc/salt/{system,salt,repo,boot}.lua`. Each file is a sandboxed chunk
+that must `return { ... }` a table of strings, integers, booleans and tables
+(lists or string-keyed); `local`s, functions, `..` and the
+`string`/`table`/`math`/`utf8` libraries are allowed, `salt.arch` is the target
+arch, and there is no `io`, `os`, `require` or `load` (no files, commands or
+network), with memory and instruction limits. Read values from shell with
+`salt eval FILE [KEY]` (dotted KEY; a list prints one element per line; a
+missing key exits 1). Never scrape these files with sed/awk/grep.
 
-[source]
-url = "https://zlib.net/zlib-1.3.1.tar.gz"
-sha256 = "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23"
+Machine-written, signed or hashed data stays TOML and is never evaluated:
+`index.toml`, `metadata.toml`, `manifest.toml`, `system.lock.toml`,
+`/var/lib/salt/trust.toml`.
 
-[build]
-system = "make"            # one of: make, autotools, cmake, meson, kernel, custom
-deps = ["gcc", "make"]
-script = """               # optional; required when system = "custom"
+## Recipe format (`recipes/<name>/recipe.lua`)
+
+```lua
+return {
+  name = "zlib",
+  version = "1.3.1",
+  release = 1,
+  summary = "Compression library",
+  license = "Zlib",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://zlib.net/zlib-1.3.1.tar.gz",
+    sha256 = "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23",
+  },
+  build = {
+    system = "make",           -- one of: make, autotools, cmake, meson, kernel, custom
+    deps = { "gcc", "make" },
+    -- optional; required when system = "custom"
+    script = [[
 ./configure --prefix=/usr
 make
 make DESTDIR="$SALT_DEST" install
-"""
-
-[package]
-deps = ["glibc"]
-
-[reproducibility]
-status = "verified"        # verified | unverified
-# reason = "..."           # required when status = "unverified"
+]],
+  },
+  package = {
+    deps = { "glibc" },
+  },
+  reproducibility = {
+    status = "verified",       -- verified | unverified
+    -- reason = "...",         -- required when status = "unverified"
+  },
+}
 ```
 
 Build environment variables provided to recipe scripts:
@@ -144,7 +164,7 @@ State paths (under `--root`):
 /var/lib/salt/db.sqlite     package database + transaction log + deployments
 /var/lib/salt/state/        per-transaction saved file state (non-btrfs fallback)
 /.snapshots or /@snapshots  btrfs snapshots
-/etc/salt/repo.conf         repo source + trusted key
+/etc/salt/repo.lua          repo source + trusted key
 ```
 
 ## Init system

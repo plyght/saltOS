@@ -26,7 +26,7 @@ SALT=build/src/salt/salt VERSION=0.1.2 sh os/ota/ship.sh ./ota-repo
 ```
 
 It creates a signing key on first run (reused after), builds the grains, signs
-the index, prints the one-time client `repo.conf` to paste, and serves. The
+the index, prints the one-time client `repo.lua` to paste, and serves. The
 client side is then just `salt update` (or `salt-ota run`). The manual steps
 below explain what it does under the hood.
 
@@ -124,30 +124,37 @@ python3 -m http.server 8080 --directory ./repo
 
 Keep `ota.sec` secret. `os/build/vm-x86.sh` and the other image builders take
 `OTA_SOURCE=<base-url>` and `OTA_KEY=<hex pubkey or path>` (written to
-`/etc/salt/repo.conf`); `os/build/pi5.sh` takes `OTA_PUBKEY=keys/ota.pub`
+`/etc/salt/repo.lua`); `os/build/pi5.sh` takes `OTA_PUBKEY=keys/ota.pub`
 (installed to `/etc/salt/keys/ota.pub`). Point clients at the base URL (the
 directory that contains `<arch>/`):
 
-```sh
-# /etc/salt/repo.conf on the device
-repo = "current"
-source = "https://updates.example.com"
-key = "/etc/salt/keys/ota.pub"
+```lua
+-- /etc/salt/repo.lua on the device
+return {
+  repo = "current",
+  source = "https://updates.example.com",
+  key = "/etc/salt/keys/ota.pub",
+}
 ```
 
 ## Client side
 
-`salt-ota` reads `[ota]` and `[deploy]` from `/etc/salt/salt.conf`:
+`salt-ota` reads the `ota` and `deploy` tables from `/etc/salt/salt.lua`
+(through `salt eval`; a system installed before the Lua switch that only has
+the legacy `/etc/salt/salt.conf` keeps working):
 
-```toml
-[ota]
-enabled = true          # false makes every salt-ota command a no-op (exit 0)
-interval = "86400"      # seconds between automatic runs
-reboot_on_kernel = false # reboot by itself when a new kernel/root is armed
-ab = false              # Pi: stage into the standby subvolume instead (see below)
-
-[deploy]
-keep = 5                # deployments (snapshots) to keep; pinned ones never count
+```lua
+return {
+  ota = {
+    enabled = true,            -- false makes every salt-ota command a no-op (exit 0)
+    interval = "86400",        -- seconds between automatic runs
+    reboot_on_kernel = false,  -- reboot by itself when a new kernel/root is armed
+    ab = false,                -- Pi: stage into the standby subvolume instead (see below)
+  },
+  deploy = {
+    keep = 5,                  -- deployments (snapshots) to keep; pinned ones never count
+  },
+}
 ```
 
 ### Commands
@@ -178,7 +185,7 @@ Every run appends to `/var/log/salt-ota.log` and records its outcome in
 ### What happens on `salt-ota run`
 
 1. `salt sync` fetches `index.toml` + `.sig` and verifies the signature against
-   the key in `repo.conf`. An unknown key or tampered index is refused (exit 1).
+   the key in `repo.lua`. An unknown key or tampered index is refused (exit 1).
 2. `salt update --check` decides whether there is anything to do (exit 0 if not).
 3. `salt update` runs one transaction: writable Btrfs snapshot of `@` into
    `@snapshots/root-<id>` (or a file backup on non-Btrfs), download + hash +
@@ -227,7 +234,7 @@ reading a database written by a newer one keeps working.
 ## A/B root switch and kernel tryboot (Raspberry Pi 5)
 
 The Pi image (`os/build/pi5.sh`) uses `loader = "tryboot"` in
-`/etc/salt/boot.conf` and `os/pi/ab-update.sh` (installed as
+`/etc/salt/boot.lua` and `os/pi/ab-update.sh` (installed as
 `/usr/lib/saltos/ab-update.sh`):
 
 - **Kernel updates** stage `vmlinuz_<slot>`, `initramfs_<slot>` and
@@ -237,7 +244,7 @@ The Pi image (`os/build/pi5.sh`) uses `loader = "tryboot"` in
   kernel == staged kernel) rewrites `config.txt` to make it permanent. An
   unconfirmed or failed boot returns to the committed `config.txt` on the next
   reboot.
-- **A/B roots** (`ab = true` in `[ota]`): `prepare` snapshots the active
+- **A/B roots** (`ota = { ab = true }` in `salt.lua`): `prepare` snapshots the active
   subvolume (`@`) into the standby (`@b`), the update is applied with
   `salt --root`, `finalize` points `tryboot.txt` at the standby subvolume and
   `commit`/`abort` decide after the trial boot.

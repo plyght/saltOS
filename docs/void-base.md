@@ -25,7 +25,7 @@ picks additional strata.
    desktop (`xorg-minimal`, `mesa-dri`, `xf86-input-libinput`, the `xf86-video-*`
    drivers, `lxqt`, `sddm`, plus apps).
 3. Installs the saltOS layer: `salt` + `salt-setup` binaries, `/etc/salt/strata`,
-   the `salt-shims.sh` profile hook, `repo.conf`/`salt.conf`, and a saltOS
+   the `salt-shims.sh` profile hook, `repo.lua`/`salt.lua`, and a saltOS
    `os-release`.
 4. Enables runit services the Void way (symlinks under
    `/etc/runit/runsvdir/default`), only for services that exist in the rootfs.

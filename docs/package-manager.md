@@ -15,7 +15,9 @@ exits when it is done.
 - **hostile to arbitrary install-time execution** — the only install-time
   code is a package's declared hooks, run confined and reviewed (see
   [recipes.md](recipes.md#hooks))
-- **easy to audit** — small surface, plain TOML metadata, SQLite database
+- **easy to audit** — small surface, plain TOML metadata inside signed grains
+  and indexes, sandboxed Lua (return-a-table) for human-written recipes and
+  config, SQLite database
 - **usable without a daemon**
 
 The companion documents describe the formats and policies referenced here:
@@ -297,9 +299,9 @@ Under the active `--root`:
 /var/lib/salt/cache/<arch>/ downloaded .grain artifacts
 /var/lib/salt/repo/<arch>/  synced index.toml + index.toml.sig
 /.snapshots or /@snapshots  btrfs snapshots
-/etc/salt/repo.conf         repo source + trusted key
-/etc/salt/salt.conf         gc.keep / gc.pinned retention policy
-/etc/salt/system.toml       declarative config (see reproducibility.md)
+/etc/salt/repo.lua          repo source + trusted key
+/etc/salt/salt.lua          gc.keep / gc.pinned retention policy, install/strata options
+/etc/salt/system.lua        declarative config (see reproducibility.md)
 /etc/salt/system.lock.toml  lockfile written by salt lock
 ```
 
@@ -311,7 +313,7 @@ Under the active `--root`:
    `index.toml.sig`).
 2. **Verify `index.toml.sig` against the trusted public key** before reading any
    package list. The trusted key comes from `--key`, or from
-   `/etc/salt/repo.conf`.
+   `/etc/salt/repo.lua`.
 3. **Reject the index** if any entry lacks a `sha256`, or carries a malformed
    or placeholder value (for example `TODO-sha256`); `salt sync` fails and the
    previous index stays in place.
@@ -333,7 +335,7 @@ trust is in [trust-model.md](trust-model.md).
 These flags apply to all subcommands:
 
 - `--root <dir>` — operate on an alternate root instead of `/`. All state paths
-  (database, snapshots, `repo.conf`) are resolved under this root. Useful for
+  (database, snapshots, `repo.lua`) are resolved under this root. Useful for
   installing into a target during system bootstrap or for testing in a fakeroot.
 - `--repo <url-or-path>` — override the repository source (a URL or a local
   path) for this invocation.
@@ -519,9 +521,9 @@ salt clean --all --dry-run
 ### `salt gc`
 
 Prune old generations and the artifacts they referenced. Keeps the `N` most
-recent generations (`--keep N`, default `gc.keep` from `etc/salt/salt.conf`,
+recent generations (`--keep N`, default `gc.keep` from `etc/salt/salt.lua`,
 default 3) and never removes the current, booted, or pinned generation
-(`--pin ID` or `gc.pinned` in `salt.conf`). `--dry-run` reports without
+(`--pin ID` or `gc.pinned` in `salt.lua`). `--dry-run` reports without
 deleting. `salt config gc` is an alias. See
 [reproducibility.md](reproducibility.md).
 
@@ -550,14 +552,14 @@ salt lock apply /srv/locks/lab.lock.toml --dry-run
 
 ### `salt config <subcommand>`
 
-Declarative system management driven by `etc/salt/system.toml`. `show` prints
+Declarative system management driven by `etc/salt/system.lua`. `show` prints
 the config, `check` validates it (schema, keys, types) without touching the
 system, and `apply` converges the machine to it: with an up-to-date lock it is
-`salt lock apply`; with `--relock` (or no lock yet) it resolves `[native]` and
-`[native.pin]` against the repository index into one native transaction that
+`salt lock apply`; with `--relock` (or no lock yet) it resolves `native.packages` and
+`native.pin` against the repository index into one native transaction that
 installs the declared closure and removes everything outside it, bootstraps
-missing `[[strata]]` and installs their declared packages, reconciles `[expose]`
-shims, enforces `[policy]`, and writes a fresh lock. `diff`, `history`,
+missing `strata` entries and installs their declared packages, reconciles `expose`
+shims, enforces `policy`, and writes a fresh lock. `diff`, `history`,
 `rollback` and `gc` are the lock/generation commands described above. `apply`
 accepts `--dry-run`, `--download-only` and `--allow-unverified`.
 
@@ -589,6 +591,24 @@ admission rules these checks enforce.
 
 ```sh
 salt lint recipes/zlib
+```
+
+### `salt eval <file.lua> [key]`
+
+Evaluate a Lua configuration file (a recipe, a stratum recipe,
+`build-order.lua`, `/etc/salt/system.lua`, ...) in the configuration sandbox
+and print the result; nothing else can read these files safely from a script.
+Without a key every leaf is printed as `path = value` (list elements as
+`path[1] = ...`). With a dotted key (`source.url`, `build.deps`,
+`desktop.packages`) a scalar is printed as is, a list one element per line, and
+a table as its keys one per line; a missing key exits 1 with no output. The
+target architecture seen by the file as `salt.arch` is `$SALT_ARCH`, else the
+host's. See [recipes.md](recipes.md#the-configuration-sandbox) for the sandbox.
+
+```sh
+salt eval recipes/zlib/recipe.lua
+salt eval recipes/zlib/recipe.lua source.url
+salt eval os/bootstrap/build-order.lua desktop.packages
 ```
 
 ### `salt sign <pkg>`

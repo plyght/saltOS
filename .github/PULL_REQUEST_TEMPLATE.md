@@ -6,7 +6,7 @@ Describe what this change does and why.
 
 ## Type of change
 
-- [ ] Package recipe (add or update `recipes/<name>/recipe.toml`)
+- [ ] Package recipe (add or update `recipes/<name>/recipe.lua`)
 - [ ] salt / halite code
 - [ ] OS base, runit, btrfs, installer, or ISO
 - [ ] Documentation only

@@ -55,15 +55,24 @@ jobs:
           path: .omakase-vendor-cache
           key: omakase-vendor-${{ hashFiles('os/omakase/build/vendor.sh') }}
 
+      - name: Build host salt (evaluates the Lua wallpaper manifests)
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config build-essential \
+            libzstd-dev libsodium-dev libsqlite3-dev
+          cmake -G Ninja -B build-host -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-host --target salt
+
       - name: Cache wallpapers
         uses: actions/cache@v4
         with:
           path: .omakase-wallpaper-cache
-          key: omakase-wallpapers-${{ hashFiles('os/omakase/wallpapers/*.toml') }}
+          key: omakase-wallpapers-${{ hashFiles('os/omakase/wallpapers/*.lua') }}
 
       - name: Download + verify Unsplash wallpapers
         run: |
-          WALLPAPER_CACHE="$PWD/.omakase-wallpaper-cache" OUT="$PWD/out-omakase/wallpapers" bash os/omakase/build/wallpapers.sh
+          SALT_BIN="$PWD/build-host/src/salt/salt" WALLPAPER_CACHE="$PWD/.omakase-wallpaper-cache" \
+            OUT="$PWD/out-omakase/wallpapers" bash os/omakase/build/wallpapers.sh
 
       - name: Build Arch offline mirror
         run: |
@@ -114,7 +123,7 @@ jobs:
           mkdir -p omakase-logs
           cp omakase-test/*.log omakase-logs/ 2>/dev/null || true
           cp omakase-test/desktop.png omakase-test/wallpaper.png omakase-logs/ 2>/dev/null || true
-          cp omakase-test/install.toml omakase-logs/ 2>/dev/null || true
+          cp omakase-test/install.lua omakase-logs/ 2>/dev/null || true
           echo "----- install serial tail -----"; tail -n 60 omakase-logs/install-serial.log 2>/dev/null || true
           echo "----- boot serial tail -----"; tail -n 60 omakase-logs/boot-serial.log 2>/dev/null || true
 
@@ -190,15 +199,24 @@ jobs:
           path: .omakase-vendor-cache
           key: omakase-vendor-aarch64-${{ hashFiles('os/omakase/build/vendor.sh') }}
 
+      - name: Build host salt (evaluates the Lua wallpaper manifests)
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config build-essential \
+            libzstd-dev libsodium-dev libsqlite3-dev
+          cmake -G Ninja -B build-host -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-host --target salt
+
       - name: Cache wallpapers
         uses: actions/cache@v4
         with:
           path: .omakase-wallpaper-cache
-          key: omakase-wallpapers-${{ hashFiles('os/omakase/wallpapers/*.toml') }}
+          key: omakase-wallpapers-${{ hashFiles('os/omakase/wallpapers/*.lua') }}
 
       - name: Download + verify Unsplash wallpapers
         run: |
-          WALLPAPER_CACHE="$PWD/.omakase-wallpaper-cache" OUT="$PWD/out-omakase/wallpapers" bash os/omakase/build/wallpapers.sh
+          SALT_BIN="$PWD/build-host/src/salt/salt" WALLPAPER_CACHE="$PWD/.omakase-wallpaper-cache" \
+            OUT="$PWD/out-omakase/wallpapers" bash os/omakase/build/wallpapers.sh
 
       - name: Build Arch Linux ARM offline mirror
         run: |
@@ -250,7 +268,7 @@ jobs:
           mkdir -p omakase-logs
           cp omakase-test/*.log omakase-logs/ 2>/dev/null || true
           cp omakase-test/desktop.png omakase-test/wallpaper.png omakase-logs/ 2>/dev/null || true
-          cp omakase-test/install.toml omakase-logs/ 2>/dev/null || true
+          cp omakase-test/install.lua omakase-logs/ 2>/dev/null || true
           echo "----- install serial tail -----"; tail -n 60 omakase-logs/install-serial.log 2>/dev/null || true
           echo "----- boot serial tail -----"; tail -n 60 omakase-logs/boot-serial.log 2>/dev/null || true
 
@@ -323,7 +341,7 @@ jobs:
           mkdir -p omakase-logs
           cp omakase-test/*.log omakase-logs/ 2>/dev/null || true
           cp omakase-test/desktop.png omakase-test/wallpaper.png omakase-logs/ 2>/dev/null || true
-          cp omakase-test/install.toml omakase-logs/ 2>/dev/null || true
+          cp omakase-test/install.lua omakase-logs/ 2>/dev/null || true
           echo "----- install serial tail -----"; tail -n 60 omakase-logs/install-serial.log 2>/dev/null || true
           echo "----- boot serial tail -----"; tail -n 60 omakase-logs/boot-serial.log 2>/dev/null || true
 
@@ -392,7 +410,7 @@ jobs:
           mkdir -p omakase-logs
           cp omakase-test/*.log omakase-logs/ 2>/dev/null || true
           cp omakase-test/desktop.png omakase-test/wallpaper.png omakase-logs/ 2>/dev/null || true
-          cp omakase-test/install.toml omakase-logs/ 2>/dev/null || true
+          cp omakase-test/install.lua omakase-logs/ 2>/dev/null || true
           echo "----- install serial tail -----"; tail -n 60 omakase-logs/install-serial.log 2>/dev/null || true
           echo "----- boot serial tail -----"; tail -n 60 omakase-logs/boot-serial.log 2>/dev/null || true
 

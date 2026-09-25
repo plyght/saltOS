@@ -12,12 +12,12 @@ Everything lives in `os/omakase/`:
 ```txt
 os/omakase/
   build/      arch-mirror.sh, vendor.sh, wallpapers.sh, iso.sh, test-vm.sh, verify-packages.sh
-  lib/        omakase.sh (shared TOML/state helpers)
+  lib/        omakase.sh (shared config/state helpers; reads Lua via `salt eval`)
   live/       ISO-side: greeter, configurator, cidata loader, dashboard, installer
   packages/   packages.tsv, one column per stratum
   target/     installed-side: bin/saltos-*, config/, templates/
   themes/     <name>/theme.sh palettes
-  wallpapers/ <name>.toml Unsplash manifests (photo id, url, photographer, sha256)
+  wallpapers/ <name>.lua Unsplash manifests (photo id, url, photographer, sha256)
 ```
 
 ## Install flow
@@ -33,7 +33,7 @@ os/omakase/
    fedora, void, alpine, opensuse; Arch is preselected) → confirmation table
    → disk → *full disk* or *free space (dual boot)* → **encryption toggle,
    default OFF** → final confirm.
-   The wizard writes `/run/saltos-install/install.toml` and a `credentials`
+   The wizard writes `/run/saltos-install/install.lua` and a `credentials`
    file (mode 0600).
 3. **Install** (`saltos-install-dashboard` in the foreground, `saltos-install`
    underneath as a phased state machine writing `state.json`):
@@ -89,8 +89,8 @@ arm64 Debian base; the differences are all in what gets staged:
 
 - `build/vendor.sh aarch64` pins `Vicinae-aarch64.AppImage`,
   `helium-<ver>-arm64_linux.tar.xz` and `gum_<ver>_Linux_arm64.tar.gz`.
-- The default stratum is **Arch Linux ARM**: `strata/arch-aarch64.toml`
-  (picked over `arch.toml` whenever an `<name>-<arch>.toml` recipe exists)
+- The default stratum is **Arch Linux ARM**: `strata/arch-aarch64.lua`
+  (picked over `arch.lua` whenever an `<name>-<arch>.lua` recipe exists)
   bootstraps from `ArchLinuxARM-aarch64-latest.tar.gz` and pulls from the
   `core`/`extra`/`alarm`/`aur` ALARM repositories. `build/arch-mirror.sh
   aarch64` imports that rootfs as a Docker image and runs its own `pacman` to
@@ -127,35 +127,38 @@ partition), which os-prober detects the same way on ARM.
 Attach a second block device with filesystem label `cidata` (or `CIDATA`)
 containing:
 
-- `install.toml` — the same file the configurator writes. Minimal example:
+- `install.lua` — the same file the configurator writes: sandboxed Lua that
+  returns a table (see [recipes.md](recipes.md#the-configuration-sandbox));
+  `salt eval install.lua` shows what the installer will read. Minimal example:
 
-  ```toml
-  [system]
-  hostname = "saltos-omakase"
-  locale = "en_US.UTF-8"
-  timezone = "UTC"
-  keymap = "us"
-
-  [kernel]
-  source = "native"
-
-  [[stratum]]
-  name = "arch"
-  role = "primary"
-  expose = true
-
-  [user]
-  username = "salt"
-  full_name = "saltOS Tester"
-  email = ""
-  deferred = false
-
-  [install]
-  profile = "omakase"
-  disk = "/dev/vda"
-  mode = "disk"          # or "free" for dual boot into unallocated space
-  encrypt = false
-  serial_console = true  # optional: autologin getty on ttyS0 (ttyAMA0 on aarch64) + GRUB serial
+  ```lua
+  return {
+    system = {
+      hostname = "saltos-omakase",
+      locale = "en_US.UTF-8",
+      timezone = "UTC",
+      keymap = "us",
+    },
+    kernel = {
+      source = "native",
+    },
+    stratum = {
+      { name = "arch", role = "primary", expose = true },
+    },
+    user = {
+      username = "salt",
+      full_name = "saltOS Tester",
+      email = "",
+      deferred = false,
+    },
+    install = {
+      profile = "omakase",
+      disk = "/dev/vda",
+      mode = "disk",           -- or "free" for dual boot into unallocated space
+      encrypt = false,
+      serial_console = true,   -- optional: autologin getty on ttyS0 (ttyAMA0 on aarch64) + GRUB serial
+    },
+  }
   ```
 
 - `credentials` — `password=<plain text>` (mode 0600 on the target; omit when
@@ -254,9 +257,10 @@ saltos-wallpaper credits
 
 The wallpapers are real photos from Unsplash -- salt flats, salt and mineral
 crystals, salt lakes, ice, nebulae, Hokusai -- picked to match each palette.
-They are **not** committed to the repository: `os/omakase/wallpapers/<theme>.toml`
+They are **not** committed to the repository: `os/omakase/wallpapers/<theme>.lua`
 lists, per photo, the Unsplash id, title, photographer and profile URL, the
-photo page, the download URL and its SHA-256. `build/wallpapers.sh` downloads
+photo page, the download URL and its SHA-256. `build/wallpapers.sh` reads the manifests with `salt eval` (the
+binary named by `SALT_BIN`, default `salt`), downloads
 them at ISO build time (cached under `$WALLPAPER_CACHE`), verifies every hash
 and fails the build on any mismatch, then writes a `CREDITS` file. The
 installer ships the set to `/usr/share/saltos/wallpapers/<theme>/NN-<id>.jpg`

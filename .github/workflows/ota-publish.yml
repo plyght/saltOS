@@ -130,8 +130,8 @@ jobs:
       - name: Verify the signed index with the committed public key
         run: |
           mkdir -p verify/etc/salt
-          printf 'repo = "current"\nsource = "file://%s"\nkey = "%s"\n' \
-            "$PWD/repo" "$PWD/keys/ota.pub" >verify/etc/salt/repo.conf
+          printf 'return {\n  repo = "current",\n  source = "file://%s",\n  key = "%s",\n}\n' \
+            "$PWD/repo" "$PWD/keys/ota.pub" >verify/etc/salt/repo.lua
           ./build/src/salt/salt --root "$PWD/verify" sync
           grep -q "^url = \"${{ steps.ver.outputs.url_base }}/" "repo/${{ matrix.arch }}/index.toml"
 
@@ -213,10 +213,12 @@ jobs:
           {
             echo "saltOS OTA channel $CHANNEL -- version ${{ steps.ver.outputs.version }}"
             echo
-            echo "repo.conf:"
-            echo "  repo = \"current\""
-            echo "  source = \"https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}\""
-            echo "  key = \"/etc/salt/keys/ota.pub\""
+            echo "/etc/salt/repo.lua:"
+            echo "  return {"
+            echo "    repo = \"current\","
+            echo "    source = \"https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}\","
+            echo "    key = \"/etc/salt/keys/ota.pub\","
+            echo "  }"
             echo
             for d in site/*/index.toml; do echo "$d"; done
             echo "keys/ota.pub"
@@ -247,7 +249,7 @@ jobs:
           base="${{ steps.deploy.outputs.page_url }}"
           base="${base%/}"
           mkdir -p client/etc/salt
-          printf 'repo = "current"\nsource = "%s"\nkey = "%s"\n' "$base" "$PWD/keys/ota.pub" >client/etc/salt/repo.conf
+          printf 'return {\n  repo = "current",\n  source = "%s",\n  key = "%s",\n}\n' "$base" "$PWD/keys/ota.pub" >client/etc/salt/repo.lua
           for i in $(seq 1 30); do
             if curl -fsS "$base/x86_64/index.toml" | grep -q "version = \"${{ steps.ver.outputs.version }}\""; then break; fi
             sleep 10

@@ -20,15 +20,16 @@ It builds on what already exists rather than replacing it:
 - The signed native repository and trust model in [repository.md](repository.md)
   and [trust-model.md](trust-model.md).
 
-See [examples/system.toml](examples/system.toml) and
+See [examples/system.lua](examples/system.lua) and
 [examples/system.lock.toml](examples/system.lock.toml) for the concrete schema
 this document describes.
 
 The design separates two artifacts, exactly as Nix separates a flake/config
 from a flake.lock, and Cargo separates `Cargo.toml` from `Cargo.lock`:
 
-- the **config** (`/etc/salt/system.toml`) — human-authored intent: which
-  native packages, which strata, which foreign packages, and policy.
+- the **config** (`/etc/salt/system.lua`) — human-authored intent: which
+  native packages, which strata, which foreign packages, and policy. It is Lua
+  that returns a table, like recipes.
 - the **lockfile** (`/etc/salt/system.lock.toml`) — machine-generated, fully
   pinned resolution of that intent: exact versions, exact content hashes, and
   the repository snapshot each package came from.
@@ -69,8 +70,8 @@ Two distinct senses of "reproducible" matter here:
    `.grain` from its recipe and pinned source yields a byte-identical package.
    This depends on the upstream build being deterministic (`SOURCE_DATE_EPOCH`,
    no embedded timestamps/paths). saltOS recipes already carry a
-   `[reproducibility] status` field (`verified` / `unverified` — see
-   `recipes/git/recipe.toml`); the lock records that status per package and does
+   `reproducibility.status` field (`verified` / `unverified` — see
+   `recipes/git/recipe.lua`); the lock records that status per package and does
    not claim more than the recipe proves.
 
 The foreign package managers fundamentally do not rebuild from source under our
@@ -83,55 +84,66 @@ openSUSE rolling repos), the lock records the version+hash and `apply` fails
 loudly if the mirror no longer serves that exact artifact, rather than silently
 installing a newer one.
 
-## 2. The declarative config: `/etc/salt/system.toml`
+## 2. The declarative config: `/etc/salt/system.lua`
 
-Authored by the operator. Declares intent, not resolution. Fits the existing
-TOML conventions used by `recipe.toml` and `strata/*.toml`.
+Authored by the operator. Declares intent, not resolution. Uses the same
+sandboxed Lua format as `recipe.lua` and `strata/*.lua`: the file returns a
+table of strings, integers, booleans and tables, may use `local`s and helper
+functions, and cannot read files, run commands or reach the network (see
+[recipes.md](recipes.md#the-configuration-sandbox)). `salt config show` prints
+the file and `salt eval /etc/salt/system.lua native.packages` prints what it
+evaluates to. A system installed before the switch that still has only
+`/etc/salt/system.toml` keeps working: `salt` reads it when no `system.lua`
+exists.
 
-```toml
-schema = 1
-
-[system]
-hostname = "saltbox"
-arch = "x86_64"
-
-[native]
-repo = "current"
-packages = [
-  "glibc",
-  "linux",
-  "runit",
-  "salt",
-  "git",
-  "curl",
-]
-
-[native.pin]
-git = "2.47.0"
-
-[[strata]]
-name = "arch"
-recipe = "arch"
-packages = ["ripgrep", "fd", "firefox"]
-
-[[strata]]
-name = "alpine"
-recipe = "alpine"
-packages = ["nano"]
-
-[expose]
-"arch/rg" = "rg"
-"arch/firefox" = { desktop = true }
-
-[policy]
-require_signed_native = true
-allow_unverified_repro = true
-on_missing_artifact = "fail"
+```lua
+return {
+  schema = 1,
+  system = {
+    hostname = "saltbox",
+    arch = "x86_64",
+  },
+  native = {
+    repo = "current",
+    packages = {
+      "glibc",
+      "linux",
+      "runit",
+      "salt",
+      "git",
+      "curl",
+    },
+    pin = {
+      git = "2.47.0",
+    },
+  },
+  strata = {
+    {
+      name = "arch",
+      recipe = "arch",
+      packages = { "ripgrep", "fd", "firefox" },
+    },
+    {
+      name = "alpine",
+      recipe = "alpine",
+      packages = { "nano" },
+    },
+  },
+  expose = {
+    ["arch/rg"] = "rg",
+    ["arch/firefox"] = { desktop = true },
+  },
+  policy = {
+    require_signed_native = true,
+    allow_unverified_repro = true,
+    on_missing_artifact = "fail",
+  },
+}
 ```
 
 Key points:
 
-- `[native].packages` is the curated base plus chosen native packages. Resolution
+- `native.packages` is the curated base plus chosen native packages. Resolution
   (dependencies, exact versions) is done by `salt config apply` against the
   synced repository index — the config only names roots, like a Nix
   `systemPackages` list. The dependency closure of the roots is installed and
@@ -139,11 +151,11 @@ Key points:
   section is an exact desired state, not an additive list. The resolved set is
   then written to the lock, and `config_hash` guards against a config that
   changed after locking (`salt config apply` refuses unless `--relock`).
-- `[native.pin]` constrains a root or dependency to an exact `"version"` or
+- `native.pin` constrains a root or dependency to an exact `"version"` or
   `"version-release"`. The pinned entry must exist in the index and must be
   part of the declared closure; otherwise `apply` fails. Unpinned packages take
   the index's preferred (newest) entry.
-- Each `[[strata]]` block names a stratum, its bootstrap recipe (resolved exactly
+- Each entry of the `strata` list names a stratum, its bootstrap recipe (resolved exactly
   like `salt stratum add` does via `resolve_stratum_recipe`; `recipe` defaults
   to `name`), and the foreign packages that must be present in it. A missing
   stratum is bootstrapped, then any declared package the manager does not
@@ -151,13 +163,13 @@ Key points:
   the stratum are left alone — exact foreign convergence is the lock's job
   (`salt lock apply`, section 5). The package manager is implied by the stratum
   recipe (`package_manager` field).
-- `[expose]` declares which stratum commands/apps become host shims — this is the
+- `expose` declares which stratum commands/apps become host shims — this is the
   declarative form of `salt expose` / `salt expose-desktop`. Keys are
-  `"stratum/command"`; the value is an alias string or a table
+  `["stratum/command"]`; the value is an alias string or a table
   `{ alias = "...", desktop = true }`. Aliases created this way are recorded with
   kind `config`, so `apply` adds missing ones and removes config-managed aliases
   that disappeared from the file without touching aliases created imperatively.
-- `[policy]` controls strictness. `require_signed_native = true` makes `apply`
+- `policy` controls strictness. `require_signed_native = true` makes `apply`
   fail unless the local index carries a valid signature from the trusted repo
   key; `allow_unverified_repro = true` lets the native transaction proceed with
   index entries whose hash cannot be verified (the equivalent of
@@ -166,14 +178,14 @@ Key points:
   or `"skip"` (it is reported and left out of the resolved set).
 
 Every key outside this schema, an unsupported `schema` value, malformed types,
-duplicate strata, a malformed `[expose]` key or an unknown `on_missing_artifact`
+duplicate strata, a malformed `expose` key or an unknown `on_missing_artifact`
 value is a hard error that `salt config check` reports without touching the
 system. Resolution-time problems — a pin the index does not offer, a pin
 outside the declared closure, a missing root or dependency under
-`on_missing_artifact = "fail"`, an `[expose]` key naming a stratum that is
+`on_missing_artifact = "fail"`, an `expose` key naming a stratum that is
 neither present nor declared — abort `salt config apply` before any change.
 `salt config apply --dry-run` prints the full plan (native transaction, stratum
-bootstrap/installs, shims to add or remove) without acting. The installer's minimal `[system]`/`[kernel]`
+bootstrap/installs, shims to add or remove) without acting. The installer's minimal `system`/`kernel`
 config is accepted and simply leaves every plane unmanaged.
 
 ## 3. The lockfile: `/etc/salt/system.lock.toml`
@@ -187,7 +199,7 @@ exact version of every foreign package installed in it. `schema = 2` is what `sa
 schema = 2
 generated = "2026-06-25T00:00:00Z"
 arch = "x86_64"
-config_hash = "sha256:..."            # sha256 of etc/salt/system.toml, if present
+config_hash = "sha256:..."            # sha256 of etc/salt/system.lua, if present
 repo_index_sha256 = "sha256:..."      # sha256 of the synced index.toml
 
 [[native]]
@@ -362,13 +374,13 @@ ignored because a lock is always verified).
 `apply` is convergent and idempotent: a second run reports
 `native: already matches` and changes nothing. `salt config apply` is the same
 operation on the default lock path with one extra guard: if
-`etc/salt/system.toml` changed since the lock was generated (its sha256 differs
+`etc/salt/system.lua` changed since the lock was generated (its sha256 differs
 from `config_hash`) it refuses unless `--relock` is passed. With `--relock` (or
 when no lock exists yet) the config itself is resolved and enforced as
-described in section 2 — native closure from `[native]`/`[native.pin]`,
-stratum bootstrap and declared packages from `[[strata]]`, shims from
-`[expose]`, strictness from `[policy]` — and the lock is regenerated from the
-resulting system after a successful apply. `[expose]` and `[policy]` are
+described in section 2 — native closure from `native`/`native.pin`,
+stratum bootstrap and declared packages from `strata`, shims from
+`expose`, strictness from `policy` — and the lock is regenerated from the
+resulting system after a successful apply. `expose` and `policy` are
 enforced on every `config apply`, lock-driven or not.
 
 ## 6. `salt lock diff`
@@ -395,8 +407,8 @@ This reuses the Btrfs subvolume + snapshot design ([rollback.md](rollback.md)).
   generation's files and database rows.
 - **Garbage collection.** `salt config gc` (alias `salt gc`) keeps the `N` most
   recent generations (`--keep N`, default from `gc.keep` in
-  `etc/salt/salt.conf`, default 3) plus the current, booted and pinned ones
-  (`--pin ID` or `gc.pinned = [..]` in `salt.conf`), removes the other
+  `etc/salt/salt.lua`, default 3) plus the current, booted and pinned ones
+  (`--pin ID` or `gc = { pinned = { ... } }` in `salt.lua`), removes the other
   generations' snapshots/state directories, and deletes cached `.grain`
   artifacts under `var/lib/salt/cache/<arch>` that no kept generation and no
   lockfile references. `--dry-run` prints every action prefixed `would remove`
@@ -411,7 +423,7 @@ salt lock apply [FILE] [--dry-run] [--download-only]
                                         converge to a lockfile, fail closed on mismatch
 salt lock diff [FILE] [--quiet]         compare the live system with a lockfile
 salt install --locked [--lockfile FILE] same as lock apply
-salt config show                        print etc/salt/system.toml
+salt config show                        print etc/salt/system.lua
 salt config apply [--relock] [--dry-run] [--download-only]
 salt config diff
 salt config history                     alias of salt history
@@ -433,11 +445,11 @@ Enforced end to end and covered by `tests/cli_smoke.cmake` and
 - `lock diff` exit codes;
 - `config apply` stale-config refusal and `--relock`;
 - `config check` diagnostics and `config apply --relock` converging the native
-  plane to the `[native]` closure (install roots and dependencies, remove
-  extras, honour `[native.pin]`), `--dry-run` planning without changes,
-  `[policy] require_signed_native` refusing an unsigned index,
+  plane to the `native` closure (install roots and dependencies, remove
+  extras, honour `native.pin`), `--dry-run` planning without changes,
+  `policy.require_signed_native` refusing an unsigned index,
   `on_missing_artifact = "fail" | "skip"`, and rejection of unknown keys,
-  unavailable pins, pins outside the native set and malformed `[expose]` keys;
+  unavailable pins, pins outside the native set and malformed `expose` keys;
 - generation and cache GC including dry-run and pinning;
 - foreign query parsing and exact-version spec generation for every supported
   manager (`tests/test_main.c`), lockfile validation of `[[stratum.package]]`
@@ -451,9 +463,9 @@ carries a digest, a lock whose digest for an installed package was tampered
 with is reported by `lock diff` and refused (rolled back) by `lock apply`, and
 a lock pinning a version the manager cannot provide is refused and rolled
 back. The same
-workflow proves `config apply --relock` installing a declared `[[strata]]`
-package the manager lacks, creating `[expose]` shims that run, reporting
-`already matches` on a second run, and removing a shim once its `[expose]`
+workflow proves `config apply --relock` installing a declared `strata`
+package the manager lacks, creating `expose` shims that run, reporting
+`already matches` on a second run, and removing a shim once its `expose`
 entry is deleted.
 
 Not enforced:
@@ -466,7 +478,7 @@ Not enforced:
   remains the job of each manager's own signature checks. For pacman and apt
   the identity is the installed file manifest (mtree / md5sums), which pins
   the package's content but not its compressed container.
-- **Foreign extras under `[[strata]]`.** `config apply` installs declared
+- **Foreign extras under `strata`.** `config apply` installs declared
   foreign packages that are missing but does not remove packages the operator
   added inside a stratum by hand; exact foreign convergence (remove extras,
   replace changed versions) is what `salt lock apply` does from the lock.

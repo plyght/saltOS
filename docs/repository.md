@@ -78,7 +78,7 @@ and the arch the tree is built for.
 anything. This is the heart of the repository's security model:
 
 1. **Verify the index signature.** Load `index.toml.sig` and verify it against
-   the **trusted public key** (configured in `/etc/salt/repo.conf` on an
+   the **trusted public key** (configured in `/etc/salt/repo.lua` on an
    installed system, or passed with `--key`). This uses `salt_verify_file` /
    `salt_verify_buf` from `include/salt/sign.h`. If the signature does not
    verify against the trusted key, the index is rejected and nothing proceeds.
@@ -146,13 +146,23 @@ In the repository:
 - The **secret** signing key is **git-ignored** and never committed. It is held
   only by the signer who publishes releases.
 
-On an installed system, `/etc/salt/repo.conf` records the repository source URL
-and the **trusted public key** that signed indexes must verify against.
+On an installed system, `/etc/salt/repo.lua` records the repository source URL
+and the **trusted public key** that signed indexes must verify against. Like all
+human-authored saltOS configuration it is sandboxed Lua that returns a table
+(the index itself stays signed TOML):
+
+```lua
+return {
+  repo = "current",
+  source = "https://updates.example.com",
+  key = "/etc/salt/keys/ota.pub",   -- hex public key or a path to one
+}
+```
 
 ## How `salt sync` consumes the index
 
 `salt sync` refreshes the local copy of the repository index from the configured
-source (`--repo`, or the source in `/etc/salt/repo.conf`). It:
+source (`--repo`, or the source in `/etc/salt/repo.lua`). It:
 
 1. fetches `index.toml` and `index.toml.sig` for the host arch (the arch is
    detected at runtime: `arm64` → `aarch64`, `amd64` → `x86_64`);

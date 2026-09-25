@@ -26,12 +26,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { id: alpine,   pmname: apk,    recipe: strata/alpine.toml,   prep: none,        refresh: "apk update" }
-          - { id: void,     pmname: xbps,   recipe: /tmp/void.toml,        prep: void,        refresh: "xbps-install -Sy xbps" }
-          - { id: arch,     pmname: pacman, recipe: strata/arch.toml,      prep: none,        refresh: "pacman -Syu --noconfirm" }
-          - { id: debian,   pmname: apt,    recipe: strata/debian.toml,    prep: debootstrap, refresh: "apt-get update" }
-          - { id: fedora,   pmname: dnf,    recipe: strata/fedora.toml,    prep: none,        refresh: "true" }
-          - { id: opensuse, pmname: zypper, recipe: strata/opensuse.toml,  prep: none,        refresh: "zypper -n refresh" }
+          - { id: alpine,   pmname: apk,    recipe: strata/alpine.lua,    prep: none,        refresh: "apk update" }
+          - { id: void,     pmname: xbps,   recipe: /tmp/void.lua,         prep: void,        refresh: "xbps-install -Sy xbps" }
+          - { id: arch,     pmname: pacman, recipe: strata/arch.lua,       prep: none,        refresh: "pacman -Syu --noconfirm" }
+          - { id: debian,   pmname: apt,    recipe: strata/debian.lua,     prep: debootstrap, refresh: "apt-get update" }
+          - { id: fedora,   pmname: dnf,    recipe: strata/fedora.lua,     prep: none,        refresh: "true" }
+          - { id: opensuse, pmname: zypper, recipe: strata/opensuse.lua,   prep: none,        refresh: "zypper -n refresh" }
     steps:
       - uses: actions/checkout@v4
 
@@ -59,9 +59,9 @@ jobs:
               file=$(curl -fsSL "$base/" \
                 | grep -oE 'void-x86_64-ROOTFS-[0-9]+\.tar\.xz' | sort | tail -1)
               test -n "$file"
-              sed "s|^url = .*ROOTFS.*|url = \"$base/$file\"|" strata/void.toml > /tmp/void.toml
+              sed "s|^\( *url = \)\".*ROOTFS.*\",|\1\"$base/$file\",|" strata/void.lua > /tmp/void.lua
               echo "resolved void rootfs: $file"
-              grep '^url' /tmp/void.toml
+              build/src/salt/salt eval /tmp/void.lua bootstrap.url | grep -F "$base/$file"
               ;;
             *) echo "no prep needed" ;;
           esac
@@ -140,12 +140,12 @@ jobs:
           fi
           sudo "$salt" lock diff /tmp/system.lock.toml
 
-      - name: Prove declarative system.toml ([[strata]].packages + [expose])
+      - name: Prove declarative system.lua (strata[].packages + expose)
         run: |
           salt=build/src/salt/salt
           sudo mkdir -p /etc/salt
-          printf '[[strata]]\nname = "%s"\npackages = ["nano"]\n\n[expose]\n"%s/nano" = "cfg-nano"\n"%s/sh" = { alias = "cfg-sh" }\n' \
-            ${{ matrix.id }} ${{ matrix.id }} ${{ matrix.id }} | sudo tee /etc/salt/system.toml
+          printf 'return {\n  strata = {\n    { name = "%s", packages = { "nano" } },\n  },\n  expose = {\n    ["%s/nano"] = "cfg-nano",\n    ["%s/sh"] = { alias = "cfg-sh" },\n  },\n}\n' \
+            ${{ matrix.id }} ${{ matrix.id }} ${{ matrix.id }} | sudo tee /etc/salt/system.lua
           sudo "$salt" config check
           sudo "$salt" pkg ${{ matrix.id }} remove nano
           sudo "$salt" --yes --no-expose config apply --relock
@@ -155,8 +155,8 @@ jobs:
           sudo "$salt" exposed | grep -q '^cfg-sh '
           grep -q 'name = "nano"' /etc/salt/system.lock.toml
           sudo "$salt" --yes --no-expose config apply | grep -q 'already matches'
-          printf '[[strata]]\nname = "%s"\npackages = ["nano"]\n\n[expose]\n"%s/nano" = "cfg-nano"\n' \
-            ${{ matrix.id }} ${{ matrix.id }} | sudo tee /etc/salt/system.toml
+          printf 'return {\n  strata = {\n    { name = "%s", packages = { "nano" } },\n  },\n  expose = {\n    ["%s/nano"] = "cfg-nano",\n  },\n}\n' \
+            ${{ matrix.id }} ${{ matrix.id }} | sudo tee /etc/salt/system.lua
           if sudo "$salt" --yes --no-expose config apply; then
             echo "config apply accepted a stale lock"; exit 1
           fi

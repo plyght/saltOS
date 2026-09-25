@@ -71,9 +71,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { mode: text, firmware: bios, config: os/iso/tests/text-erase-btrfs.toml }
-          - { mode: text, firmware: uefi, config: os/iso/tests/text-erase-ext4.toml }
-          - { mode: calamares, firmware: uefi, config: os/iso/tests/calamares-erase-btrfs.toml }
+          - { mode: text, firmware: bios, config: os/iso/tests/text-erase-btrfs.lua }
+          - { mode: text, firmware: uefi, config: os/iso/tests/text-erase-ext4.lua }
+          - { mode: calamares, firmware: uefi, config: os/iso/tests/calamares-erase-btrfs.lua }
     steps:
       - uses: actions/checkout@v4
 

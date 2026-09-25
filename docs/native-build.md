@@ -8,7 +8,7 @@ installer tools — is self-built and reused.
 ## Pipeline
 
 1. `os/bootstrap/bootstrap.sh` builds the recipe graph in topological order
-   (`os/bootstrap/build-order.toml`) via `salt build`, installing each resulting
+   (`os/bootstrap/build-order.lua`, read with `salt eval`) via `salt build`, installing each resulting
    `.grain` into a sysroot with `salt install --root`. Stages: `cross-toolchain`,
    `temp-tools`, `base`, `desktop`. Select stages with the `STAGES` env, e.g.
    `STAGES="cross-toolchain temp-tools base"` for the installer base (no desktop).

@@ -17,7 +17,7 @@ rejected because it has weaker Btrfs snapshot integration and saltOS does not
 use systemd. GRUB is built EFI-only here, targeting x86_64-efi and arm64-efi
 selected from SALT_ARCH; efibootmgr/efivar manage the UEFI boot entries.
 
-Stages (build-order.toml)
+Stages (build-order.lua; list one with `salt eval build-order.lua <stage>.packages`)
 
 1. cross-toolchain
    binutils, gcc, the kernel headers (linux), and glibc plus the gcc math
@@ -77,7 +77,7 @@ This installs the base and desktop packages with salt install --root, copies
 os/runit/sv into /etc/runit/sv, enables the default services by symlink into
 /etc/runit/runsvdir/current, writes a Btrfs subvolume fstab
 (@ @home @var @log @snapshots), and seeds hostname, hosts, os-release,
-passwd/group, shells, and /etc/salt/repo.conf.
+passwd/group, shells, and /etc/salt/repo.lua.
 
 The resulting rootfs is consumed by os/iso (image assembly) and os/installer
 (disk install). Bootloader deployment entries and the Btrfs subvolume creation

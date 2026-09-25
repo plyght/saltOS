@@ -57,9 +57,9 @@ bash os/iso/qemu-boot-test.sh --iso saltos-0.1.0-installer-aarch64.iso --arch aa
 
 # fully automated install into a fresh virtual disk, then reboot from that disk
 bash os/iso/qemu-install-test.sh --iso saltos-0.1.0-installer-x86_64.iso \
-  --config os/iso/tests/text-erase-btrfs.toml --mode text --firmware bios --out t-bios
+  --config os/iso/tests/text-erase-btrfs.lua --mode text --firmware bios --out t-bios
 bash os/iso/qemu-install-test.sh --iso saltos-0.1.0-installer-x86_64.iso \
-  --config os/iso/tests/calamares-erase-btrfs.toml --mode calamares --firmware uefi --out t-cala
+  --config os/iso/tests/calamares-erase-btrfs.lua --mode calamares --firmware uefi --out t-cala
 ```
 
 Or by hand — `x86_64`:
@@ -137,11 +137,12 @@ launcher. It asks, in order:
 
 Then it shows a summary and asks for confirmation before touching the disk.
 
-Non-interactive: put the answers in a TOML file (see the reference in
-`docs/installer.md` or the fixtures in `os/iso/tests/*.toml`) and run
+Non-interactive: put the answers in a Lua file that returns a table (see the
+reference in `docs/installer.md` or the fixtures in `os/iso/tests/*.lua`;
+`salt eval system.lua` shows what it evaluates to) and run
 
 ```sh
-sudo salt-setup --from system.toml
+sudo salt-setup --from system.lua
 ```
 
 Disk, user and primary stratum are required; the other keys fall back to the
@@ -157,11 +158,11 @@ On the installer ISO double-click "Install saltOS". Calamares walks through
 welcome, language, keyboard, partitions (erase / alongside / replace / manual,
 Btrfs or ext4, encryption, swap), **primary stratum**, **desktop**, users and a
 summary, then partitions and mounts the target. The final step, the
-`saltos_setup` job, writes those answers to `/run/saltos-installer/system.toml`
+`saltos_setup` job, writes those answers to `/run/saltos-installer/system.lua`
 and runs
 
 ```sh
-salt-setup --from /run/saltos-installer/system.toml --target <root> --yes
+salt-setup --from /run/saltos-installer/system.lua --target <root> --yes
 ```
 
 so the GUI and the text installer share one implementation and one result. The
@@ -174,7 +175,7 @@ On first boot:
 
 - **runit** brings up services (NetworkManager, chronyd, dbus, seatd, getty and
   — when a desktop was installed — sddm); manage them with the `svc` wrapper.
-- `/etc/salt/system.toml` and `/etc/salt/system.lock.toml` describe the
+- `/etc/salt/system.lua` and `/etc/salt/system.lock.toml` describe the
   installed system; `salt config apply system.lock.toml` reproduces it.
 - the package database at `/var/lib/salt/db.sqlite` reflects the installed base.
 - `salt update` performs transactional system updates, taking a pre-transaction

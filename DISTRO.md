@@ -609,7 +609,7 @@ salt config rollback
 salt lock
 ```
 
-These pin and reproduce the whole system across both planes; see `docs/reproducibility.md`. The installer (`salt-setup`) writes `system.toml`, and shares the `salt config apply` engine for non-interactive installs.
+These pin and reproduce the whole system across both planes; see `docs/reproducibility.md`. The installer (`salt-setup`) writes `system.lua`, and shares the `salt config apply` engine for non-interactive installs.
 
 ### 9.1 Native Package Manager Goals
 
@@ -706,33 +706,37 @@ Correctness matters more than aesthetic purity.
 
 ## 10. Native Package Recipes
 
-Use TOML for native package metadata and build recipes.
+Native build recipes (`recipes/<name>/recipe.lua`) are written in Lua; the package metadata `salt build` generates inside each grain (`metadata.toml`, `manifest.toml`) and the signed repository index stay TOML.
 
-TOML is chosen because it is small, clear, and easier to parse safely than YAML.
+A recipe is a sandboxed Lua chunk that returns a table of plain data: strings, integers, booleans and tables. It may use `local`s, helper functions, string concatenation and `salt.arch`, but has no `io`, `os`, `require` or `load`, so it cannot read files, run commands or reach the network, and evaluation is capped in memory and instructions. Lua lets a recipe name a value once and derive the rest without growing a template language, while still evaluating to nothing but data. `salt eval <file> [key]` prints what a file evaluates to and is how shell scripts read these files. See `docs/recipes.md`.
 
 Example native recipe:
 
-```toml
-name = "zlib"
-version = "1.3.1"
-release = 1
-summary = "Compression library"
-license = "Zlib"
-arch = ["x86_64"]
+```lua
+local version = "1.3.1"
 
-[source]
-url = "https://zlib.net/zlib-1.3.1.tar.gz"
-sha256 = "..."
-
-[build]
-system = "make"
-deps = ["gcc", "make"]
-
-[package]
-deps = ["glibc"]
-
-[reproducibility]
-status = "verified"
+return {
+  name = "zlib",
+  version = version,
+  release = 1,
+  summary = "Compression library",
+  license = "Zlib",
+  arch = { "x86_64" },
+  source = {
+    url = "https://zlib.net/zlib-" .. version .. ".tar.gz",
+    sha256 = "...",
+  },
+  build = {
+    system = "make",
+    deps = { "gcc", "make" },
+  },
+  package = {
+    deps = { "glibc" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}
 ```
 
 Native recipes should require:
@@ -746,32 +750,34 @@ Native recipes should require:
 
 ## 11. Stratum Recipes
 
-saltOS should also support TOML definitions for managed strata.
+saltOS should also support Lua definitions for managed strata (`strata/<name>.lua`, same sandbox and return-a-table shape as native recipes; the shipped schema is in `strata/README.md`).
 
 Example:
 
-```toml
-name = "arch"
-family = "arch"
-arch = "x86_64"
-package_manager = "pacman"
-bootstrap = "pacstrap"
-root = "/strata/arch"
-
-[repositories]
-core = "https://geo.mirror.pkgbuild.com/core/os/x86_64"
-extra = "https://geo.mirror.pkgbuild.com/extra/os/x86_64"
-
-[integration]
-default_exposure = "explicit"
-graphics = true
-audio = true
-dbus_session = true
-system_services = "wrapped"
-
-[rollback]
-mode = "per-stratum"
-pre_transaction_snapshots = true
+```lua
+return {
+  name = "arch",
+  family = "arch",
+  arch = "x86_64",
+  package_manager = "pacman",
+  bootstrap = "pacstrap",
+  root = "/strata/arch",
+  repositories = {
+    core = "https://geo.mirror.pkgbuild.com/core/os/x86_64",
+    extra = "https://geo.mirror.pkgbuild.com/extra/os/x86_64",
+  },
+  integration = {
+    default_exposure = "explicit",
+    graphics = true,
+    audio = true,
+    dbus_session = true,
+    system_services = "wrapped",
+  },
+  rollback = {
+    mode = "per-stratum",
+    pre_transaction_snapshots = true,
+  },
+}
 ```
 
 Stratum recipes should declare:
@@ -925,7 +931,7 @@ salt build recipes/zlib
 salt lint recipes/zlib
 salt sign out/zlib-1.3.1-1-x86_64.grain
 salt repo publish out/
-salt stratum lint strata/arch.toml
+salt stratum lint strata/arch.lua
 salt stratum bootstrap arch
 ```
 
@@ -1128,11 +1134,11 @@ Default developer packages may include:
 
 ## 20. Installer
 
-saltOS ships two installers and one installation engine. The engine is `salt-setup`, a C++23 program in `src/setup/` built on the shared `halite` engine — a sibling of `salt`, not a shell script and not a desktop application. Installer logic is OS runtime code; only the image build (`os/iso/live-build.sh`) stays in shell. The text installer *is* `salt-setup`; the graphical installer is Calamares, whose only job is to collect answers, partition and mount, and then run `salt-setup --from <generated system.toml> --target <root> --yes`. Every installation rule therefore exists exactly once.
+saltOS ships two installers and one installation engine. The engine is `salt-setup`, a C++23 program in `src/setup/` built on the shared `halite` engine — a sibling of `salt`, not a shell script and not a desktop application. Installer logic is OS runtime code; only the image build (`os/iso/live-build.sh`) stays in shell. The text installer *is* `salt-setup`; the graphical installer is Calamares, whose only job is to collect answers, partition and mount, and then run `salt-setup --from <generated system.lua> --target <root> --yes`. Every installation rule therefore exists exactly once.
 
 The defining choice the installer presents is **which distribution provides userland**. saltOS installs its own minimal native layer as the root (init, `salt`, `halite`, the boot contract, the btrfs layout, and system identity) and then bootstraps the chosen distribution as the **primary stratum** under `/strata/<name>`, auto-exposed so its userland is on `PATH`. This is how saltOS stays its own OS while sourcing package depth from any ecosystem, without the maintainer repackaging the Linux world.
 
-`salt-setup` runs interactively in the bare boot environment, or non-interactively from a config: `salt-setup --from system.toml`. Every interactive question has a key in the file, so headless and scripted installs need no prompts; `--profile` preseeds prompt defaults and `--set section.key=value` overrides single values. Option parsing and validation live in `src/setup/config.{hpp,cpp}` and are unit-tested. The non-interactive path shares the reproducibility `salt config apply` engine, so installing a system and reproducing one from a lockfile are the same code.
+`salt-setup` runs interactively in the bare boot environment, or non-interactively from a config: `salt-setup --from system.lua`. Every interactive question has a key in the file, so headless and scripted installs need no prompts; `--profile` preseeds prompt defaults and `--set section.key=value` overrides single values. Option parsing and validation live in `src/setup/config.{hpp,cpp}` and are unit-tested. The non-interactive path shares the reproducibility `salt config apply` engine, so installing a system and reproducing one from a lockfile are the same code.
 
 Both installers are **unopinionated**: they ask, they do not assume. They support:
 
@@ -1192,11 +1198,12 @@ saltOS owns the **boot contract**: `salt` is the sole authority over `/boot`, th
 
 The kernel that fills the contract is a declared, replaceable input rather than a hardcoded component:
 
-```toml
-[kernel]
-source = "native"        # default: the saltOS native kernel package
-# source = "stratum:arch" # take the kernel from a chosen stratum
-# version = "6.12.30"     # pin a specific native kernel
+```lua
+  kernel = {
+    source = "native",          -- default: the saltOS native kernel package
+    -- source = "stratum:arch", -- take the kernel from a chosen stratum
+    -- version = "6.12.30",     -- pin a specific native kernel
+  },
 ```
 
 Default is the native kernel; advanced users may point the kernel slot at a stratum or pin a version. `salt` still owns initramfs and GRUB generation regardless of the source, and the choice is pinned in the lockfile. This delivers "saltOS owns boot by default" together with "the user can change the kernel" without per-distro boot integration.
@@ -1355,16 +1362,17 @@ Decided:
 - **Package format / core library:** `.grain` (a grain of salt) for native packages; the C core library is `halite`.
 - **Service integration:** supported in v0 as runit `sv` wrappers generated by `salt service import` (a stratum never takes PID 1).
 - **Foreign package manager use:** wrapped and recorded via `salt pkg`, with a pre-operation per-stratum snapshot; direct use inside `salt stratum shell` is allowed but unrecorded.
-- **Installer:** native `salt-setup` (C++23 on `halite`, `src/setup/`) as the text installer and as the single engine; Calamares is the GUI front-end that generates `system.toml` and runs `salt-setup --from`. The base distribution is chosen at install time and bootstrapped as the auto-exposed primary stratum; saltOS's own minimal native layer is always the root.
-- **Boot contract:** `salt` is the sole authority over `/boot`, GRUB, and initramfs generation. The kernel is a declared, replaceable input (`[kernel] source`), defaulting to the native kernel, with no per-distro boot integration required.
-- **Reproducibility model:** declarative `system.toml` (intent) + fully pinned `system.lock.toml` (resolution); `salt config apply` reproduces a system. Source-level reproducibility for the native plane, content-pinned reinstall for foreign strata.
+- **Installer:** native `salt-setup` (C++23 on `halite`, `src/setup/`) as the text installer and as the single engine; Calamares is the GUI front-end that generates `system.lua` and runs `salt-setup --from`. The base distribution is chosen at install time and bootstrapped as the auto-exposed primary stratum; saltOS's own minimal native layer is always the root.
+- **Boot contract:** `salt` is the sole authority over `/boot`, GRUB, and initramfs generation. The kernel is a declared, replaceable input (`kernel.source`), defaulting to the native kernel, with no per-distro boot integration required.
+- **Reproducibility model:** declarative `system.lua` (intent) + fully pinned `system.lock.toml` (resolution); `salt config apply` reproduces a system. Source-level reproducibility for the native plane, content-pinned reinstall for foreign strata.
 
 - **Host rollback boot menu:** GRUB entries per deployment (see `docs/rollback.md`); no separate boot-environment selector.
 - **Package manager and builder:** one `salt` binary; `salt build` stays a subcommand.
 - **Recipe build phases:** shell. Known build systems (`autotools`, `cmake`, `meson`, …) supply the default incantation and an optional `script` covers the rest; `salt lint` and `salt trust scan` review it. No restricted build DSL.
-- **Native package scripts:** allowed only when declared and restricted. A recipe declares install hooks explicitly (`[hooks]` in `recipe.toml`); they run inside the target root with a fixed environment and no network, are recorded in the grain manifest, and every new or changed hook is flagged by `salt trust scan` and in review. Undeclared scripts are rejected.
+- **Native package scripts:** allowed only when declared and restricted. A recipe declares install hooks explicitly (the `hooks` table in `recipe.lua`); they run inside the target root with a fixed environment and no network, are recorded in the grain manifest, and every new or changed hook is flagged by `salt trust scan` and in review. Undeclared scripts are rejected.
 - **First desktop browser:** native. Helium ships as a native grain in the desktop stage; strata browsers remain installable and exposable.
 - **Strata desktop integration:** socket/GPU/audio passthrough plus host fonts, icon and cursor themes, GTK/Qt theme settings and the XDG desktop portal are shared into every stratum by default (read-only); MIME associations and host `/etc` stay isolated.
+- **Configuration format:** human-authored configuration is Lua — recipes, strata, `build-order.lua`, `/etc/salt/{system,salt,repo,boot}.lua`, installer answer files — evaluated in a sandbox (no `io`/`os`/`require`/`load`, memory and instruction limits) and required to `return` a table of plain data; `salt eval` reads it from scripts. Machine-written, signed or hashed data stays TOML and is never evaluated: `index.toml` (+ `.sig`), grain `metadata.toml`/`manifest.toml`, `system.lock.toml`, `trust.toml`.
 - **First release signing:** the first public experimental release ships unsigned and says so; release and repository signing keys are introduced before any non-experimental release.
 
 Still open (revisit after the first experimental release):

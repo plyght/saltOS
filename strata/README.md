@@ -2,15 +2,19 @@
 
 A **stratum** is a managed foreign-distro userspace that the native `salt` tool
 bootstraps, runs apps from, exposes commands from, and rolls back. A stratum
-recipe is the TOML definition that tells `salt` how to build and integrate one.
+recipe is the Lua definition that tells `salt` how to build and integrate one.
 
 This directory holds the official stratum definitions saltOS ships so users do
 not have to invent them from scratch:
 
 ```
-void.toml      Void Linux   (xbps)
-arch.toml      Arch Linux   (pacman)
-debian.toml    Debian       (apt)
+void.lua          Void Linux         (xbps)
+arch.lua          Arch Linux         (pacman)
+arch-aarch64.lua  Arch Linux ARM     (pacman, aarch64)
+debian.lua        Debian             (apt)
+alpine.lua        Alpine Linux       (apk)
+fedora.lua        Fedora             (dnf)
+opensuse.lua      openSUSE           (zypper)
 ```
 
 For the wider model — running foreign software, exposing commands, component
@@ -19,27 +23,38 @@ and sections 8 and 11 of [../DISTRO.md](../DISTRO.md).
 
 ## Schema
 
-A recipe is a single TOML file. The top-level keys identify the stratum:
+A recipe is a single Lua file that returns a table. It is evaluated in the
+same sandbox as package recipes (see
+[../docs/recipes.md](../docs/recipes.md#the-configuration-sandbox)): only
+strings, integers, booleans and tables come out, and the file cannot read
+files, run commands or reach the network. `salt eval strata/arch.lua
+bootstrap.url` prints one value. The top-level keys identify the stratum:
 
-```toml
-name = "arch"               # stratum name, used on the salt command line
-family = "arch"             # distro family (void | arch | debian | ...)
-arch = "x86_64"             # CPU architecture of the root
-package_manager = "pacman"  # native package manager inside the stratum
-root = "/strata/arch"       # where the stratum root filesystem lives
-trust = "official"          # trust level of this definition
+```lua
+return {
+  name = "arch",               -- stratum name, used on the salt command line
+  family = "arch",             -- distro family (void | arch | debian | ...)
+  arch = "x86_64",             -- CPU architecture of the root
+  package_manager = "pacman",  -- native package manager inside the stratum
+  root = "/strata/arch",       -- where the stratum root filesystem lives
+  trust = "official",          -- trust level of this definition
+  bootstrap = { ... },
+  integration = { ... },
+  repository = { ... },
+}
 ```
 
-### `[bootstrap]`
+### `bootstrap`
 
 How the stratum root is first populated.
 
-```toml
-[bootstrap]
-method = "rootfs"   # "rootfs" | "debootstrap"
-url = "https://.../archlinux-bootstrap-x86_64.tar.zst"
-sha256 = ""         # pinned hash of the downloaded tarball
-strip = 1           # leading path components to strip on extract
+```lua
+  bootstrap = {
+    method = "rootfs",   -- "rootfs" | "debootstrap"
+    url = "https://.../archlinux-bootstrap-x86_64.tar.zst",
+    sha256 = "",         -- pinned hash of the downloaded tarball
+    strip = 1,           -- leading path components to strip on extract
+  },
 ```
 
 - `method` — the bootstrap method (see below).
@@ -50,30 +65,34 @@ strip = 1           # leading path components to strip on extract
   top-level `root.x86_64/` directory, so it uses `strip = 1`; the Void rootfs
   unpacks directly at the root, so it uses `strip = 0`.
 
-### `[integration]`
+### `integration`
 
 Which host integration permissions the stratum is granted.
 
-```toml
-[integration]
-graphics = true   # Wayland/X11 sockets and GPU device access
-audio = true      # PulseAudio/PipeWire sockets
-dbus = true       # D-Bus session access
+```lua
+  integration = {
+    graphics = true,   -- Wayland/X11 sockets and GPU device access
+    audio = true,      -- PulseAudio/PipeWire sockets
+    dbus = true,       -- D-Bus session access
+  },
 ```
 
-### `[[repository]]`
+### `repository`
 
-One or more upstream repositories the stratum's package manager uses. Each is an
-array-of-tables entry with a name and URL:
+One or more upstream repositories the stratum's package manager uses: a list of
+tables, each with a name and URL:
 
-```toml
-[[repository]]
-name = "core"
-url = "https://geo.mirror.pkgbuild.com/$repo/os/$arch"
-
-[[repository]]
-name = "extra"
-url = "https://geo.mirror.pkgbuild.com/$repo/os/$arch"
+```lua
+  repository = {
+    {
+      name = "core",
+      url = "https://geo.mirror.pkgbuild.com/$repo/os/$arch",
+    },
+    {
+      name = "extra",
+      url = "https://geo.mirror.pkgbuild.com/$repo/os/$arch",
+    },
+  },
 ```
 
 URLs may contain package-manager substitution variables (for example pacman's
@@ -109,11 +128,13 @@ artifact and must be filled in before the definition is considered complete.
 ## Working with recipes
 
 ```sh
-salt stratum lint <recipe.toml>      # validate a recipe against this schema
-salt stratum add <name|recipe.toml>  # bootstrap a stratum from a recipe
+salt stratum lint <recipe.lua>       # validate a recipe against this schema
+salt stratum add <name|recipe.lua>   # bootstrap a stratum from a recipe
+salt eval <recipe.lua> [key]         # print what the recipe evaluates to
 ```
 
 `salt stratum lint` checks a recipe for correctness and policy before it is
 used. `salt stratum add` takes either the name of a shipped stratum (for
-example `salt stratum add arch`) or a path to a `recipe.toml`, then bootstraps
-the stratum root according to its `[bootstrap]` section.
+example `salt stratum add arch`) or a path to a stratum `.lua` file, then
+bootstraps the stratum root according to its `bootstrap` table. A user's own
+recipes can also live in `/etc/salt/strata/<name>.lua`.

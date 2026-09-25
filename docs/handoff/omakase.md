@@ -12,11 +12,11 @@ resume-from-cold state for whoever continues the work.
 | `350909a` | omakase tree, configurator, cidata loader, dashboard, orchestrator on `salt-setup --from`, package maps, dotfiles, themes, `saltos-theme`/`saltos-menu`/`saltos-update`, offline Arch mirror, ISO builder, workflow, docs |
 | `d06226e` | workflow opens /dev/kvm to the runner (TCG timed out)                                  |
 | `78eb685` | encrypt / alongside / interactive `OMAKASE_TEST_MODE`s in `test-vm.sh`, `install-paths` matrix in the workflow, real-user Sway launch (`saltos-session-launch`), os-prober `/run/udev` bind in `src/setup/main.cpp` |
-| `feb6a39` | Unsplash wallpapers: manifests `os/omakase/wallpapers/*.toml`, build-time download + sha256 verify (`build/wallpapers.sh`), `CREDITS`, `saltos-wallpaper` |
+| `feb6a39` | Unsplash wallpapers: manifests `os/omakase/wallpapers/*.toml` (now `*.lua`), build-time download + sha256 verify (`build/wallpapers.sh`), `CREDITS`, `saltos-wallpaper` |
 | `15ddfc0` | saltos-site ASCII crystal (`os/omakase/live/crystal.txt`) above the greeter wordmark    |
 | `0b91c0c` | gruvbox wallpaper swapped (owner disliked the orange salt crystals)                     |
 | `5e2018c` | arch-aware `build/vendor.sh`: x86_64 tarballs vs aarch64 Vicinae AppImage (unsquashed at build, no FUSE) / Helium arm64 tar.xz verified with `gpgv` against `build/helium-signing-key.asc` / arm64 gum |
-| `12feb43` | aarch64 edition: `build/arch-mirror.sh aarch64` (Arch Linux ARM rootfs + `core extra alarm aur`), `strata/arch-aarch64.toml`, arm64-efi `grub-mkrescue`, `serial_tty()` -> `ttyAMA0`, `stratum_stock_accounts` drops stock rootfs users (`alarm`, `debian`, ...) |
+| `12feb43` | aarch64 edition: `build/arch-mirror.sh aarch64` (Arch Linux ARM rootfs + `core extra alarm aur`), `strata/arch-aarch64.toml` (now `.lua`), arm64-efi `grub-mkrescue`, `serial_tty()` -> `ttyAMA0`, `stratum_stock_accounts` drops stock rootfs users (`alarm`, `debian`, ...) |
 | `924e368` | `ARCH=aarch64 build/test-vm.sh` (qemu-system-aarch64, AAVMF, KVM if writable `/dev/kvm` else TCG + long timeouts), `build-aarch64` job on `ubuntu-24.04-arm`, docs |
 | `615f83c` | `ipxe-qemu` on the arm64 runner (first `build-aarch64` run died on a missing `efi-virtio.rom`) |
 

@@ -114,6 +114,7 @@ Quick commands
   salt sign <pkg>                   sign a package or index
   salt repo publish <dir>           publish a signed repository index
   salt trust scan recipes/<name>    scan supply-chain risk
+  salt eval <file.lua> [key]        print what a Lua config file evaluates to
 
 Repository layout
 -----------------
@@ -122,9 +123,9 @@ Repository layout
                 rollback, and strata
   src/salt/     C++23 salt CLI
   src/setup/    installer/setup binary
-  recipes/      native package recipes
+  recipes/      native package recipes (recipe.lua)
   repo/         package repository tree
-  strata/       foreign-distro stratum definitions
+  strata/       foreign-distro stratum definitions (<name>.lua)
   os/           OS integration, ISO, installer, Btrfs, and runit files
   tests/        unit and CLI smoke tests
   docs/         detailed design and contributor documentation

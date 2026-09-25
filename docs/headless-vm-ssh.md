@@ -171,7 +171,7 @@ Then `ssh saltvm` drops you straight into the saltOS host shell.
 
 Installing without a display works the same way on any machine that can run the
 live medium: everything the interactive installer asks has a key in
-`system.toml`, so an install is a single non-interactive command driven over
+`system.lua`, so an install is a single non-interactive command driven over
 SSH, a serial console, or the `saltvm.py send` bridge.
 
 1. Boot the installer/base ISO. The console edition brings the wired NIC up over
@@ -182,43 +182,47 @@ SSH, a serial console, or the `saltvm.py send` bridge.
    overlay exactly as described above — nothing written to the live system ends
    up on the target disk).
 3. Write the answers (see `docs/installer.md` for every key; the CI fixtures in
-   `os/iso/tests/*.toml` are complete working examples). A serial console is
+   `os/iso/tests/*.lua` are complete working examples). A serial console is
    kept on the installed system by putting it in `boot.cmdline`:
 
-   ```toml
-   [system]
-   hostname = "salt-headless"
-   timezone = "UTC"
-   locale = "en_US.UTF-8"
-   keymap = "us"
-
-   [install]
-   disk = "/dev/vda"
-   mode = "erase"
-   filesystem = "btrfs"
-   swap = "zram"
-   desktop = "none"
-
-   [boot]
-   cmdline = "console=tty0 console=ttyS0,115200"   # ttyAMA0 on aarch64 virt
-
-   [user]
-   name = "admin"
-   password_hash = "$6$..."   # mkpasswd -m sha-512
-   sudo = true
-
-   [network]
-   mode = "dhcp"
-
-   [[stratum]]
-   name = "alpine"
-   role = "primary"
+   ```lua
+   return {
+     system = {
+       hostname = "salt-headless",
+       timezone = "UTC",
+       locale = "en_US.UTF-8",
+       keymap = "us",
+     },
+     install = {
+       disk = "/dev/vda",
+       mode = "erase",
+       filesystem = "btrfs",
+       swap = "zram",
+       desktop = "none",
+     },
+     boot = {
+       cmdline = "console=tty0 console=ttyS0,115200",   -- ttyAMA0 on aarch64 virt
+     },
+     user = {
+       name = "admin",
+       password_hash = "$6$...",   -- mkpasswd -m sha-512
+       sudo = true,
+     },
+     network = {
+       mode = "dhcp",
+     },
+     stratum = {
+       { name = "alpine", role = "primary" },
+     },
+   }
    ```
+
+   `salt eval system.lua` prints what the file evaluates to.
 
 4. Run it:
 
    ```sh
-   sudo salt-setup --from system.toml --yes
+   sudo salt-setup --from system.lua --yes
    ```
 
    `--yes` skips the confirmation; without it the summary is printed and a
@@ -232,5 +236,5 @@ SSH, a serial console, or the `saltvm.py send` bridge.
    console is the marker CI waits for.
 
 This is exactly what `os/iso/qemu-install-test.sh --mode text` does: it hands
-the TOML to the live system through QEMU's `fw_cfg`, runs `salt-setup --from`,
+the Lua answer file to the live system through QEMU's `fw_cfg`, runs `salt-setup --from`,
 then reboots from the disk and asserts the runit markers on the serial log.

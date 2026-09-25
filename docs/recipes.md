@@ -1,10 +1,14 @@
 # Writing Recipes
 
-A saltOS package is built from a **recipe**: a single TOML file that pins where
-the source comes from, how to build it, and what the resulting package depends
-on. Recipes are deliberately small, declarative, and easy to audit. TOML is used
-because it is smaller, clearer, and easier to parse safely than YAML — not
-because of any language affinity.
+A saltOS package is built from a **recipe**: a single Lua file,
+`recipe.lua`, that pins where the source comes from, how to build it, and what
+the resulting package depends on. Recipes are deliberately small, declarative,
+and easy to audit. A recipe is not a program that builds anything: it is a
+sandboxed chunk that *returns a table* of plain data (see
+[The configuration sandbox](#the-configuration-sandbox)). Lua is used so a
+recipe can name a value once (`local version = "1.3.1"`) and build strings
+from it, while still evaluating to nothing more than data; everything a
+program writes and signs (a grain's `metadata.toml`, `index.toml`) stays TOML.
 
 This document is the schema reference and authoring guide. For how recipes are
 turned into packages and installed, see [package-manager.md](package-manager.md);
@@ -18,49 +22,85 @@ Each package lives in its own directory under `recipes/`:
 
 ```
 recipes/<name>/
-  recipe.toml      required: the recipe itself
+  recipe.lua       required: the recipe itself
   patches/         optional: *.patch applied with `patch -p1`, in name order, before the build
   files/           optional: extra files, copied into the source tree as $SALT_FILES
 ```
 
 A `scripts/` directory is not allowed; install-time code is declared in
-[`[hooks]`](#hooks).
+[`hooks`](#hooks).
 
 The directory name should match the package `name`.
 
 ## Schema reference
 
-A recipe is a TOML document with a small set of top-level keys and four tables:
-`[source]`, `[build]`, `[package]`, and `[reproducibility]`.
+A recipe returns a table with a small set of top-level keys and four nested
+tables: `source`, `build`, `package`, and `reproducibility`. (Below, `build.deps`
+means the `deps` field of the `build` table.)
 
-```toml
-name = "zlib"
-version = "1.3.1"
-release = 1
-summary = "Compression library"
-license = "Zlib"
-arch = ["x86_64", "aarch64"]
-
-[source]
-url = "https://zlib.net/zlib-1.3.1.tar.gz"
-sha256 = "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23"
-
-[build]
-system = "make"            # one of: make, autotools, cmake, meson, kernel, custom
-deps = ["gcc", "make"]
-script = """               # optional; required when system = "custom"
+```lua
+return {
+  name = "zlib",
+  version = "1.3.1",
+  release = 1,
+  summary = "Compression library",
+  license = "Zlib",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://zlib.net/zlib-1.3.1.tar.gz",
+    sha256 = "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23",
+  },
+  build = {
+    system = "make",           -- one of: make, autotools, cmake, meson, kernel, custom
+    deps = { "gcc", "make" },
+    -- optional; required when system = "custom"
+    script = [[
 ./configure --prefix=/usr
 make
 make DESTDIR="$SALT_DEST" install
-"""
-
-[package]
-deps = ["glibc"]
-
-[reproducibility]
-status = "verified"        # verified | unverified
-# reason = "..."           # required when status = "unverified"
+]],
+  },
+  package = {
+    deps = { "glibc" },
+  },
+  reproducibility = {
+    status = "verified",       -- verified | unverified
+    -- reason = "...",         -- required when status = "unverified"
+  },
+}
 ```
+
+### The configuration sandbox
+
+`recipe.lua` and every other human-authored saltOS configuration file (strata
+recipes, `/etc/salt/system.lua`, `salt.lua`, `repo.lua`, `boot.lua`) is
+evaluated by the same restricted Lua 5.4 interpreter built into `salt`:
+
+- The file is a text chunk that must `return` a table. Only plain data survives
+  evaluation: strings, integers, booleans and tables. A table is either a list
+  (`{ "a", "b" }`) or has only string keys (`{ url = "..." }`); floats,
+  functions and mixed tables are rejected. Multi-line text uses long strings,
+  `[[ ... ]]` (backslashes inside are literal, and a newline right after `[[`
+  is dropped).
+- `local` variables, functions, string concatenation (`..`) and the `string`,
+  `table`, `math` and `utf8` libraries are available, plus `salt.arch` (the
+  target architecture: `$SALT_ARCH`, else the host's) and `salt.host_arch`.
+- There is no `io`, `os`, `require`, `load`, `dofile` or `debug`: a config file
+  cannot read or write files, run commands, reach the network or load other
+  code. `print` writes to stderr. Evaluation is capped at 64 MiB of memory and
+  a fixed instruction budget, so a runaway loop fails instead of hanging.
+
+Because the result is only data, a recipe evaluates to the same table every
+time for a given `salt.arch`. To see exactly what `salt` sees, or to read one
+value from a script, use `salt eval`:
+
+```sh
+salt eval recipes/zlib/recipe.lua                 # every leaf, as `path = value`
+salt eval recipes/zlib/recipe.lua source.url      # one scalar
+salt eval recipes/zlib/recipe.lua build.deps      # a list, one element per line
+```
+
+A missing key exits 1 with no output; a table key prints the table's keys.
 
 ### Top-level keys
 
@@ -77,7 +117,7 @@ saltOS targets two architectures, `x86_64` and `aarch64`, and the repository
 keeps one tree per arch. Declaring both in `arch` is the default; only narrow it
 when a package truly cannot exist on one of them.
 
-### `[source]`
+### `source`
 
 | Key | Type | Meaning |
 | --- | --- | --- |
@@ -87,14 +127,14 @@ when a package truly cannot exist on one of them.
 Both are mandatory. The source URL must be pinned and the hash must be pinned;
 unpinned or hashless sources are rejected.
 
-### `[build]`
+### `build`
 
 | Key | Type | Meaning |
 | --- | --- | --- |
 | `system` | string | One of `make`, `autotools`, `cmake`, `meson`, `kernel`, `custom`. |
 | `deps` | array of strings | Build-time dependencies. |
 | `script` | string | Optional build script. **Required when `system = "custom"`.** |
-| `strip` | bool | Default `true`. Set `false` to ship ELF files with their debug info. |
+| `strip` | boolean | Default `true`. Set `false` to ship ELF files with their debug info. |
 
 After the build, `salt build` finalizes `$SALT_DEST` on the host before
 packaging:
@@ -115,7 +155,7 @@ configure/build/install incantation, so `script` can be omitted. For
 `script` may also be supplied alongside a known system when a package needs an
 out-of-the-ordinary sequence (as `glibc` does below).
 
-### `[package]`
+### `package`
 
 | Key | Type | Meaning |
 | --- | --- | --- |
@@ -125,7 +165,7 @@ Runtime dependencies must be declared explicitly; they are recorded in the
 package metadata and the local database and are used to keep installs and
 removals consistent.
 
-### `[reproducibility]`
+### `reproducibility`
 
 | Key | Type | Meaning |
 | --- | --- | --- |
@@ -134,7 +174,7 @@ removals consistent.
 
 See [Reproducibility status](#reproducibility-status) below.
 
-### `[hooks]`
+### `hooks`
 
 Install hooks are the only install-time code a grain can carry. They are
 optional, declared here, and restricted:
@@ -146,11 +186,12 @@ optional, declared here, and restricted:
 | `pre_remove` | before a package's files are removed |
 | `post_remove` | after they are removed |
 
-```toml
-[hooks]
-post_install = """
+```lua
+  hooks = {
+    post_install = [[
 fc-cache -s
-"""
+]],
+  },
 ```
 
 - Each value is a `/bin/sh -e` body stored in the grain's `metadata.toml`,
@@ -165,7 +206,7 @@ fc-cache -s
 - A failing `post_install`, `post_upgrade` or `pre_remove` fails the
   transaction, which is rolled back. A failing `post_remove` only warns (the
   files are already gone).
-- Any other key under `[hooks]`, and a free-form `scripts/` directory in the
+- Any other key under `hooks`, and a free-form `scripts/` directory in the
   recipe, is rejected by `salt build` and blocks `salt lint` / `salt trust
   scan`. Every declared hook is surfaced as an `install-hook` finding, and an
   added or changed hook as `hook-change`, so it is always reviewed.
@@ -224,93 +265,103 @@ never end up in `SALT_SRC`.
 
 ### Example: a `make` recipe
 
-```toml
-name = "zlib"
-version = "1.3.1"
-release = 1
-summary = "Compression library"
-license = "Zlib"
-arch = ["x86_64", "aarch64"]
+```lua
+local version = "1.3.1"
 
-[source]
-url = "https://zlib.net/zlib-1.3.1.tar.gz"
-sha256 = "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23"
-
-[build]
-system = "make"
-deps = ["gcc", "make"]
-
-[package]
-deps = ["glibc"]
-
-[reproducibility]
-status = "verified"
+return {
+  name = "zlib",
+  version = version,
+  release = 1,
+  summary = "Compression library",
+  license = "Zlib",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://zlib.net/zlib-" .. version .. ".tar.gz",
+    sha256 = "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23",
+  },
+  build = {
+    system = "make",
+    deps = { "gcc", "make" },
+  },
+  package = {
+    deps = { "glibc" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}
 ```
 
 ### Example: a `cmake` recipe
 
-```toml
-name = "example-tool"
-version = "2.4.0"
-release = 1
-summary = "Example CMake-built utility"
-license = "MIT"
-arch = ["x86_64", "aarch64"]
-
-[source]
-url = "https://example.org/releases/example-tool-2.4.0.tar.xz"
-sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
-
-[build]
-system = "cmake"
-deps = ["gcc", "cmake", "ninja"]
-
-[package]
-deps = ["glibc"]
-
-[reproducibility]
-status = "verified"
+```lua
+return {
+  name = "example-tool",
+  version = "2.4.0",
+  release = 1,
+  summary = "Example CMake-built utility",
+  license = "MIT",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://example.org/releases/example-tool-2.4.0.tar.xz",
+    sha256 = "0000000000000000000000000000000000000000000000000000000000000000",
+  },
+  build = {
+    system = "cmake",
+    deps = { "gcc", "cmake", "ninja" },
+  },
+  package = {
+    deps = { "glibc" },
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}
 ```
 
 ### Worked example: `glibc` (autotools with a custom script)
 
-The real `recipes/glibc/recipe.toml` uses `system = "autotools"` together with an
+The real `recipes/glibc/recipe.lua` uses `system = "autotools"` together with an
 explicit `script`, because glibc needs an out-of-tree build and specific
 configure flags. It shows how `SALT_JOBS` and `SALT_DEST` are used:
 
-```toml
-name = "glibc"
-version = "2.41"
-release = 1
-summary = "GNU C Library"
-license = "LGPL-2.1-or-later"
-arch = ["x86_64", "aarch64"]
+```lua
+local version = "2.41"
 
-[source]
-url = "https://ftp.gnu.org/gnu/glibc/glibc-2.41.tar.xz"
-sha256 = "a5a26b22f545d6b7d7b3dd828e11e428f24f4fac43c934fb071b6a7d0828e901"
-
-[build]
-system = "autotools"
-deps = ["gcc", "make", "binutils", "python", "bison"]
-script = """
+return {
+  name = "glibc",
+  version = version,
+  release = 1,
+  summary = "GNU C Library",
+  license = "LGPL-2.1-or-later",
+  arch = { "x86_64", "aarch64" },
+  source = {
+    url = "https://ftp.gnu.org/gnu/glibc/glibc-" .. version .. ".tar.xz",
+    sha256 = "a5a26b22f545d6b7d7b3dd828e11e428f24f4fac43c934fb071b6a7d0828e901",
+  },
+  build = {
+    system = "autotools",
+    deps = { "gcc", "make", "binutils", "python", "bison" },
+    script = [[
 #!/bin/sh
 mkdir -p build
 cd build
-../configure --prefix=/usr \\
-    --disable-werror \\
-    --enable-kernel=4.19 \\
-    --enable-stack-protector=strong \\
+../configure --prefix=/usr \
+    --disable-werror \
+    --enable-kernel=4.19 \
+    --enable-stack-protector=strong \
     libc_cv_slibdir=/usr/lib
 make -j"$SALT_JOBS"
 make DESTDIR="$SALT_DEST" install
-"""
-
-[package]
-deps = []
-
-[reproducibility]
-status = "verified"
+]],
+  },
+  package = {
+    deps = {},
+  },
+  reproducibility = {
+    status = "verified",
+  },
+}
 ```
 
 Note how the script starts in `SALT_SRC` (the extracted source), creates an
@@ -324,8 +375,8 @@ Every recipe must, at minimum:
 - pin the source URL,
 - pin the source `sha256`,
 - declare the `license`,
-- declare build dependencies (`[build].deps`),
-- declare runtime dependencies (`[package].deps`),
+- declare build dependencies (`build.deps`),
+- declare runtime dependencies (`package.deps`),
 - declare a reproducibility `status`.
 
 These are the same properties required for a package to be admitted to the
@@ -345,18 +396,20 @@ must declare where it stands.
 - `status = "verified"` — the package is built reproducibly; rebuilding from the
   pinned source in a clean environment yields the same artifact.
 
-  ```toml
-  [reproducibility]
-  status = "verified"
+  ```lua
+  reproducibility = {
+    status = "verified",
+  },
   ```
 
 - `status = "unverified"` — the package is not yet reproducible. A `reason` is
   required so the gap is explicit and reviewable.
 
-  ```toml
-  [reproducibility]
-  status = "unverified"
-  reason = "Chromium-derived browser build currently not bit-for-bit reproducible"
+  ```lua
+  reproducibility = {
+    status = "unverified",
+    reason = "Chromium-derived browser build currently not bit-for-bit reproducible",
+  },
   ```
 
 Large, high-risk packages such as the Helium browser (Chromium-derived) are the

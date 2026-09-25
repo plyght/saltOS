@@ -1,7 +1,7 @@
 # Handoff: native-base + selfhost-desktop track
 
 Owned: `.github/workflows/native-base.yml`, `.github/workflows/selfhost-desktop.yml`,
-`os/bootstrap/*`, `os/selfhost/desktop.sh`, `recipes/*/recipe.toml`, and the recipe
+`os/bootstrap/*`, `os/selfhost/desktop.sh`, `recipes/*/recipe.lua`, and the recipe
 builder path in `src/salt/cmd_build.cpp`.
 
 ## Done (all on main)
@@ -10,7 +10,7 @@ builder path in `src/salt/cmd_build.cpp`.
   libxcrypt added for `libcrypt.so.1`, gperf added for eudev, every remote recipe has
   a real 64-hex sha256 and the builder rejects anything else, bootstrap separates the
   toolchain/temp-tools repo (`$OUT/tools`) from the base repo (`$OUT`), stages packages
-  in `os/bootstrap/build-order.toml` order with publish -> sync -> `install --nodeps`
+  in `os/bootstrap/build-order.lua` order with publish -> sync -> `install --nodeps`
   per package, runs base builds chrooted in the sysroot (`SALT_BUILD_ROOT`), prunes
   build trees / old generations / cache after each package and stage, fixes for
   binutils (MAKEINFO=true), gcc (/usr/bin/cc, libdir /usr/lib), libffi, python, perl,

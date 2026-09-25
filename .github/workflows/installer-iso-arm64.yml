@@ -76,7 +76,7 @@ jobs:
           ISO=$(ls out-iso/*.iso | head -1)
           bash os/iso/qemu-install-test.sh \
             --iso "$ISO" \
-            --config os/iso/tests/text-erase-btrfs-aarch64.toml \
+            --config os/iso/tests/text-erase-btrfs-aarch64.lua \
             --mode text \
             --firmware uefi \
             --arch aarch64 \

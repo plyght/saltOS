@@ -89,7 +89,9 @@ update can still boot the previous known-good deployment.
 `salt` is split into:
 
 - `halite` — the C core library: archive handling, the SQLite database,
-  hashing, signing, TOML parsing, the transaction engine, and the trust/
+  hashing, signing, TOML parsing (for signed machine data such as `index.toml`),
+  the sandboxed Lua evaluator for human-authored config (`conf.c`: recipes,
+  strata, `/etc/salt/*.lua`), the transaction engine, and the trust/
   supply-chain logic. Headers live in `src/halite/include/salt/`.
 - the C++23 CLI — argument parsing and higher-level orchestration of the core.
 
@@ -197,7 +199,7 @@ deployment of `@` to boot.
 ```
 src/halite/        C core library (halite), headers in include/salt/
 src/salt/          C++23 CLI (salt)
-recipes/<name>/    package recipes (recipe.toml [+ patches/, files/])
+recipes/<name>/    package recipes (recipe.lua [+ patches/, files/])
 repo/<arch>/       built repository (index.toml, index.toml.sig, packages/)
 os/runit/          runit service definitions and the svc wrapper
 os/btrfs/          subvolume layout + snapshot/rollback helpers
@@ -244,12 +246,12 @@ All paths are relative to the operating root (`--root`, default `/`):
 /var/lib/salt/db.sqlite     package database + transaction log + deployments
 /var/lib/salt/state/        per-transaction saved file state (non-btrfs fallback)
 /.snapshots or /@snapshots  btrfs snapshots
-/etc/salt/repo.conf         repo source + trusted key
+/etc/salt/repo.lua          repo source + trusted key
 /etc/runit/sv/<name>        service definitions (run, optional finish/check)
 /etc/runit/runsvdir/current symlinks for enabled services
 ```
 
-`/etc/salt/repo.conf` names the repository source and the trusted public key;
+`/etc/salt/repo.lua` names the repository source and the trusted public key;
 `salt` consults it for `sync`, `install`, and `update`. The `--repo` and `--key`
 global flags override the configured values, and `--root` lets `salt` operate on
 an alternate root (used by the installer and by tests).
@@ -259,7 +261,7 @@ an alternate root (used by the installer and by tests).
 `salt install <pkg>` runs as a single transaction:
 
 1. **Sync / trust.** If needed, `salt sync` refreshes the repository index from
-   the source in `/etc/salt/repo.conf`. The signature `index.toml.sig` is
+   the source in `/etc/salt/repo.lua`. The signature `index.toml.sig` is
    verified against the trusted public key. A failed signature aborts before
    anything is fetched.
 2. **Resolve.** Runtime dependencies declared in the index are resolved into an

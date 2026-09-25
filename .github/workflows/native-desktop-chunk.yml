@@ -106,7 +106,7 @@ jobs:
         if: always()
         run: |
           mkdir -p desktop-grains
-          for p in $(awk '/^\[desktop\]/{f=1;next} /^\[/{f=0} f' os/bootstrap/build-order.toml | tr -d ' ",' | grep -v '^packages=\[\|^\]$'); do
+          for p in $(build/src/salt/salt eval os/bootstrap/build-order.lua desktop.packages); do
             sudo cp -a saltos-build/x86_64/packages/"$p"-*-x86_64.grain* desktop-grains/ 2>/dev/null || true
           done
           sudo chown -R "$USER" desktop-grains

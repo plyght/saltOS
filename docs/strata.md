@@ -28,19 +28,19 @@ salt stratum add arch
 salt stratum add debian
 ```
 
-`salt stratum add` reads the recipe (from `strata/<name>.toml`, or a path you
+`salt stratum add` reads the recipe (from `strata/<name>.lua`, or a path you
 pass directly), downloads and verifies the bootstrap tarball or runs
 `debootstrap`, and populates the stratum root under `/strata/<name>`. You can
 also point it at a custom recipe:
 
 ```sh
-salt stratum add ./my-stratum.toml
+salt stratum add ./my-stratum.lua
 ```
 
 A recipe is validated before use:
 
 ```sh
-salt stratum lint strata/arch.toml
+salt stratum lint strata/arch.lua
 ```
 
 ## 2. Listing strata
@@ -134,11 +134,14 @@ example `neovim` provides the `nvim` command; `firefox` provides both the
 before exposing them. Commands go on `PATH`; desktop apps get a host menu entry.
 So a GUI app appears in your application menu and a CLI tool is on your path with
 no extra `salt expose` / `salt expose-desktop` step. This is governed by
-`/etc/salt/salt.conf`:
+`/etc/salt/salt.lua`:
 
-```toml
-[install]
-auto_expose = "prompt"   # always | prompt | never
+```lua
+return {
+  install = {
+    auto_expose = "prompt",   -- always | prompt | never
+  },
+}
 ```
 
 `--expose` and `--no-expose` override the configured mode for a single command,
@@ -162,11 +165,14 @@ flags pass straight through. saltOS takes a safety snapshot before **mutating**
 operations (install/remove/upgrade) and skips it for read-only ones
 (`pacman -Q`, `apt search`, ...), so queries stay fast.
 
-This is controlled by `/etc/salt/salt.conf`:
+This is controlled by `/etc/salt/salt.lua`:
 
-```toml
-[strata]
-expose_pm = true   # set false to keep foreign package managers off the host
+```lua
+return {
+  strata = {
+    expose_pm = true,   -- set false to keep foreign package managers off the host
+  },
+}
 ```
 
 with `expose_pm = false` (or a one-off `--no-expose`) you keep raw access through
@@ -227,7 +233,7 @@ salt expose-desktop debian libreoffice
 
 Either way, saltOS installs a host desktop entry that launches the app through
 its stratum, wiring up Wayland/X11 sockets, audio sockets, D-Bus session access,
-fonts, icons, and GPU device access according to the stratum's `[integration]`
+fonts, icons, and GPU device access according to the stratum's `integration`
 permissions.
 
 Every stratum also sees the host's desktop look, read-only and beside its own
@@ -311,11 +317,14 @@ salt service start arch docker
 runit service; `enable` and `start` then manage it the same way as any native
 service.
 
-Automatic import is governed by `/etc/salt/salt.conf`:
+Automatic import is governed by `/etc/salt/salt.lua`:
 
-```toml
-[strata]
-auto_service = true   # set false to import daemons only by hand
+```lua
+return {
+  strata = {
+    auto_service = true,   -- set false to import daemons only by hand
+  },
+}
 ```
 
 Two honest limits: the conversion is best-effort from the unit's `ExecStart`
