@@ -15,9 +15,6 @@ concurrency:
   group: native-base-${{ github.ref }}
   cancel-in-progress: false
 
-env:
-  BUILDER_REV: ${{ hashFiles('src/salt/cmd_build.cpp', 'src/halite/src/archive.c', 'src/halite/src/pkg.c', 'src/halite/src/tar.c', 'src/halite/src/zst.c') }}
-
 jobs:
   toolchain:
     name: stage cross-toolchain + temp-tools (${{ matrix.arch }})
@@ -57,6 +54,8 @@ jobs:
           key: native-${{ matrix.arch }}-grains-${{ github.run_id }}-${{ github.run_attempt }}-tc
           restore-keys: native-${{ matrix.arch }}-grains-
       - name: Build cross-toolchain + temp-tools
+        env:
+          BUILDER_REV: ${{ hashFiles('src/salt/cmd_build.cpp', 'src/halite/src/archive.c', 'src/halite/src/pkg.c', 'src/halite/src/tar.c', 'src/halite/src/zst.c') }}
         run: |
           export PATH="$PWD/build/src/salt:$PATH"
           export SALT_ARCH=${{ matrix.arch }} OUT="$PWD/saltos-build"
@@ -132,6 +131,8 @@ jobs:
           rm -f saltos-build-${{ matrix.arch }}.tar.zst
           df -h /
       - name: Build base stage
+        env:
+          BUILDER_REV: ${{ hashFiles('src/salt/cmd_build.cpp', 'src/halite/src/archive.c', 'src/halite/src/pkg.c', 'src/halite/src/tar.c', 'src/halite/src/zst.c') }}
         run: |
           export PATH="$PWD/build/src/salt:$PATH"
           export SALT_ARCH=${{ matrix.arch }} OUT="$PWD/saltos-build"
