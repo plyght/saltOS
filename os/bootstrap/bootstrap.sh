@@ -23,6 +23,9 @@ LOGDIR="$WORK/logs"
 
 mkdir -p "$SYSROOT" "$LOGDIR"
 
+# Local recipe sources (file://./, e.g. salt itself) are relative to the repo.
+cd "$REPO_ROOT"
+
 stage_repo() {
   case "$1" in
     cross-toolchain|temp-tools) REPO_OUT="$TOOLS" ;;

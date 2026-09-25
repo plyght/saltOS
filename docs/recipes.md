@@ -19,8 +19,8 @@ Each package lives in its own directory under `recipes/`:
 ```
 recipes/<name>/
   recipe.toml      required: the recipe itself
-  patches/         optional: patches applied to the source before building
-  files/           optional: extra files referenced by the build
+  patches/         optional: *.patch applied with `patch -p1`, in name order, before the build
+  files/           optional: extra files, copied into the source tree as $SALT_FILES
 ```
 
 A `scripts/` directory is not allowed; install-time code is declared in
@@ -179,6 +179,7 @@ recipe script (and to the standard build systems):
 
 | Variable | Meaning |
 | --- | --- |
+| `SALT_FILES` | The recipe's `files/` directory, copied to `$SALT_SRC/.salt-files` (so chrooted builds see it too). |
 | `SALT_SRC` | The extracted source directory. This is the working directory (cwd) when the script starts. |
 | `SALT_DEST` | The staging `DESTDIR`. Install into here; the package payload is built from this tree. |
 | `SALT_ARCH` | The target architecture (`x86_64` or `aarch64`). |

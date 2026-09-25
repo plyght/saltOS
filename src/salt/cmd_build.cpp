@@ -311,6 +311,32 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
     system(strip.c_str());
   }
 
+  /* files/ is copied into the source tree (so it is reachable from a chrooted
+   * build too) and exported as $SALT_FILES; patches/*.patch are applied with
+   * patch -p1 in name order before the build runs. */
+  std::string files_dir = path_join(rdir, "files");
+  if (salt_is_dir(files_dir.c_str())) {
+    std::string cp = "mkdir -p '" + src + "/.salt-files' && cp -a '" + files_dir + "/.' '" + src +
+                     "/.salt-files/'";
+    if (system(cp.c_str()) != 0) {
+      fprintf(stderr, "salt: failed to copy %s\n", files_dir.c_str());
+      salt_toml_free(t);
+      return 1;
+    }
+  }
+  std::string patches_dir = path_join(rdir, "patches");
+  if (salt_is_dir(patches_dir.c_str())) {
+    std::string ap = "set -e; for p in $(ls '" + patches_dir +
+                     "'/*.patch 2>/dev/null | LC_ALL=C sort); do echo \"==> applying $(basename "
+                     "$p)\"; patch -d '" +
+                     src + "' -p1 --forward --batch < \"$p\"; done";
+    if (system(ap.c_str()) != 0) {
+      fprintf(stderr, "salt: applying patches from %s failed\n", patches_dir.c_str());
+      salt_toml_free(t);
+      return 1;
+    }
+  }
+
   std::string body = script.empty() ? default_build(build_system) : script;
   if (body.empty()) {
     fprintf(stderr, "salt: no build.script and unknown build.system '%s'\n", build_system.c_str());
@@ -333,6 +359,7 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
   env.push_back("SALT_ARCH='" + arch + "'");
   env.push_back("SALT_JOBS=" + std::string(getenv("SALT_JOBS") ? getenv("SALT_JOBS") : "4"));
   env.push_back("SALT_NO_NETWORK=1");
+  env.push_back("SALT_FILES='" + envsrc + "/.salt-files'");
   printf("==> running build (%s%s)\n", build_system.c_str(), root.empty() ? "" : ", chrooted");
   if (run_shell(abssrc, body, env, root) != SALT_OK) {
     fprintf(stderr, "salt: build failed\n");
