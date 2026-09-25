@@ -1,4 +1,5 @@
 #include "salt/trust.h"
+#include "salt/pkg.h"
 #include "salt/toml.h"
 
 #include <stdlib.h>
@@ -216,10 +217,34 @@ int salt_supplychain_scan(const salt_scan_input *in, salt_findings *out) {
   if (dir) {
     char *scripts = salt_join_path(dir, "scripts");
     if (salt_is_dir(scripts))
-      salt_findings_push(out, SALT_RISK_WARN, "install-scripts",
-                         "package ships maintainer scripts (discouraged)");
+      salt_findings_push(out, SALT_RISK_BLOCK, "undeclared-scripts",
+                         "recipe ships a scripts/ directory; declare install hooks in [hooks]");
     free(scripts);
     free(dir);
+  }
+
+  /* Install hooks run as root on every machine that installs the grain: each
+   * one is surfaced for review, and anything outside the declared set blocks. */
+  const salt_toml *hooks = t ? salt_toml_get(t, "hooks") : NULL;
+  for (size_t i = 0; hooks && i < salt_toml_table_len(hooks); i++) {
+    const char *key = salt_toml_table_key(hooks, i);
+    const char *hbody = salt_toml_as_string(salt_toml_table_val(hooks, i));
+    char msg[160];
+    if (salt_hook_from_name(key) < 0 || !hbody) {
+      snprintf(msg, sizeof(msg),
+               "[hooks] %s is not a declared hook (post_install, post_upgrade, pre_remove, "
+               "post_remove) or not a string",
+               key ? key : "?");
+      salt_findings_push(out, SALT_RISK_BLOCK, "undeclared-hook", msg);
+      continue;
+    }
+    snprintf(msg, sizeof(msg), "declares a %s hook (runs as root at install time; review it)", key);
+    salt_findings_push(out, SALT_RISK_WARN, "install-hook", msg);
+    if (strstr(hbody, "curl") || strstr(hbody, "wget") || strstr(hbody, "http://") ||
+        strstr(hbody, "https://")) {
+      snprintf(msg, sizeof(msg), "%s hook references the network (hooks run without network)", key);
+      salt_findings_push(out, SALT_RISK_WARN, "hook-network", msg);
+    }
   }
 
   if (in->prev_recipe_text && t) {
@@ -234,6 +259,17 @@ int salt_supplychain_scan(const salt_scan_input *in, salt_findings *out) {
       if (strcmp(old_url, new_url) == 0 && strcmp(old_sha, new_sha) != 0)
         salt_findings_push(out, SALT_RISK_BLOCK, "sha-change-no-url",
                            "source.sha256 changed without a source.url change");
+      for (int k = 0; k < SALT_HOOK_COUNT; k++) {
+        char key[32];
+        snprintf(key, sizeof(key), "hooks.%s", salt_hook_name(k));
+        const char *was = salt_toml_string(prev, key, NULL);
+        const char *now = salt_toml_string(t, key, NULL);
+        if (now && (!was || strcmp(was, now) != 0)) {
+          char msg[96];
+          snprintf(msg, sizeof(msg), "%s hook %s", salt_hook_name(k), was ? "changed" : "added");
+          salt_findings_push(out, SALT_RISK_WARN, "hook-change", msg);
+        }
+      }
       salt_toml_free(prev);
     }
   }

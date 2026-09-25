@@ -77,6 +77,8 @@ int salt_archive_build_from_dir(const char *staging_dir, const salt_pkg_meta *me
     salt_strlist_push(&out->meta.deps, meta->deps.items[i]);
   for (size_t i = 0; i < meta->conflicts.len; i++)
     salt_strlist_push(&out->meta.conflicts, meta->conflicts.items[i]);
+  for (int i = 0; i < SALT_HOOK_COUNT; i++)
+    if (meta->hooks[i]) out->meta.hooks[i] = salt_strdup(meta->hooks[i]);
 
   salt_strlist paths;
   salt_strlist_init(&paths);
@@ -200,7 +202,7 @@ typedef struct {
 static int open_cb(const salt_tar_entry *e, void *ud) {
   open_ctx *ctx = ud;
   if (strcmp(e->path, "metadata.toml") == 0) {
-    salt_pkg_meta_from_toml(e->data, e->size, &ctx->a->meta);
+    if (salt_pkg_meta_from_toml(e->data, e->size, &ctx->a->meta) != SALT_OK) return SALT_ERR_FORMAT;
     ctx->got_meta = true;
   } else if (strcmp(e->path, "manifest.toml") == 0) {
     salt_manifest_from_toml(e->data, e->size, &ctx->a->manifest);

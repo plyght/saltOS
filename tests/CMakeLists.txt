@@ -32,3 +32,11 @@ add_test(
     ${CMAKE_SOURCE_DIR}/os/pi/ab-update.sh
     ${CMAKE_CURRENT_BINARY_DIR}/pi_tryboot
 )
+
+add_test(
+  NAME hooks_smoke
+  COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/hooks_smoke.sh
+    $<TARGET_FILE:salt>
+    ${CMAKE_CURRENT_BINARY_DIR}/hooks_smoke
+)
+set_tests_properties(hooks_smoke PROPERTIES SKIP_RETURN_CODE 77)

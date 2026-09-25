@@ -64,6 +64,9 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+      - name: Install hooks smoke test (needs root; skipped by the unprivileged ctest run)
+        run: sudo sh tests/hooks_smoke.sh "$PWD/build/src/salt/salt" "$RUNNER_TEMP/hooks-smoke"
+
   btrfs:
     name: btrfs snapshot/rollback/gc (loop-mounted)
     runs-on: ubuntu-latest

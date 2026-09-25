@@ -23,6 +23,9 @@ recipes/<name>/
   files/           optional: extra files referenced by the build
 ```
 
+A `scripts/` directory is not allowed; install-time code is declared in
+[`[hooks]`](#hooks).
+
 The directory name should match the package `name`.
 
 ## Schema reference
@@ -130,6 +133,44 @@ removals consistent.
 | `reason` | string | Required when `status = "unverified"`; explains why. |
 
 See [Reproducibility status](#reproducibility-status) below.
+
+### `[hooks]`
+
+Install hooks are the only install-time code a grain can carry. They are
+optional, declared here, and restricted:
+
+| Key | Runs |
+| --- | --- |
+| `post_install` | after a fresh install's files are in place |
+| `post_upgrade` | after an upgrade's files are in place (instead of `post_install`) |
+| `pre_remove` | before a package's files are removed |
+| `post_remove` | after they are removed |
+
+```toml
+[hooks]
+post_install = """
+fc-cache -s
+"""
+```
+
+- Each value is a `/bin/sh -e` body stored in the grain's `metadata.toml`,
+  covered by the package hash and repository signature, and recorded in the
+  local database (remove hooks run from there, so they belong to the installed
+  version).
+- Hooks run as root, `chroot`ed into the target root, in fresh network and
+  mount namespaces (no network), with stdin from `/dev/null`, umask 022, a
+  fixed environment (`PATH`, `HOME=/root`, `LC_ALL=C`, `SALT_PKG`,
+  `SALT_VERSION`, `SALT_OLD_VERSION` for upgrades, `SALT_HOOK`) and a 300 s
+  limit (`SALT_HOOK_TIMEOUT`). The target needs a `/bin/sh`.
+- A failing `post_install`, `post_upgrade` or `pre_remove` fails the
+  transaction, which is rolled back. A failing `post_remove` only warns (the
+  files are already gone).
+- Any other key under `[hooks]`, and a free-form `scripts/` directory in the
+  recipe, is rejected by `salt build` and blocks `salt lint` / `salt trust
+  scan`. Every declared hook is surfaced as an `install-hook` finding, and an
+  added or changed hook as `hook-change`, so it is always reviewed.
+- `SALT_SKIP_HOOKS=1` skips hooks with a warning (for example when assembling a
+  root for another architecture, where its `/bin/sh` cannot execute).
 
 ## Build environment variables
 

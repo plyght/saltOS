@@ -27,7 +27,9 @@ static const char *SCHEMA =
     "CREATE INDEX IF NOT EXISTS idx_conflicts_conflict ON conflicts(conflict);"
     "CREATE TABLE IF NOT EXISTS transactions("
     " id INTEGER PRIMARY KEY AUTOINCREMENT, op TEXT, status TEXT,"
-    " time INTEGER, snapshot TEXT);";
+    " time INTEGER, snapshot TEXT);"
+    "CREATE TABLE IF NOT EXISTS hooks(name TEXT, hook TEXT, body TEXT);"
+    "CREATE INDEX IF NOT EXISTS idx_hooks_name ON hooks(name);";
 
 #define PKG_COLUMNS \
   "name,version,release,arch,repo,sig_status,install_time,txn_id,summary,license,filename,sha256"
@@ -234,6 +236,24 @@ int salt_db_record_install(salt_db *db, const salt_pkg_meta *meta, const salt_ma
   sqlite3_bind_text(st, 1, meta->name, -1, SQLITE_TRANSIENT);
   sqlite3_step(st);
   sqlite3_finalize(st);
+  sqlite3_prepare_v2(db->h, "DELETE FROM hooks WHERE name=?;", -1, &st, NULL);
+  sqlite3_bind_text(st, 1, meta->name, -1, SQLITE_TRANSIENT);
+  sqlite3_step(st);
+  sqlite3_finalize(st);
+  for (int i = 0; i < SALT_HOOK_COUNT; i++) {
+    if (!meta->hooks[i]) continue;
+    sqlite3_prepare_v2(db->h, "INSERT INTO hooks(name,hook,body) VALUES(?,?,?);", -1, &st, NULL);
+    sqlite3_bind_text(st, 1, meta->name, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(st, 2, salt_hook_name(i), -1, SQLITE_STATIC);
+    sqlite3_bind_text(st, 3, meta->hooks[i], -1, SQLITE_TRANSIENT);
+    int hrc = sqlite3_step(st);
+    sqlite3_finalize(st);
+    if (hrc != SQLITE_DONE) {
+      salt_set_error("db: recording hook %s for %s: %s", salt_hook_name(i), meta->name,
+                     sqlite3_errmsg(db->h));
+      return SALT_ERR;
+    }
+  }
 
   sqlite3_prepare_v2(db->h,
                      "INSERT INTO packages(name,version,release,arch,summary,license,repo,"
@@ -332,6 +352,10 @@ int salt_db_record_remove(salt_db *db, const char *name, int64_t txn_id) {
   sqlite3_step(st);
   sqlite3_finalize(st);
   sqlite3_prepare_v2(db->h, "DELETE FROM conflicts WHERE name=?;", -1, &st, NULL);
+  sqlite3_bind_text(st, 1, name, -1, SQLITE_TRANSIENT);
+  sqlite3_step(st);
+  sqlite3_finalize(st);
+  sqlite3_prepare_v2(db->h, "DELETE FROM hooks WHERE name=?;", -1, &st, NULL);
   sqlite3_bind_text(st, 1, name, -1, SQLITE_TRANSIENT);
   sqlite3_step(st);
   sqlite3_finalize(st);
@@ -642,4 +666,23 @@ int salt_db_conflicts_with(salt_db *db, const char *name, salt_strlist *out) {
     salt_strlist_push(out, (const char *)sqlite3_column_text(st, 0));
   sqlite3_finalize(st);
   return SALT_OK;
+}
+
+int salt_db_pkg_hook(salt_db *db, const char *name, int kind, char **body_out) {
+  *body_out = NULL;
+  const char *hook = salt_hook_name(kind);
+  if (!hook) return SALT_ERR;
+  sqlite3_stmt *st;
+  if (sqlite3_prepare_v2(db->h, "SELECT body FROM hooks WHERE name=? AND hook=?;", -1, &st, NULL) !=
+      SQLITE_OK)
+    return SALT_ERR;
+  sqlite3_bind_text(st, 1, name, -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(st, 2, hook, -1, SQLITE_STATIC);
+  int rc = SALT_ERR_NOTFOUND;
+  if (sqlite3_step(st) == SQLITE_ROW) {
+    *body_out = salt_strdup((const char *)sqlite3_column_text(st, 0));
+    rc = SALT_OK;
+  }
+  sqlite3_finalize(st);
+  return rc;
 }

@@ -5,6 +5,19 @@
 #include <string.h>
 #include <stdio.h>
 
+static const char *const HOOK_NAMES[SALT_HOOK_COUNT] = {"post_install", "post_upgrade",
+                                                        "pre_remove", "post_remove"};
+
+const char *salt_hook_name(int kind) {
+  return kind >= 0 && kind < SALT_HOOK_COUNT ? HOOK_NAMES[kind] : NULL;
+}
+
+int salt_hook_from_name(const char *name) {
+  for (int i = 0; name && i < SALT_HOOK_COUNT; i++)
+    if (strcmp(name, HOOK_NAMES[i]) == 0) return i;
+  return -1;
+}
+
 void salt_pkg_meta_init(salt_pkg_meta *m) {
   memset(m, 0, sizeof(*m));
   salt_strlist_init(&m->deps);
@@ -21,6 +34,7 @@ void salt_pkg_meta_free(salt_pkg_meta *m) {
   free(m->repro_reason);
   salt_strlist_free(&m->deps);
   salt_strlist_free(&m->conflicts);
+  for (int i = 0; i < SALT_HOOK_COUNT; i++) free(m->hooks[i]);
   memset(m, 0, sizeof(*m));
 }
 
@@ -32,6 +46,10 @@ static void toml_escape(salt_buf *b, const char *s) {
       salt_buf_append(b, e, 2);
     } else if (*p == '\n') {
       salt_buf_append_str(b, "\\n");
+    } else if (*p == '\t') {
+      salt_buf_append_str(b, "\\t");
+    } else if (*p == '\r') {
+      salt_buf_append_str(b, "\\r");
     } else {
       salt_buf_append(b, p, 1);
     }
@@ -77,6 +95,15 @@ int salt_pkg_meta_to_toml(const salt_pkg_meta *m, salt_buf *out) {
     toml_escape(out, m->repro_reason);
     salt_buf_append_str(out, "\n");
   }
+  bool any = false;
+  for (int i = 0; i < SALT_HOOK_COUNT; i++) {
+    if (!m->hooks[i]) continue;
+    if (!any) salt_buf_append_str(out, "\n[hooks]\n");
+    any = true;
+    salt_buf_printf(out, "%s = ", HOOK_NAMES[i]);
+    toml_escape(out, m->hooks[i]);
+    salt_buf_append_str(out, "\n");
+  }
   return SALT_OK;
 }
 
@@ -95,6 +122,19 @@ int salt_pkg_meta_from_toml(const char *text, size_t len, salt_pkg_meta *out) {
   out->repro_reason = reason ? salt_strdup(reason) : NULL;
   salt_toml_string_array(t, "deps", &out->deps);
   salt_toml_string_array(t, "conflicts", &out->conflicts);
+  const salt_toml *hooks = salt_toml_get(t, "hooks");
+  for (size_t i = 0; hooks && i < salt_toml_table_len(hooks); i++) {
+    const char *key = salt_toml_table_key(hooks, i);
+    int kind = salt_hook_from_name(key);
+    const char *body = salt_toml_as_string(salt_toml_table_val(hooks, i));
+    if (kind < 0 || !body) {
+      salt_set_error("metadata: undeclared or malformed hook '%s'", key ? key : "?");
+      salt_toml_free(t);
+      salt_pkg_meta_free(out);
+      return SALT_ERR_FORMAT;
+    }
+    out->hooks[kind] = salt_strdup(body);
+  }
   salt_toml_free(t);
   return SALT_OK;
 }

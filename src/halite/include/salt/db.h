@@ -38,6 +38,8 @@ void salt_db_pkglist_init(salt_db_pkglist *l);
 void salt_db_pkglist_free(salt_db_pkglist *l);
 
 int salt_db_open(const char *path, salt_db **out);
+/* Body of a declared hook of an installed package; SALT_ERR_NOTFOUND if none. */
+int salt_db_pkg_hook(salt_db *db, const char *name, int kind, char **body_out);
 void salt_db_close(salt_db *db);
 
 int salt_db_sql_begin(salt_db *db);

@@ -8,6 +8,18 @@
 extern "C" {
 #endif
 
+/* Declared install hooks (recipe [hooks]). Anything else is rejected. */
+typedef enum {
+  SALT_HOOK_POST_INSTALL,
+  SALT_HOOK_POST_UPGRADE,
+  SALT_HOOK_PRE_REMOVE,
+  SALT_HOOK_POST_REMOVE,
+  SALT_HOOK_COUNT
+} salt_hook_kind;
+
+const char *salt_hook_name(int kind);
+int salt_hook_from_name(const char *name); /* -1 when unknown */
+
 typedef struct {
   char *name;
   char *version;
@@ -19,6 +31,7 @@ typedef struct {
   char *repro_reason;
   salt_strlist deps;
   salt_strlist conflicts;
+  char *hooks[SALT_HOOK_COUNT]; /* shell bodies, NULL when not declared */
 } salt_pkg_meta;
 
 typedef struct {

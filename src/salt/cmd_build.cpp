@@ -236,6 +236,15 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
 
   printf("==> building %s %s-%d for %s\n", name.c_str(), version.c_str(), release, arch.c_str());
 
+  if (salt_is_dir(path_join(rdir, "scripts").c_str())) {
+    fprintf(stderr,
+            "salt: %s/scripts: undeclared install scripts are not allowed; declare them "
+            "in [hooks]\n",
+            rdir.c_str());
+    salt_toml_free(t);
+    return 1;
+  }
+
   std::string localpath = url.rfind("file://", 0) == 0 ? url.substr(7) : "";
   bool local = !localpath.empty() && salt_is_dir(localpath.c_str());
   if (url.empty()) {
@@ -353,10 +362,26 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
   salt_toml_string_array(t, "package.deps", &meta.deps);
   salt_toml_string_array(t, "package.conflicts", &meta.conflicts);
 
-  std::string scripts_dir = path_join(rdir, "scripts");
+  const salt_toml *hooks = salt_toml_get(t, "hooks");
+  for (size_t i = 0; hooks && i < salt_toml_table_len(hooks); i++) {
+    const char *key = salt_toml_table_key(hooks, i);
+    int kind = salt_hook_from_name(key);
+    const char *hbody = salt_toml_as_string(salt_toml_table_val(hooks, i));
+    if (kind < 0 || !hbody) {
+      fprintf(stderr,
+              "salt: [hooks] %s is not a declared hook (post_install, post_upgrade, pre_remove, "
+              "post_remove) or not a string\n",
+              key ? key : "?");
+      salt_pkg_meta_free(&meta);
+      salt_toml_free(t);
+      return 1;
+    }
+    meta.hooks[kind] = salt_strdup(hbody);
+    printf("==> declared %s hook\n", key);
+  }
+
   salt_archive ar;
-  int rc = salt_archive_build_from_dir(
-      dest.c_str(), &meta, salt_is_dir(scripts_dir.c_str()) ? scripts_dir.c_str() : nullptr, &ar);
+  int rc = salt_archive_build_from_dir(dest.c_str(), &meta, nullptr, &ar);
   if (rc != SALT_OK) {
     fprintf(stderr, "salt: packaging failed: %s\n", salt_last_error());
     salt_pkg_meta_free(&meta);

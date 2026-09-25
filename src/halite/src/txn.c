@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include "salt/txn.h"
 #include "salt/deploy.h"
 #include "salt/zst.h"
@@ -10,6 +11,12 @@
 #include <sys/stat.h>
 #include <sys/vfs.h>
 #include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <sched.h>
+#include <signal.h>
+#include <time.h>
+#include <sys/wait.h>
 
 #define SALT_BTRFS_SUPER_MAGIC 0x9123683EUL
 
@@ -146,6 +153,117 @@ static int manifest_check_confined(const salt_manifest *m) {
   return SALT_OK;
 }
 
+/* Run one declared hook, confined: chrooted into the target root, in fresh
+ * network and mount namespaces (no network, no mount leakage), with a fixed
+ * environment, stdin from /dev/null, umask 022 and a time limit. Hooks run as
+ * root because their job is system state (users, caches, services). They are
+ * part of the signed grain metadata; nothing outside the declared set runs.
+ * SALT_SKIP_HOOKS=1 skips them with a warning (offline image builds for
+ * another architecture, where the target's /bin/sh cannot execute). */
+static int run_hook(const salt_ctx *ctx, const char *pkg, const char *version,
+                    const char *old_version, int kind, const char *body) {
+  const char *hook = salt_hook_name(kind);
+  const char *skip = getenv("SALT_SKIP_HOOKS");
+  if (skip && strcmp(skip, "1") == 0) {
+    fprintf(stderr, "salt: warning: skipping %s hook of %s (SALT_SKIP_HOOKS=1)\n", hook, pkg);
+    return SALT_OK;
+  }
+  long timeout = 300;
+  const char *tenv = getenv("SALT_HOOK_TIMEOUT");
+  if (tenv && atol(tenv) > 0) timeout = atol(tenv);
+  printf("==> running %s hook of %s\n", hook, pkg);
+  fflush(stdout);
+  fflush(stderr);
+
+  salt_buf e_pkg, e_ver, e_old, e_hook;
+  salt_buf_init(&e_pkg);
+  salt_buf_init(&e_ver);
+  salt_buf_init(&e_old);
+  salt_buf_init(&e_hook);
+  salt_buf_printf(&e_pkg, "SALT_PKG=%s", pkg);
+  salt_buf_printf(&e_ver, "SALT_VERSION=%s", version ? version : "");
+  salt_buf_printf(&e_old, "SALT_OLD_VERSION=%s", old_version ? old_version : "");
+  salt_buf_printf(&e_hook, "SALT_HOOK=%s", hook);
+  char *envp[] = {(char *)"PATH=/usr/sbin:/usr/bin:/sbin:/bin",
+                  (char *)"HOME=/root",
+                  (char *)"LC_ALL=C",
+                  (char *)"SALT_NO_NETWORK=1",
+                  e_pkg.data,
+                  e_ver.data,
+                  e_old.data,
+                  e_hook.data,
+                  NULL};
+  char *argv[] = {(char *)"sh", (char *)"-e", (char *)"-c", (char *)body, (char *)hook, NULL};
+
+  pid_t pid = fork();
+  if (pid < 0) {
+    salt_set_error("%s hook of %s: fork: %s", hook, pkg, strerror(errno));
+    salt_buf_free(&e_pkg);
+    salt_buf_free(&e_ver);
+    salt_buf_free(&e_old);
+    salt_buf_free(&e_hook);
+    return SALT_ERR;
+  }
+  if (pid == 0) {
+    setpgid(0, 0);
+    if (unshare(CLONE_NEWNET | CLONE_NEWNS) != 0) {
+      fprintf(stderr, "salt: %s hook of %s: cannot isolate (%s); hooks need root\n", hook, pkg,
+              strerror(errno));
+      _exit(126);
+    }
+    if (strcmp(ctx->root, "/") != 0 && chroot(ctx->root) != 0) {
+      fprintf(stderr, "salt: %s hook of %s: chroot %s: %s\n", hook, pkg, ctx->root,
+              strerror(errno));
+      _exit(126);
+    }
+    if (chdir("/") != 0) _exit(126);
+    int fd = open("/dev/null", O_RDONLY);
+    if (fd >= 0) {
+      dup2(fd, 0);
+      if (fd > 0) close(fd);
+    } else {
+      close(0);
+    }
+    umask(022);
+    execve("/bin/sh", argv, envp);
+    fprintf(stderr, "salt: %s hook of %s: /bin/sh in %s: %s\n", hook, pkg, ctx->root,
+            strerror(errno));
+    _exit(127);
+  }
+  salt_buf_free(&e_pkg);
+  salt_buf_free(&e_ver);
+  salt_buf_free(&e_old);
+  salt_buf_free(&e_hook);
+
+  int status = 0;
+  struct timespec start, now, tick = {0, 50 * 1000 * 1000};
+  clock_gettime(CLOCK_MONOTONIC, &start);
+  for (;;) {
+    pid_t w = waitpid(pid, &status, WNOHANG);
+    if (w == pid) break;
+    if (w < 0 && errno != EINTR) {
+      salt_set_error("%s hook of %s: waitpid: %s", hook, pkg, strerror(errno));
+      return SALT_ERR;
+    }
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    if (now.tv_sec - start.tv_sec >= timeout) {
+      kill(-pid, SIGKILL);
+      kill(pid, SIGKILL);
+      waitpid(pid, &status, 0);
+      salt_set_error("%s hook of %s timed out after %lds", hook, pkg, timeout);
+      return SALT_ERR;
+    }
+    nanosleep(&tick, NULL);
+  }
+  if (WIFEXITED(status) && WEXITSTATUS(status) == 0) return SALT_OK;
+  if (WIFEXITED(status))
+    salt_set_error("%s hook of %s failed (exit %d)", hook, pkg, WEXITSTATUS(status));
+  else
+    salt_set_error("%s hook of %s killed by signal %d", hook, pkg,
+                   WIFSIGNALED(status) ? WTERMSIG(status) : 0);
+  return SALT_ERR;
+}
+
 int salt_install_archive(salt_ctx *ctx, salt_db *db, const salt_archive *ar, const char *repo,
                          const char *sig_status, int64_t txn_id) {
   int mrc = manifest_check_confined(&ar->manifest);
@@ -158,7 +276,15 @@ int salt_install_archive(salt_ctx *ctx, salt_db *db, const salt_archive *ar, con
   salt_manifest old;
   salt_manifest_init(&old);
   bool upgrade = salt_db_is_installed(db, ar->meta.name);
-  if (upgrade) salt_db_pkg_manifest(db, ar->meta.name, &old);
+  char *old_version = NULL;
+  if (upgrade) {
+    salt_db_pkg_manifest(db, ar->meta.name, &old);
+    salt_db_pkg cur;
+    if (salt_db_get_pkg(db, ar->meta.name, &cur) == SALT_OK) {
+      old_version = salt_strdup(cur.version);
+      salt_db_pkg_free_fields(&cur);
+    }
+  }
 
   int rc = SALT_OK;
   salt_buf added;
@@ -209,9 +335,18 @@ int salt_install_archive(salt_ctx *ctx, salt_db *db, const salt_archive *ar, con
     }
   }
 
+  {
+    int kind = upgrade ? SALT_HOOK_POST_UPGRADE : SALT_HOOK_POST_INSTALL;
+    if (ar->meta.hooks[kind]) {
+      rc = run_hook(ctx, ar->meta.name, ar->meta.version, old_version, kind, ar->meta.hooks[kind]);
+      if (rc != SALT_OK) goto done;
+    }
+  }
+
   rc = salt_db_record_install(db, &ar->meta, &ar->manifest, repo, sig_status, txn_id);
 
 done:
+  free(old_version);
   salt_manifest_free(&old);
   salt_buf_free(&added);
   free(sdir);
@@ -229,10 +364,20 @@ int salt_remove_pkg(salt_ctx *ctx, salt_db *db, const char *name, int64_t txn_id
   char *backup_dir = salt_join_path(sdir, "backup");
   salt_mkdirs(backup_dir, 0755);
 
+  char *pre = NULL, *post = NULL, *version = NULL;
+  salt_db_pkg_hook(db, name, SALT_HOOK_PRE_REMOVE, &pre);
+  salt_db_pkg_hook(db, name, SALT_HOOK_POST_REMOVE, &post);
+  salt_db_pkg cur;
+  if (salt_db_get_pkg(db, name, &cur) == SALT_OK) {
+    version = salt_strdup(cur.version);
+    salt_db_pkg_free_fields(&cur);
+  }
+  int rc = SALT_OK;
+  if (pre) rc = run_hook(ctx, name, version, NULL, SALT_HOOK_PRE_REMOVE, pre);
+
   salt_manifest man;
   salt_manifest_init(&man);
-  salt_db_pkg_manifest(db, name, &man);
-  int rc = SALT_OK;
+  if (rc == SALT_OK) salt_db_pkg_manifest(db, name, &man);
   for (size_t i = 0; i < man.len && rc == SALT_OK; i++) {
     const salt_manifest_entry *e = &man.items[i];
     if (!salt_path_is_confined(e->path)) continue;
@@ -247,6 +392,13 @@ int salt_remove_pkg(salt_ctx *ctx, salt_db *db, const char *name, int64_t txn_id
   }
   salt_manifest_free(&man);
   if (rc == SALT_OK) rc = salt_db_record_remove(db, name, txn_id);
+  /* The files are gone; a failing post_remove cannot undo that, so it warns. */
+  if (rc == SALT_OK && post &&
+      run_hook(ctx, name, version, NULL, SALT_HOOK_POST_REMOVE, post) != SALT_OK)
+    fprintf(stderr, "salt: warning: %s\n", salt_last_error());
+  free(pre);
+  free(post);
+  free(version);
   free(sdir);
   free(backup_dir);
   return rc;

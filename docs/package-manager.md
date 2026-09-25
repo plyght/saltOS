@@ -12,8 +12,9 @@ exits when it is done.
 - **rollback-aware** — every transaction snapshots the system before mutating it
 - **signature-checking** — repository metadata is verified before it is trusted
 - **source-hash-aware** — package and source hashes are verified before use
-- **hostile to arbitrary install-time execution** — maintainer scripts are
-  optional, discouraged, and restricted
+- **hostile to arbitrary install-time execution** — the only install-time
+  code is a package's declared hooks, run confined and reviewed (see
+  [recipes.md](recipes.md#hooks))
 - **easy to audit** — small surface, plain TOML metadata, SQLite database
 - **usable without a daemon**
 
@@ -27,11 +28,14 @@ A `.grain` file is an **uncompressed POSIX ustar archive**. It contains the
 following members, in this exact order:
 
 ```
-metadata.toml      package identity + dependencies + reproducibility
+metadata.toml      package identity + dependencies + reproducibility + declared [hooks]
 manifest.toml      every installed file: path, mode, size, sha256, type, linkname
 files.tar.zst      zstd-compressed ustar of the payload, paths relative to /
-scripts/           optional, discouraged; post-install hooks
 ```
+
+Install hooks (`post_install`, `post_upgrade`, `pre_remove`, `post_remove`)
+live in `metadata.toml`; a grain whose metadata declares any other hook is
+rejected when opened.
 
 The outer archive is intentionally uncompressed so that the metadata and
 manifest can be read and verified without decompressing the whole payload. Only
@@ -49,15 +53,15 @@ for example `zlib-1.3.1-1-x86_64.grain` or
 ### In-memory representation
 
 The core library models an opened or freshly built package with `salt_archive`,
-which bundles the parsed metadata, the parsed manifest, the (compressed) payload
-buffer, and the list of script names:
+which bundles the parsed metadata (including declared hooks), the parsed
+manifest, and the (compressed) payload buffer:
 
 ```c
 typedef struct {
   salt_pkg_meta meta;     /* parsed from metadata.toml */
   salt_manifest manifest; /* parsed from manifest.toml */
   salt_buf payload;       /* files.tar.zst bytes */
-  salt_strlist scripts;   /* names under scripts/ */
+  salt_strlist scripts;   /* legacy; always empty */
 } salt_archive;
 ```
 

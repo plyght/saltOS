@@ -156,7 +156,7 @@ The initial security baseline (DISTRO §12) is:
   unless `--allow-unverified` is passed explicitly (see
   [repository.md](repository.md));
 - build sandboxing required for official builds;
-- no arbitrary install scripts by default;
+- no arbitrary install scripts: only declared `[hooks]`, run confined, each surfaced for review;
 - a package contents manifest required;
 - transaction rollback required;
 - the official repository curated by trusted maintainers.
