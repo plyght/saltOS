@@ -1,6 +1,11 @@
 name: pi5-image
 
 on:
+  workflow_call:
+    inputs:
+      edition:
+        type: string
+        default: console
   workflow_dispatch:
     inputs:
       edition:

@@ -1,6 +1,7 @@
 name: live-iso-arm64
 
 on:
+  workflow_call:
   workflow_dispatch:
   push:
     paths:

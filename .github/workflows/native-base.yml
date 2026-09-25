@@ -1,6 +1,7 @@
 name: native-base
 
 on:
+  workflow_call:
   workflow_dispatch:
   push:
     paths:

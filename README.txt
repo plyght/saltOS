@@ -145,6 +145,8 @@ Documentation
   docs/raspberry-pi.md      Raspberry Pi 5 image
   docs/thinkpad.md          ThinkPad P40 Yoga image
   docs/ota.md               over-the-air update server and client
+  docs/release.md           cutting a release, signing
+  docs/native-build.md      building the native base and desktop from source
   docs/contributing.md      contribution guide
   docs/CONVENTIONS.md       build and repository conventions
 

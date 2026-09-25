@@ -1,0 +1,211 @@
+name: release
+
+# Builds every user-facing edition from one commit and publishes them as a
+# GitHub pre-release. Each edition workflow runs as a reusable workflow, so the
+# release gets exactly the images that passed that workflow's own QEMU gates on
+# this commit. The OTA channel (signed grains + index on Pages) is published
+# only when the OTA_SECRET_KEY secret is configured; otherwise the release says
+# so and ships unsigned.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. 0.1.0); the release is tagged v<version>"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  meta:
+    name: version + signing
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      signed: ${{ steps.v.outputs.signed }}
+    steps:
+      - id: v
+        env:
+          OTA_SECRET_KEY: ${{ secrets.OTA_SECRET_KEY }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "${{ github.event_name }}" = push ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="$INPUT_VERSION"
+          fi
+          case "$version" in
+            ''|*/*|*' '*) echo "::error::bad version '$version'"; exit 1 ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ -n "${OTA_SECRET_KEY:-}" ]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::OTA_SECRET_KEY is not set: this release ships unsigned and publishes no OTA channel"
+          fi
+
+  base:
+    uses: ./.github/workflows/installer-base.yml
+  installer:
+    uses: ./.github/workflows/installer-iso.yml
+  installer-arm64:
+    uses: ./.github/workflows/installer-iso-arm64.yml
+  live:
+    uses: ./.github/workflows/live-iso.yml
+  live-arm64:
+    uses: ./.github/workflows/live-iso-arm64.yml
+  omakase:
+    uses: ./.github/workflows/omakase-iso.yml
+  native-base:
+    uses: ./.github/workflows/native-base.yml
+  pi5:
+    uses: ./.github/workflows/pi5-image.yml
+    with:
+      edition: console
+  thinkpad:
+    # publish defaults to "false" when called: the release carries the ISO.
+    uses: ./.github/workflows/thinkpad-image.yml
+  vm-x86:
+    uses: ./.github/workflows/vm-image-x86.yml
+    with:
+      edition: desktop
+  vm-arm64:
+    uses: ./.github/workflows/vm-image-arm64.yml
+    with:
+      edition: desktop
+
+  ota:
+    needs: meta
+    if: needs.meta.outputs.signed == 'true'
+    uses: ./.github/workflows/ota-publish.yml
+    with:
+      version: ${{ needs.meta.outputs.version }}
+      prerelease: true
+    secrets: inherit
+
+  publish:
+    name: publish v${{ needs.meta.outputs.version }}
+    needs: [meta, base, installer, installer-arm64, live, live-arm64, omakase, native-base, pi5, thinkpad, vm-x86, vm-arm64, ota]
+    if: >-
+      always() && needs.meta.result == 'success' &&
+      !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download edition images
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Collect, rename and checksum
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          set -eu
+          mkdir -p dist
+          # artifact name -> release file stem (edition-arch); the extension is kept
+          while read -r artifact stem; do
+            d="artifacts/$artifact"
+            [ -d "$d" ] || { echo "::error::missing artifact $artifact"; exit 1; }
+            n=0
+            for f in "$d"/*.iso "$d"/*.img.zst; do
+              [ -f "$f" ] || continue
+              case "$f" in *.img.zst) ext=img.zst ;; *) ext=iso ;; esac
+              out="dist/saltos-$VERSION-$stem.$ext"
+              cp "$f" "$out"
+              n=$((n + 1))
+            done
+            [ "$n" = 1 ] || { echo "::error::$artifact: expected one image, found $n"; ls -la "$d"; exit 1; }
+          done <<'MAP'
+          saltos-base-x86_64 base-x86_64
+          saltos-installer-x86_64 installer-x86_64
+          saltos-installer-aarch64 installer-aarch64
+          saltos-live-x86_64-desktop desktop-live-x86_64
+          saltos-live-aarch64-console console-live-aarch64
+          saltos-omakase-x86_64 omakase-x86_64
+          saltos-omakase-aarch64 omakase-aarch64
+          saltos-native-base-iso-x86_64 native-base-x86_64
+          saltos-native-base-iso-aarch64 native-base-aarch64
+          saltos-pi5-console raspberry-pi-5-aarch64
+          saltos-thinkpad-x86_64 thinkpad-x86_64
+          saltos-vm-desktop-x86_64 vm-desktop-x86_64
+          saltos-vm-desktop-aarch64 vm-desktop-apple-aarch64
+          MAP
+          # GitHub release assets are limited to 2 GiB each.
+          cd dist
+          for f in *; do
+            if [ "$(stat -c %s "$f")" -ge 2000000000 ]; then
+              split -b 1900M -d -a 2 "$f" "$f.part"
+              rm "$f"
+            fi
+          done
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+      - name: Write release notes
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+          SIGNED: ${{ needs.meta.outputs.signed }}
+        run: |
+          {
+            echo "# saltOS $VERSION (experimental)"
+            echo
+            echo "> **Experimental.** saltOS is under active construction and is not yet a polished"
+            echo "> daily-driver OS. Expect rough edges; do not install it on a machine holding data you"
+            echo "> have not backed up."
+            echo
+            if [ "$SIGNED" = true ]; then
+              echo "The OTA channel for this release is signed (index and grains on the \`ota-stable\` channel)."
+            else
+              echo "> **Unsigned.** The images and the native package repository in this release are not"
+              echo "> signed, and no OTA channel is published for it yet: installed systems will not receive"
+              echo "> updates until a signing key is set up (see \`docs/ota.md\`). Verify downloads against"
+              echo "> \`SHA256SUMS\`, which comes from this release's build."
+            fi
+            echo
+            echo "## Images"
+            echo
+            echo "| File | What it is |"
+            echo "|---|---|"
+            echo "| \`*-base-x86_64.iso\` | Console live ISO with \`salt-setup\`: native core + a chosen primary stratum |"
+            echo "| \`*-installer-{x86_64,aarch64}.iso\` | LXQt live ISO with the Calamares GUI installer and the text installer |"
+            echo "| \`*-desktop-live-x86_64.iso\` | Unopinionated graphical live ISO |"
+            echo "| \`*-console-live-aarch64.iso\` | Console live ISO for 64-bit ARM (UEFI) |"
+            echo "| \`*-omakase-{x86_64,aarch64}.iso\` | Opinionated Sway desktop with the gum setup wizard and an offline Arch mirror |"
+            echo "| \`*-native-base-{x86_64,aarch64}.iso\` | The native base built entirely from source (toolchain, glibc, runit, salt) |"
+            echo "| \`*-raspberry-pi-5-aarch64.img.zst\` | Raspberry Pi 5 SD/NVMe image (not yet validated on hardware) |"
+            echo "| \`*-thinkpad-x86_64.iso\` | ThinkPad image with the from-source kernel and firmware |"
+            echo "| \`*-vm-desktop-x86_64.img.zst\` | Desktop disk image for QEMU/KVM |"
+            echo "| \`*-vm-desktop-apple-aarch64.img.zst\` | Desktop disk image for Apple Virtualization / UTM |"
+            echo
+            echo "Files over 2 GiB are split into \`.partNN\` pieces: \`cat file.part* > file\`."
+            echo
+            echo "Every image passed its workflow's QEMU boot/install tests on commit \`$GITHUB_SHA\`."
+            echo "See \`README.txt\` and \`docs/installation.md\` to get started."
+          } > notes.md
+          cat notes.md
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ needs.meta.outputs.version }}
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          set -eu
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "saltOS $VERSION (experimental)" --notes-file notes.md --prerelease
+          else
+            gh release create "$TAG" --title "saltOS $VERSION (experimental)" --notes-file notes.md \
+              --prerelease --target "$GITHUB_SHA"
+          fi
+          gh release upload "$TAG" dist/* --clobber

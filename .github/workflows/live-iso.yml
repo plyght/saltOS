@@ -1,6 +1,7 @@
 name: live-iso
 
 on:
+  workflow_call:
   workflow_dispatch:
     inputs:
       edition:

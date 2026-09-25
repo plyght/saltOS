@@ -1,9 +1,22 @@
 name: ota-publish
 
+# Called by release.yml when the OTA signing key is configured; can also be run
+# by hand to (re)publish a channel.
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+      channel:
+        type: string
+        default: ota-stable
+      prerelease:
+        type: boolean
+        default: true
+      kernel:
+        type: string
+        default: linux
   workflow_dispatch:
     inputs:
       version:
@@ -72,11 +85,7 @@ jobs:
       - name: Resolve version and release tag
         id: ver
         run: |
-          if [ "${{ github.event_name }}" = push ]; then
-            version="${GITHUB_REF_NAME#v}"
-          else
-            version="${{ inputs.version }}"
-          fi
+          version="${{ inputs.version }}"
           case "$version" in
             ''|*/*|*' '*) echo "::error::bad version '$version'"; exit 1 ;;
           esac
@@ -98,9 +107,9 @@ jobs:
           ./build/src/salt/salt --version
 
       - name: Stage the x86_64 kernel from the Void package saltOS images ship
-        if: matrix.arch == 'x86_64' && (github.event_name == 'push' || inputs.kernel != '')
+        if: matrix.arch == 'x86_64' && inputs.kernel != ''
         run: |
-          sudo env KERNEL_PKG="${{ inputs.kernel || 'linux' }}" OUT="$PWD/kernel" WORK="$PWD/kernel.work" \
+          sudo env KERNEL_PKG="${{ inputs.kernel }}" OUT="$PWD/kernel" WORK="$PWD/kernel.work" \
             bash os/ota/kernel-stage.sh
           sudo chown -R "$(id -u):$(id -g)" kernel
           echo "kernel release: $(cat kernel/release)"
@@ -152,11 +161,7 @@ jobs:
       - name: Resolve version and release tag
         id: ver
         run: |
-          if [ "${{ github.event_name }}" = push ]; then
-            version="${GITHUB_REF_NAME#v}"
-          else
-            version="${{ inputs.version }}"
-          fi
+          version="${{ inputs.version }}"
           echo "version=$version" >>"$GITHUB_OUTPUT"
           echo "tag=v$version" >>"$GITHUB_OUTPUT"
 
@@ -165,7 +170,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.ver.outputs.tag }}
           VERSION: ${{ steps.ver.outputs.version }}
-          PRERELEASE: ${{ github.event_name == 'push' && 'true' || inputs.prerelease }}
+          PRERELEASE: ${{ inputs.prerelease }}
         run: |
           set -eu
           shopt -s nullglob

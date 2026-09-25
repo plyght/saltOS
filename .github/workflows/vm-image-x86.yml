@@ -1,6 +1,11 @@
 name: vm-image-x86
 
 on:
+  workflow_call:
+    inputs:
+      edition:
+        type: string
+        default: desktop
   workflow_dispatch:
     inputs:
       edition:

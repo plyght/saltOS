@@ -101,8 +101,9 @@ git add keys/ota.pub && git commit -m "keys: OTA channel public key" && git push
 
 Then enable Pages once (repository Settings → Pages → Source: *GitHub Actions*;
 the workflow also requests this via `actions/configure-pages` with
-`enablement: true`) and publish with `git tag v0.1.2 && git push origin v0.1.2`,
-or run the `ota-publish` workflow by hand with a `version`. Images built by
+`enablement: true`) and publish by tagging a release (`git tag v0.1.2 && git push origin v0.1.2`, see
+[release.md](release.md)), which runs `ota-publish` when the secret is set, or run
+the `ota-publish` workflow by hand with a `version`. Images built by
 `os/build/*.sh` bake `source = "https://plyght.github.io/saltOS"` and, when
 `keys/ota.pub` exists in the checkout, install it as
 `/etc/salt/keys/ota.pub` (override with `OTA_SOURCE`, `OTA_KEY`/`OTA_PUBKEY`).
