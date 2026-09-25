@@ -229,6 +229,22 @@ static bool salt_run_holder_alive(pid_t p) {
   return p > 0 && kill(p, 0) == 0;
 }
 
+int salt_stratum_ns_stop(const salt_stratum *s) {
+  char pidpath[256];
+  salt_run_ns_pidpath(s, pidpath, sizeof(pidpath));
+  pid_t p = salt_run_read_holder(pidpath);
+  if (salt_run_holder_alive(p)) {
+    kill(p, SIGTERM);
+    for (int i = 0; i < 50 && salt_run_holder_alive(p); i++) {
+      struct timespec ts = {0, 20 * 1000 * 1000};
+      nanosleep(&ts, NULL);
+    }
+    if (salt_run_holder_alive(p)) kill(p, SIGKILL);
+  }
+  unlink(pidpath);
+  return SALT_OK;
+}
+
 /* Body of the detached holder: create the stratum's mount namespace, lay down
  * all the binds ONCE, publish the pid file (atomically, so a poller never sees a
  * half-written pid), then pause() forever. Its /proc/<pid>/ns/mnt is what every

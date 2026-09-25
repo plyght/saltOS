@@ -1003,6 +1003,8 @@ int salt_stratum_rollback(const salt_strata_ctx *c, salt_strata_db *db, const ch
     return SALT_ERR_NOTFOUND;
   }
   char *target = stratum_target(c, s.root);
+  /* The holder's binds live on the directories about to be replaced. */
+  salt_stratum_ns_stop(&s);
   salt_stratum_free_fields(&s);
 
   sqlite3_stmt *st;
@@ -1096,6 +1098,7 @@ int salt_stratum_destroy(const salt_strata_ctx *c, salt_strata_db *db, const cha
     return SALT_ERR_NOTFOUND;
   }
   char *target = stratum_target(c, s.root);
+  salt_stratum_ns_stop(&s);
   salt_stratum_free_fields(&s);
 
   if (c->use_btrfs) {

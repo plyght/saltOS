@@ -26,6 +26,12 @@ void salt_run_opts_default(salt_run_opts *o);
 int salt_stratum_run(const salt_stratum *s, const salt_run_opts *opts, char *const argv[],
                      int *status);
 
+/* Tear down the stratum's persistent mount namespace (its holder process). The
+ * holder's binds (/dev, /proc, /run, ...) sit on the stratum's directories, so
+ * anything that replaces the tree (rollback, destroy) must stop it first; the
+ * next salt run recreates it on the new tree. */
+int salt_stratum_ns_stop(const salt_stratum *s);
+
 int salt_stratum_pkg(const salt_stratum *s, const char *op, char *const pkgs[], int npkgs,
                      int *status);
 

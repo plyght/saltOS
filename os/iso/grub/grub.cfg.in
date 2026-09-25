@@ -20,19 +20,19 @@ set ARCH="@@ARCH@@"
 
 menuentry "saltOS @@VERSION@@ (live, ${ARCH})" {
 	search --no-floppy --set=root --label ${LIVE_LABEL}
-	linux /boot/vmlinuz-${ARCH} boot=live live-media-path=/live root=live:LABEL=${LIVE_LABEL} rd.live.image console=tty0 console=ttyS0,115200 quiet
+	linux /boot/vmlinuz-${ARCH} boot=live live-media-path=/live root=live:LABEL=${LIVE_LABEL} rd.live.image console=tty0 console=@@SERIAL@@,115200 quiet
 	initrd /boot/initramfs-${ARCH}.img
 }
 
 menuentry "saltOS @@VERSION@@ (live, ${ARCH}, safe graphics)" {
 	search --no-floppy --set=root --label ${LIVE_LABEL}
-	linux /boot/vmlinuz-${ARCH} boot=live live-media-path=/live root=live:LABEL=${LIVE_LABEL} rd.live.image console=tty0 console=ttyS0,115200 nomodeset
+	linux /boot/vmlinuz-${ARCH} boot=live live-media-path=/live root=live:LABEL=${LIVE_LABEL} rd.live.image console=tty0 console=@@SERIAL@@,115200 nomodeset
 	initrd /boot/initramfs-${ARCH}.img
 }
 
 menuentry "saltOS @@VERSION@@ (live, to RAM)" {
 	search --no-floppy --set=root --label ${LIVE_LABEL}
-	linux /boot/vmlinuz-${ARCH} boot=live live-media-path=/live root=live:LABEL=${LIVE_LABEL} rd.live.image toram console=tty0 console=ttyS0,115200 quiet
+	linux /boot/vmlinuz-${ARCH} boot=live live-media-path=/live root=live:LABEL=${LIVE_LABEL} rd.live.image toram console=tty0 console=@@SERIAL@@,115200 quiet
 	initrd /boot/initramfs-${ARCH}.img
 }
 

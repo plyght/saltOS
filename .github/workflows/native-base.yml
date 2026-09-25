@@ -7,6 +7,7 @@ on:
       - "recipes/**"
       - "os/bootstrap/**"
       - "os/iso/build-iso.sh"
+      - "os/iso/grub/**"
       - "src/**"
       - ".github/workflows/native-base.yml"
 
@@ -14,10 +15,19 @@ concurrency:
   group: native-base-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  BUILDER_REV: ${{ hashFiles('src/salt/cmd_build.cpp', 'src/halite/src/archive.c', 'src/halite/src/pkg.c', 'src/halite/src/tar.c', 'src/halite/src/zst.c') }}
+
 jobs:
   toolchain:
-    name: stage cross-toolchain + temp-tools (x86_64)
-    runs-on: ubuntu-latest
+    name: stage cross-toolchain + temp-tools (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, runner: ubuntu-latest }
+          - { arch: aarch64, runner: ubuntu-24.04-arm }
     steps:
       - uses: actions/checkout@v4
       - name: Free up disk space
@@ -43,23 +53,22 @@ jobs:
         with:
           path: |
             saltos-build/tools
-            saltos-build/x86_64/packages
-          key: native-x86_64-grains-${{ github.run_id }}-${{ github.run_attempt }}-tc
-          restore-keys: native-x86_64-grains-
+            saltos-build/${{ matrix.arch }}/packages
+          key: native-${{ matrix.arch }}-grains-${{ github.run_id }}-${{ github.run_attempt }}-tc
+          restore-keys: native-${{ matrix.arch }}-grains-
       - name: Build cross-toolchain + temp-tools
         run: |
           export PATH="$PWD/build/src/salt:$PATH"
-          export SALT_ARCH=x86_64 OUT="$PWD/saltos-build"
-          export STAGES="cross-toolchain temp-tools"
-          export BOOTSTRAP_BUILDER_REV="${{ hashFiles('src/salt/cmd_build.cpp', 'src/halite/src/archive.c', 'src/halite/src/pkg.c', 'src/halite/src/tar.c', 'src/halite/src/zst.c') }}"
+          export SALT_ARCH=${{ matrix.arch }} OUT="$PWD/saltos-build"
+          export STAGES="cross-toolchain temp-tools" BOOTSTRAP_BUILDER_REV="$BUILDER_REV"
           sudo --preserve-env=PATH,SALT_ARCH,OUT,STAGES,BOOTSTRAP_BUILDER_REV os/bootstrap/bootstrap.sh
           sudo chown -R "$USER" saltos-build 2>/dev/null || true
       - name: Upload bootstrap logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: native-base-logs-toolchain
-          path: saltos-build/x86_64/logs/*.log
+          name: native-base-logs-toolchain-${{ matrix.arch }}
+          path: saltos-build/${{ matrix.arch }}/logs/*.log
           if-no-files-found: ignore
       - name: Save grain cache
         if: always()
@@ -67,25 +76,31 @@ jobs:
         with:
           path: |
             saltos-build/tools
-            saltos-build/x86_64/packages
-          key: native-x86_64-grains-${{ github.run_id }}-${{ github.run_attempt }}-tc
+            saltos-build/${{ matrix.arch }}/packages
+          key: native-${{ matrix.arch }}-grains-${{ github.run_id }}-${{ github.run_attempt }}-tc
       - name: Pack stage output
         run: |
-          sudo tar -C saltos-build --zstd -cf saltos-build-x86_64.tar.zst .
-          sudo chown "$USER" saltos-build-x86_64.tar.zst
+          sudo tar -C saltos-build --zstd -cf saltos-build-${{ matrix.arch }}.tar.zst .
+          sudo chown "$USER" saltos-build-${{ matrix.arch }}.tar.zst
           df -h /
       - name: Upload stage output
         uses: actions/upload-artifact@v4
         with:
-          name: saltos-build-x86_64
-          path: saltos-build-x86_64.tar.zst
+          name: saltos-build-${{ matrix.arch }}
+          path: saltos-build-${{ matrix.arch }}.tar.zst
           compression-level: 0
           retention-days: 1
 
   base:
-    name: stage base (x86_64)
+    name: stage base (${{ matrix.arch }})
     needs: toolchain
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, runner: ubuntu-latest }
+          - { arch: aarch64, runner: ubuntu-24.04-arm }
     steps:
       - uses: actions/checkout@v4
       - name: Free up disk space
@@ -109,19 +124,18 @@ jobs:
       - name: Download toolchain output
         uses: actions/download-artifact@v4
         with:
-          name: saltos-build-x86_64
+          name: saltos-build-${{ matrix.arch }}
       - name: Unpack toolchain output
         run: |
           mkdir -p saltos-build
-          sudo tar -C saltos-build --zstd -xf saltos-build-x86_64.tar.zst
-          rm -f saltos-build-x86_64.tar.zst
+          sudo tar -C saltos-build --zstd -xf saltos-build-${{ matrix.arch }}.tar.zst
+          rm -f saltos-build-${{ matrix.arch }}.tar.zst
           df -h /
       - name: Build base stage
         run: |
           export PATH="$PWD/build/src/salt:$PATH"
-          export SALT_ARCH=x86_64 OUT="$PWD/saltos-build"
-          export STAGES="base"
-          export BOOTSTRAP_BUILDER_REV="${{ hashFiles('src/salt/cmd_build.cpp', 'src/halite/src/archive.c', 'src/halite/src/pkg.c', 'src/halite/src/tar.c', 'src/halite/src/zst.c') }}"
+          export SALT_ARCH=${{ matrix.arch }} OUT="$PWD/saltos-build"
+          export STAGES="base" BOOTSTRAP_BUILDER_REV="$BUILDER_REV"
           sudo --preserve-env=PATH,SALT_ARCH,OUT,STAGES,BOOTSTRAP_BUILDER_REV os/bootstrap/bootstrap.sh
       - name: Save grain cache
         if: always()
@@ -129,34 +143,44 @@ jobs:
         with:
           path: |
             saltos-build/tools
-            saltos-build/x86_64/packages
-          key: native-x86_64-grains-${{ github.run_id }}-${{ github.run_attempt }}-base
+            saltos-build/${{ matrix.arch }}/packages
+          key: native-${{ matrix.arch }}-grains-${{ github.run_id }}-${{ github.run_attempt }}-base
       - name: Upload bootstrap logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: native-base-logs-base
-          path: saltos-build/x86_64/logs/*.log
+          name: native-base-logs-base-${{ matrix.arch }}
+          path: saltos-build/${{ matrix.arch }}/logs/*.log
           if-no-files-found: ignore
       - name: Pack base output
         run: |
-          sudo rm -rf saltos-build/x86_64/sysroot/var/tmp/salt-build
-          sudo tar -C saltos-build --zstd -cf saltos-build-x86_64.tar.zst .
-          sudo chown "$USER" saltos-build-x86_64.tar.zst
+          sudo rm -rf saltos-build/${{ matrix.arch }}/sysroot/var/tmp/salt-build
+          sudo tar -C saltos-build --zstd -cf saltos-build-${{ matrix.arch }}.tar.zst .
+          sudo chown "$USER" saltos-build-${{ matrix.arch }}.tar.zst
           df -h /
       - name: Upload base output
         uses: actions/upload-artifact@v4
         with:
-          name: saltos-build-x86_64
-          path: saltos-build-x86_64.tar.zst
+          name: saltos-build-${{ matrix.arch }}
+          path: saltos-build-${{ matrix.arch }}.tar.zst
           compression-level: 0
           overwrite: true
           retention-days: 3
 
   iso:
-    name: assemble + boot-test native ISO (x86_64)
+    name: assemble + boot-test native ISO (${{ matrix.arch }})
     needs: base
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+            pkgs: grub-pc-bin grub-efi-amd64-bin qemu-system-x86
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            pkgs: grub-efi-arm64-bin qemu-system-arm qemu-efi-aarch64 ipxe-qemu
     steps:
       - uses: actions/checkout@v4
       - name: Free up disk space
@@ -170,9 +194,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build pkg-config build-essential \
             libzstd-dev libsodium-dev libsqlite3-dev \
-            xorriso squashfs-tools dosfstools mtools \
-            grub-pc-bin grub-efi-amd64-bin grub-common \
-            qemu-system-x86
+            xorriso squashfs-tools dosfstools mtools grub-common \
+            ${{ matrix.pkgs }}
       - name: Build salt
         run: |
           cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
@@ -180,32 +203,32 @@ jobs:
       - name: Download base output
         uses: actions/download-artifact@v4
         with:
-          name: saltos-build-x86_64
+          name: saltos-build-${{ matrix.arch }}
       - name: Unpack base output
         run: |
           mkdir -p saltos-build
-          sudo tar -C saltos-build --zstd -xf saltos-build-x86_64.tar.zst
-          rm -f saltos-build-x86_64.tar.zst
+          sudo tar -C saltos-build --zstd -xf saltos-build-${{ matrix.arch }}.tar.zst
+          rm -f saltos-build-${{ matrix.arch }}.tar.zst
       - name: Assemble rootfs and ISO
         run: |
-          SYSROOT="$PWD/saltos-build/x86_64/sysroot"
+          SYSROOT="$PWD/saltos-build/${{ matrix.arch }}/sysroot"
           if [ ! -x "$SYSROOT/usr/bin/salt" ] || ! ls "$SYSROOT"/lib/modules >/dev/null 2>&1; then
             echo "base sysroot incomplete; cannot assemble ISO"
             ls -la "$SYSROOT" 2>/dev/null || true
             exit 1
           fi
           export PATH="$PWD/build/src/salt:$PATH"
-          ROOTFS="$PWD/saltos-build/x86_64/rootfs"
+          ROOTFS="$PWD/saltos-build/${{ matrix.arch }}/rootfs"
           sudo rm -rf "$ROOTFS"
           sudo --preserve-env=PATH ROOTFS="$ROOTFS" OUT="$PWD/saltos-build" \
-            ARCH=x86_64 STAGES="base" os/bootstrap/stage-rootfs.sh
+            ARCH=${{ matrix.arch }} STAGES="base" os/bootstrap/stage-rootfs.sh
           mkdir -p out
           sudo os/iso/build-iso.sh \
-            --arch x86_64 \
+            --arch ${{ matrix.arch }} \
             --rootfs "$ROOTFS" \
             --installer salt-setup \
             --salt-setup "$PWD/build/src/setup/salt-setup" \
-            --out out/saltos-native-base-x86_64.iso
+            --out out/saltos-native-base-${{ matrix.arch }}.iso
           sudo chown -R "$USER" out 2>/dev/null || true
       - name: Boot test (QEMU)
         run: |
@@ -213,34 +236,48 @@ jobs:
           [ -n "$ISO" ] || { echo "no ISO produced"; exit 1; }
           MARKER="SALTOS_BOOT_OK"
           set +e
-          timeout 300 qemu-system-x86_64 \
-            -machine pc -m 4096 -display none -no-reboot \
-            -serial file:qemu.log -cdrom "$ISO" -boot d &
+          if [ "${{ matrix.arch }}" = x86_64 ]; then
+            limit=300
+            timeout $limit qemu-system-x86_64 \
+              -machine pc -m 4096 -display none -no-reboot \
+              -serial file:qemu.log -cdrom "$ISO" -boot d &
+          else
+            # ubuntu-24.04-arm has no writable /dev/kvm: TCG, so allow much longer.
+            limit=1500
+            accel="-accel tcg,thread=multi -cpu max"
+            [ -w /dev/kvm ] && accel="-accel kvm -cpu host"
+            timeout $limit qemu-system-aarch64 \
+              -machine virt $accel -m 4096 -smp 4 -display none -no-reboot \
+              -bios /usr/share/qemu-efi-aarch64/QEMU_EFI.fd \
+              -serial file:qemu.log \
+              -drive file="$ISO",if=virtio,format=raw,readonly=on &
+          fi
           QPID=$!
-          for i in $(seq 1 28); do
+          for i in $(seq 1 $((limit / 10))); do
             sleep 10
             grep -q "$MARKER" qemu.log 2>/dev/null && break
+            kill -0 $QPID 2>/dev/null || break
           done
           kill $QPID 2>/dev/null || true
           set -e
           tail -n 80 qemu.log || true
           if grep -q "$MARKER" qemu.log; then
-            echo "NATIVE BASE BOOT OK"
+            echo "NATIVE BASE BOOT OK (${{ matrix.arch }})"
           else
-            echo "NATIVE BASE BOOT FAILED: marker not found"
+            echo "NATIVE BASE BOOT FAILED (${{ matrix.arch }}): marker not found"
             exit 1
           fi
       - name: Upload bootstrap logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: native-base-logs
-          path: saltos-build/x86_64/logs/*.log
+          name: native-base-logs-${{ matrix.arch }}
+          path: saltos-build/${{ matrix.arch }}/logs/*.log
           if-no-files-found: ignore
       - name: Upload ISO
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: saltos-native-base-iso-x86_64
+          name: saltos-native-base-iso-${{ matrix.arch }}
           path: out/*.iso
           if-no-files-found: ignore

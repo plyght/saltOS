@@ -208,8 +208,13 @@ mksquashfs "$LIVE_ROOT" "$ISO_ROOT/live/filesystem.squashfs" \
 	-comp zstd -Xcompression-level 19 -noappend -no-progress
 
 echo "Generating GRUB configuration"
+case "$ARCH" in
+	aarch64) SERIAL_TTY=ttyAMA0 ;;
+	*) SERIAL_TTY=ttyS0 ;;
+esac
 sed -e "s/@@ISO_LABEL@@/$ISO_LABEL/g" \
 	-e "s/@@ARCH@@/$ARCH/g" \
+	-e "s/@@SERIAL@@/$SERIAL_TTY/g" \
 	-e "s/@@VERSION@@/$VERSION/g" \
 	"$SELF_DIR/grub/grub.cfg.in" > "$ISO_ROOT/boot/grub/grub.cfg"
 
