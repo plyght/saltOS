@@ -116,11 +116,11 @@ unattended `erase` install has been run end to end on aarch64
 (`ARCH=aarch64 build/test-vm.sh` under AAVMF, TCG on an x86_64 host: ~42 min
 install, then `SALTOS_SWAY_SESSION_OK`, theme switch, wallpaper cycle).
 
-Not supported / not tested on aarch64: legacy BIOS boot (the ISO is
-UEFI-only); the `encrypt`, `alongside` and `interactive` harness modes only
-run in the x86_64 CI matrix (the installer code path is identical, but there
-is no Windows boot manager to preserve on the ARM VMs and the TCG runtime of
-three more installs is prohibitive without KVM).
+Not supported on aarch64: legacy BIOS boot (the ISO is UEFI-only). The
+`encrypt`, `alongside` and `interactive` harness modes run on aarch64 too, as the
+`install-paths-aarch64` matrix; the `alongside` fixture is the same fake Windows
+layout (ESP with `EFI/Microsoft/Boot/bootmgfw.efi`, fallback `bootaa64.efi`, NTFS
+partition), which os-prober detects the same way on ARM.
 
 ## Unattended installs (`cidata`)
 
@@ -183,7 +183,8 @@ Manager`), and `interactive` (no cidata; drives the gum configurator over the
 serial console, toggling encryption on). `.github/workflows/omakase-iso.yml`
 runs `erase` in the build job and the other three as a matrix on the built ISO
 on every push touching `os/omakase/`. A separate `build-aarch64` job on an
-`ubuntu-24.04-arm` runner builds the ARM ISO and runs the `erase` path under
+`ubuntu-24.04-arm` runner builds the ARM ISO and runs the `erase` path, and
+`install-paths-aarch64` runs the other three modes on it, under
 `qemu-system-aarch64` (KVM when `/dev/kvm` is writable, otherwise TCG with
 `INSTALL_TIMEOUT`/`BOOT_TIMEOUT` raised accordingly; `ARCH=aarch64
 build/test-vm.sh` picks AAVMF, `virtio-gpu-pci` and a `virtio-scsi` CD-ROM).

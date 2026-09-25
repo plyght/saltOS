@@ -57,10 +57,9 @@ Nothing in flight; the working tree is clean.
    "removing stock account" / "could not remove"; `userdel -r` runs through
    `in_stratum` (chroot with `/proc` bound) and `deluser` is the Debian
    fallback.
-3. aarch64 encrypt / alongside / interactive modes were never run
-   (`docs/omakase.md` says so). `alongside` needs an ARM fixture with an ESP but
-   no Windows boot manager exists for ARM, so only "existing partitions
-   preserved" can be asserted there.
+3. aarch64 encrypt / alongside / interactive now run in CI as the
+   `install-paths-aarch64` matrix (TCG, ~2-3 h each, 300 min timeout); watch its
+   first runs.
 4. Open product questions for the owner are listed at the end of
    `docs/omakase.md` (contested apps, per-distro gaps).
 

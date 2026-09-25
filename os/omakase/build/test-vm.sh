@@ -129,7 +129,9 @@ make_windows_disk() {
   head -c 32768 /dev/urandom >BCD
   mcopy -i "$esp" bootmgfw.efi ::EFI/Microsoft/Boot/bootmgfw.efi
   mcopy -i "$esp" BCD ::EFI/Microsoft/Boot/BCD
-  mcopy -i "$esp" bootmgfw.efi ::EFI/Boot/bootx64.efi
+  local fallback=bootx64.efi
+  [ "$ARCH" = aarch64 ] && fallback=bootaa64.efi
+  mcopy -i "$esp" bootmgfw.efi "::EFI/Boot/$fallback"
   truncate -s 3G "$ntfs"
   mkntfs -F -Q -q -L Windows "$ntfs" >/dev/null 2>&1
   ESP_START=$(sgdisk -i 1 "$raw" | awk -F': ' '/First sector/ {print $2+0}')

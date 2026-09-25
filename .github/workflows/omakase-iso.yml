@@ -268,6 +268,13 @@ jobs:
           path: omakase-logs
           retention-days: 14
 
+      - name: Upload host salt binary for the install-path tests
+        uses: actions/upload-artifact@v4
+        with:
+          name: omakase-salt-host-aarch64
+          path: build-iso/src/salt/salt
+          retention-days: 1
+
   install-paths:
     name: ${{ matrix.mode }} install (QEMU)
     needs: build
@@ -324,5 +331,74 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: omakase-qemu-logs-${{ matrix.mode }}
+          path: omakase-logs
+          retention-days: 14
+
+  install-paths-aarch64:
+    name: ${{ matrix.mode }} install (QEMU aarch64)
+    needs: build-aarch64
+    runs-on: ubuntu-24.04-arm
+    # TCG on the ARM runner: install ~45 min + first boot + checks.
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [encrypt, alongside, interactive]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            mtools dosfstools gdisk ntfs-3g qemu-system-arm qemu-system-data qemu-efi-aarch64 \
+            ipxe-qemu qemu-utils socat netpbm imagemagick
+          if [ -e /dev/kvm ]; then
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+              | sudo tee /etc/udev/rules.d/99-kvm4all.rules > /dev/null
+            sudo udevadm control --reload-rules
+            sudo udevadm trigger --name-match=kvm
+          fi
+          if [ -w /dev/kvm ]; then
+            echo "INSTALL_TIMEOUT=1500" >> "$GITHUB_ENV"
+            echo "BOOT_TIMEOUT=420" >> "$GITHUB_ENV"
+          else
+            echo "no writable /dev/kvm: running under TCG"
+            echo "INSTALL_TIMEOUT=7200" >> "$GITHUB_ENV"
+            echo "BOOT_TIMEOUT=2400" >> "$GITHUB_ENV"
+            echo "WALLPAPER_TIMEOUT=600" >> "$GITHUB_ENV"
+          fi
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: saltos-omakase-aarch64
+          path: out-omakase
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: omakase-salt-host-aarch64
+          path: build-iso/src/salt
+
+      - name: ${{ matrix.mode }} install + reboot + Sway (QEMU aarch64)
+        run: |
+          chmod +x build-iso/src/salt/salt
+          ARCH=aarch64 OMAKASE_TEST_MODE=${{ matrix.mode }} SALT_BIN="$PWD/build-iso/src/salt/salt" \
+            bash os/omakase/build/test-vm.sh out-omakase/saltos-omakase-aarch64.iso "$PWD/omakase-test"
+
+      - name: Collect logs
+        if: always()
+        run: |
+          mkdir -p omakase-logs
+          cp omakase-test/*.log omakase-logs/ 2>/dev/null || true
+          cp omakase-test/desktop.png omakase-test/wallpaper.png omakase-logs/ 2>/dev/null || true
+          cp omakase-test/install.toml omakase-logs/ 2>/dev/null || true
+          echo "----- install serial tail -----"; tail -n 60 omakase-logs/install-serial.log 2>/dev/null || true
+          echo "----- boot serial tail -----"; tail -n 60 omakase-logs/boot-serial.log 2>/dev/null || true
+
+      - name: Upload test logs and screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: omakase-qemu-logs-aarch64-${{ matrix.mode }}
           path: omakase-logs
           retention-days: 14
