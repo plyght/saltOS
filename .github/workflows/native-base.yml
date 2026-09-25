@@ -41,14 +41,18 @@ jobs:
       - name: Restore grain cache
         uses: actions/cache/restore@v4
         with:
-          path: saltos-build
-          key: native-base-x86_64-tc-${{ hashFiles('recipes/**', 'os/bootstrap/**', 'src/halite/**', 'src/salt/**') }}
+          path: |
+            saltos-build/tools
+            saltos-build/x86_64/packages
+          key: native-x86_64-grains-${{ github.run_id }}-${{ github.run_attempt }}-tc
+          restore-keys: native-x86_64-grains-
       - name: Build cross-toolchain + temp-tools
         run: |
           export PATH="$PWD/build/src/salt:$PATH"
           export SALT_ARCH=x86_64 OUT="$PWD/saltos-build"
           export STAGES="cross-toolchain temp-tools"
-          sudo --preserve-env=PATH,SALT_ARCH,OUT,STAGES os/bootstrap/bootstrap.sh
+          export BOOTSTRAP_BUILDER_REV="${{ hashFiles('src/salt/cmd_build.cpp', 'src/halite/src/archive.c', 'src/halite/src/pkg.c', 'src/halite/src/tar.c', 'src/halite/src/zst.c') }}"
+          sudo --preserve-env=PATH,SALT_ARCH,OUT,STAGES,BOOTSTRAP_BUILDER_REV os/bootstrap/bootstrap.sh
           sudo chown -R "$USER" saltos-build 2>/dev/null || true
       - name: Upload bootstrap logs
         if: always()
@@ -61,8 +65,10 @@ jobs:
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: saltos-build
-          key: native-base-x86_64-tc-${{ hashFiles('recipes/**', 'os/bootstrap/**', 'src/halite/**', 'src/salt/**') }}
+          path: |
+            saltos-build/tools
+            saltos-build/x86_64/packages
+          key: native-x86_64-grains-${{ github.run_id }}-${{ github.run_attempt }}-tc
       - name: Pack stage output
         run: |
           sudo tar -C saltos-build --zstd -cf saltos-build-x86_64.tar.zst .
@@ -115,7 +121,16 @@ jobs:
           export PATH="$PWD/build/src/salt:$PATH"
           export SALT_ARCH=x86_64 OUT="$PWD/saltos-build"
           export STAGES="base"
-          sudo --preserve-env=PATH,SALT_ARCH,OUT,STAGES os/bootstrap/bootstrap.sh
+          export BOOTSTRAP_BUILDER_REV="${{ hashFiles('src/salt/cmd_build.cpp', 'src/halite/src/archive.c', 'src/halite/src/pkg.c', 'src/halite/src/tar.c', 'src/halite/src/zst.c') }}"
+          sudo --preserve-env=PATH,SALT_ARCH,OUT,STAGES,BOOTSTRAP_BUILDER_REV os/bootstrap/bootstrap.sh
+      - name: Save grain cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            saltos-build/tools
+            saltos-build/x86_64/packages
+          key: native-x86_64-grains-${{ github.run_id }}-${{ github.run_attempt }}-base
       - name: Upload bootstrap logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -136,7 +151,7 @@ jobs:
           path: saltos-build-x86_64.tar.zst
           compression-level: 0
           overwrite: true
-          retention-days: 1
+          retention-days: 3
 
   iso:
     name: assemble + boot-test native ISO (x86_64)

@@ -50,6 +50,17 @@ stage_packages() {
   ' "$ORDER"
 }
 
+# A grain is reused only while its recipe directory (recipe.toml, patches,
+# files) and the builder revision are unchanged, so a restored cache can never
+# hand back a package built from an older recipe. BOOTSTRAP_BUILDER_REV is set
+# by CI to a hash of the salt build sources.
+recipe_stamp() {
+  {
+    printf 'builder %s\n' "${BOOTSTRAP_BUILDER_REV:-}"
+    (cd "$1" && find . -type f | LC_ALL=C sort | xargs sha256sum)
+  } | sha256sum | cut -d' ' -f1
+}
+
 build_one() {
   name="$1"
   recipe="$REPO_ROOT/recipes/$name"
@@ -60,11 +71,16 @@ build_one() {
   version=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$recipe/recipe.toml" | head -n1)
   release=$(sed -n 's/^release = \([0-9][0-9]*\)$/\1/p' "$recipe/recipe.toml" | head -n1)
   grain="$PKGDIR/$name-$version-${release:-1}-$ARCH.grain"
-  if [ -f "$grain" ]; then
+  stamp=$(recipe_stamp "$recipe")
+  if [ -f "$grain" ] && [ "$(cat "$grain.stamp" 2>/dev/null)" = "$stamp" ]; then
     log "reusing $name ($grain)"
   else
+    if [ -n "${BOOTSTRAP_DEADLINE:-}" ] && [ "$(date +%s)" -ge "$BOOTSTRAP_DEADLINE" ]; then
+      log "deadline reached before building $name; stopping (resume from the grains built so far)"
+      exit 3
+    fi
     log "building $name"
-    rm -f "$PKGDIR/$name"-*-"$ARCH".grain
+    rm -f "$PKGDIR/$name"-*-"$ARCH".grain "$PKGDIR/$name"-*-"$ARCH".grain.stamp
     if ! SALT_ARCH="$ARCH" SALT_JOBS="$JOBS" SALT_OUT="$REPO_OUT" FORCE_UNSAFE_CONFIGURE=1 \
         "$SALT" build "$recipe" >"$LOGDIR/$name.log" 2>&1; then
       echo "build failed for $name; log follows:" >&2
@@ -72,6 +88,7 @@ build_one() {
       return 1
     fi
     rm -rf "${SALT_WORK:-work}/$name"
+    if [ -f "$grain" ]; then printf '%s\n' "$stamp" > "$grain.stamp"; fi
   fi
   if [ ! -f "$grain" ]; then
     echo "no grain produced for $name; build log follows:" >&2
@@ -181,6 +198,10 @@ run_stage() {
 }
 
 STAGES="${STAGES:-cross-toolchain temp-tools base desktop}"
+
+# BOOTSTRAP_DEADLINE (epoch seconds): do not start building another package
+# after this time; exit 3 instead so a time-boxed CI job can hand its grains
+# to the next job, which resumes where this one stopped.
 
 log "repo root: $REPO_ROOT"
 log "work dir:  $WORK"
