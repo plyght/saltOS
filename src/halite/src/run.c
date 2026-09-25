@@ -21,6 +21,7 @@
 #include <pwd.h>
 #include <errno.h>
 #include <signal.h>
+#include <time.h>
 #endif
 
 void salt_run_opts_default(salt_run_opts *o) {

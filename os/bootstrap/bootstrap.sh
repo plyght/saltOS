@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-ARCH="${ARCH:-x86_64}"
+ARCH="${ARCH:-${SALT_ARCH:-x86_64}}"
 OUT="${OUT:-/var/tmp/saltos-build}"
 JOBS="${JOBS:-$(nproc 2>/dev/null || echo 2)}"
 REPO_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
