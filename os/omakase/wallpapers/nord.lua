@@ -27,7 +27,7 @@ return {
       profile = "https://unsplash.com/@tengyart",
       page = "https://unsplash.com/photos/H3n9g2DD5yc",
       url = "https://images.unsplash.com/photo-1608661649625-a3c3c576f9b5?fm=jpg&q=85&w=3840&fit=max",
-      sha256 = "e6bb8c1eccc748248d9ca8196d4e7af735c445d11a76c3f298894cf4677a612a",
+      sha256 = "79ce581a9b03ea2cfc57eb16a3d44c3dcc00e4c75ddbbbd7675d6acec51fde65",
     },
   },
 }

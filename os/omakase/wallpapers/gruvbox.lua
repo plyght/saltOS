@@ -18,7 +18,7 @@ return {
       profile = "https://unsplash.com/@ed_757",
       page = "https://unsplash.com/photos/SjO_AQDU6yA",
       url = "https://images.unsplash.com/photo-1768207750855-f72a8da13552?fm=jpg&q=85&w=3840&fit=max",
-      sha256 = "bd50ac0eae204862700726c3b9d65d451679a701890702dfdadff04a4ae5f9cc",
+      sha256 = "a731406885cd84f35072de83412112a507f6d28cf9287205de5b47cac4c4ac55",
     },
     {
       id = "4GsUAuZbSVc",
@@ -27,7 +27,7 @@ return {
       profile = "https://unsplash.com/@e_haci",
       page = "https://unsplash.com/photos/4GsUAuZbSVc",
       url = "https://images.unsplash.com/photo-1775239560234-a7f57a6e4e06?fm=jpg&q=85&w=3840&fit=max",
-      sha256 = "33092cfc8c5d096333c741a63f03298abf59436849d88b9c79941c56009f4945",
+      sha256 = "5382cacff1c23cd8a8c7407fe749e5d7b70513294a12de0658a391cb1ade0ff1",
     },
   },
 }

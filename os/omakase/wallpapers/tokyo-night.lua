@@ -9,7 +9,7 @@ return {
       profile = "https://unsplash.com/@jimdelillo",
       page = "https://unsplash.com/photos/yprJIDlVX_U",
       url = "https://images.unsplash.com/photo-1766958723495-3616b9657205?fm=jpg&q=85&w=3840&fit=max",
-      sha256 = "a2b390de84b3c912a845e5571bab5e44b620f69abad46501d88a0bfb3ecc0876",
+      sha256 = "17e6e4c14ea4bb03bb690f98e286ca8e8ab94bf2567fb654fadbb11f2e1bf440",
     },
     {
       id = "QvrVBfWajbo",

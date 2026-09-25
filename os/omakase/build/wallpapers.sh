@@ -11,8 +11,19 @@ command -v "$SALT_BIN" >/dev/null 2>&1 || { echo "wallpapers: salt binary '$SALT
 mkdir -p "$OUT" "$CACHE"
 rm -rf "${OUT:?}"/*
 
+# The photos are committed under wallpapers/images/ (Unsplash re-encodes its
+# images over time, so the pinned bytes are ours); the Unsplash url is only a
+# fallback for a checkout without them.
 fetch() {
   local url="$1" file="$2" sha="$3"
+  if [ -f "$HERE/wallpapers/images/$file" ]; then
+    if printf '%s  %s\n' "$sha" "$HERE/wallpapers/images/$file" | sha256sum -c --quiet -; then
+      cp "$HERE/wallpapers/images/$file" "$CACHE/$file"
+      return 0
+    fi
+    echo "wallpapers: sha256 mismatch for committed wallpapers/images/$file" >&2
+    exit 1
+  fi
   if [ -f "$CACHE/$file" ] && printf '%s  %s\n' "$sha" "$CACHE/$file" | sha256sum -c --quiet - 2>/dev/null; then
     return 0
   fi

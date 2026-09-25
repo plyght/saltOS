@@ -27,7 +27,7 @@ return {
       profile = "https://unsplash.com/@nao_takabayashi",
       page = "https://unsplash.com/photos/TV45-2jsS8E",
       url = "https://images.unsplash.com/photo-1608982339799-54e4fb4b4d1b?fm=jpg&q=85&w=3840&fit=max",
-      sha256 = "99297e9125311f412de3fadecb318014b8d12213577ed663be3a8f2fb2e9119c",
+      sha256 = "df72477d33e3096cbc7546865067be46ab2e42bdfaf71df3bba34b6ed0bc89e1",
     },
   },
 }

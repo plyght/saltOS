@@ -257,12 +257,15 @@ saltos-wallpaper credits
 
 The wallpapers are real photos from Unsplash -- salt flats, salt and mineral
 crystals, salt lakes, ice, nebulae, Hokusai -- picked to match each palette.
-They are **not** committed to the repository: `os/omakase/wallpapers/<theme>.lua`
-lists, per photo, the Unsplash id, title, photographer and profile URL, the
-photo page, the download URL and its SHA-256. `build/wallpapers.sh` reads the manifests with `salt eval` (the
-binary named by `SALT_BIN`, default `salt`), downloads
-them at ISO build time (cached under `$WALLPAPER_CACHE`), verifies every hash
-and fails the build on any mismatch, then writes a `CREDITS` file. The
+They are committed under `os/omakase/wallpapers/images/<id>.jpg` (Unsplash
+re-encodes its images over time, so the build pins our copies), and
+`os/omakase/wallpapers/<theme>.lua` lists, per photo, the Unsplash id, title,
+photographer and profile URL, the photo page, the original download URL and
+the SHA-256 of the committed file. `build/wallpapers.sh` reads the manifests
+with `salt eval` (the binary named by `SALT_BIN`, default `salt`), verifies
+every committed image against its hash (falling back to the download URL only
+when an image is missing from the checkout), fails the build on any mismatch,
+and writes a `CREDITS` file. The
 installer ships the set to `/usr/share/saltos/wallpapers/<theme>/NN-<id>.jpg`
 (a symlink to `/opt/saltos/share/wallpapers` so the same path resolves on the
 host and inside the stratum) together with `CREDITS`. All photos are under

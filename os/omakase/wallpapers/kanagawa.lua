@@ -27,7 +27,7 @@ return {
       profile = "https://unsplash.com/@oweni",
       page = "https://unsplash.com/photos/drhDe29TEts",
       url = "https://images.unsplash.com/photo-1598291840633-75c81ead18d7?fm=jpg&q=85&w=3840&fit=max",
-      sha256 = "5646fd77ea49cc4920e7d049c54eb8139161d717e2ae42291f26cd9e0f82e48b",
+      sha256 = "7057eded7c6b103caa0593c8bac8ace52a0655a89176476b270c9425319ca63b",
     },
   },
 }
