@@ -79,7 +79,7 @@ fi
 [ -f "$SALTSETUP_BIN" ] && install -Dm755 "$SALTSETUP_BIN" "$ROOTFS/usr/bin/salt-setup"
 
 mkdir -p "$ROOTFS/etc/salt/strata" "$ROOTFS/usr/local/salt/shims" "$ROOTFS/strata"
-cp "$REPO"/strata/*.toml "$ROOTFS/etc/salt/strata/" 2>/dev/null || true
+cp "$REPO"/strata/*.lua "$ROOTFS/etc/salt/strata/" 2>/dev/null || true
 install -Dm644 "$REPO/os/profile.d/salt-shims.sh" "$ROOTFS/etc/profile.d/salt-shims.sh"
 
 cat > "$ROOTFS/etc/os-release" <<EOF
@@ -277,18 +277,23 @@ EOF
 fi
 
 mkdir -p "$ROOTFS/etc/salt"
-cat > "$ROOTFS/etc/salt/repo.conf" <<'EOF'
-repo = "current"
-source = ""
-key = ""
+cat > "$ROOTFS/etc/salt/repo.lua" <<'EOF'
+return {
+  repo = "current",
+  source = "",
+  key = "",
+}
 EOF
-cat > "$ROOTFS/etc/salt/salt.conf" <<'EOF'
-[install]
-auto_expose = "prompt"
-
-[strata]
-expose_pm = true
-auto_service = true
+cat > "$ROOTFS/etc/salt/salt.lua" <<'EOF'
+return {
+  install = {
+    auto_expose = "prompt",
+  },
+  strata = {
+    expose_pm = true,
+    auto_service = true,
+  },
+}
 EOF
 chroot "$ROOTFS" /usr/bin/salt --root / list >/dev/null 2>&1 || true
 

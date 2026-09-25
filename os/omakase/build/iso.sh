@@ -70,21 +70,26 @@ for f in "$SHARE"/live/saltos-*; do
 done
 install -m 0755 "$VENDOR_DIR/gum-$ARCH" "$ROOTFS/usr/local/bin/gum"
 
-ARCH_RECIPE="$REPO/strata/arch.toml"
-[ -f "$REPO/strata/arch-$ARCH.toml" ] && ARCH_RECIPE="$REPO/strata/arch-$ARCH.toml"
+ARCH_RECIPE="$REPO/strata/arch.lua"
+[ -f "$REPO/strata/arch-$ARCH.lua" ] && ARCH_RECIPE="$REPO/strata/arch-$ARCH.lua"
 mkdir -p "$SHARE/strata"
-install -m 0644 "$ARCH_RECIPE" "$SHARE/strata/arch.toml"
-install -m 0644 "$ARCH_RECIPE" "$ROOTFS/etc/salt/strata/arch.toml"
+install -m 0644 "$ARCH_RECIPE" "$SHARE/strata/arch.lua"
+install -m 0644 "$ARCH_RECIPE" "$ROOTFS/etc/salt/strata/arch.lua"
 if [ -f "$MIRROR_DIR/offline.db" ]; then
   echo "==> pinning the arch recipe to the offline bootstrap"
   read -r BOOTSTRAP_SHA BOOTSTRAP_FILE <"$MIRROR_DIR/bootstrap.sha256"
   [ -f "$MIRROR_DIR/$BOOTSTRAP_FILE" ] || { echo "iso: bootstrap $BOOTSTRAP_FILE missing from $MIRROR_DIR" >&2; exit 1; }
+  # Rewrite url/sha256 inside the recipe's `bootstrap = { ... }` table.
   awk -v url="file:///run/saltos-install/offline/$BOOTSTRAP_FILE" -v sha="$BOOTSTRAP_SHA" '
-    /^\[/ { section = $0 }
-    section == "[bootstrap]" && /^url = / { print "url = \"" url "\""; next }
-    section == "[bootstrap]" && /^sha256 = / { print "sha256 = \"" sha "\""; next }
-    { print }' "$ARCH_RECIPE" >"$ROOTFS/etc/salt/strata/arch.toml"
-  grep -q "^sha256 = \"$BOOTSTRAP_SHA\"" "$ROOTFS/etc/salt/strata/arch.toml" || { echo "iso: recipe pinning failed" >&2; exit 1; }
+    /^[[:space:]]*bootstrap[[:space:]]*=[[:space:]]*\{/ { inb = 1; print; next }
+    inb && /^[[:space:]]*\}/ { inb = 0 }
+    inb && /^[[:space:]]*url[[:space:]]*=/ { match($0, /^[[:space:]]*/); print substr($0, 1, RLENGTH) "url = \"" url "\","; next }
+    inb && /^[[:space:]]*sha256[[:space:]]*=/ { match($0, /^[[:space:]]*/); print substr($0, 1, RLENGTH) "sha256 = \"" sha "\","; next }
+    { print }' "$ARCH_RECIPE" >"$ROOTFS/etc/salt/strata/arch.lua"
+  PIN_SALT="${SALT_BIN:-$REPO/build/src/salt/salt}"
+  [ "$("$PIN_SALT" eval "$ROOTFS/etc/salt/strata/arch.lua" bootstrap.sha256)" = "$BOOTSTRAP_SHA" ] \
+    && [ "$("$PIN_SALT" eval "$ROOTFS/etc/salt/strata/arch.lua" bootstrap.url)" = "file:///run/saltos-install/offline/$BOOTSTRAP_FILE" ] \
+    || { echo "iso: recipe pinning failed" >&2; exit 1; }
 fi
 
 cat >"$ROOTFS/etc/os-release" <<EOF

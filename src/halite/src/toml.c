@@ -743,7 +743,14 @@ const salt_toml *salt_toml_path(const salt_toml *table, const char *dotted_key) 
     while (*p && *p != '.' && i < sizeof(part) - 1) part[i++] = *p++;
     part[i] = '\0';
     if (*p == '.') p++;
-    cur = salt_toml_get(cur, part);
+    if (cur->type == SALT_TOML_ARRAY) {
+      /* numeric segment: 1-based list index, as in Lua (stratum.1.name) */
+      char *end = NULL;
+      long idx = strtol(part, &end, 10);
+      cur = (end && *end == '\0' && idx >= 1) ? salt_toml_array_at(cur, (size_t)idx - 1) : NULL;
+    } else {
+      cur = salt_toml_get(cur, part);
+    }
   }
   return cur;
 }

@@ -3,7 +3,7 @@ set -u
 
 CONSOLE=/dev/console
 STATE=/run/saltos-autoinstall
-CFG_DEST=$STATE/system.toml
+CFG_DEST=$STATE/system.lua
 FWCFG_DIR=/sys/firmware/qemu_fw_cfg/by_name/opt/saltos
 FWCFG=$FWCFG_DIR/autoinstall/raw
 
@@ -67,7 +67,7 @@ fetch_config() {
       [ -e "$dev" ] || { say "FAIL device $source never appeared"; return 1; }
       mkdir -p "$STATE/media"
       mount -o ro "$dev" "$STATE/media" || { say "FAIL cannot mount $source"; return 1; }
-      for f in system.toml saltos.toml; do
+      for f in system.lua saltos.lua system.toml saltos.toml; do
         [ -f "$STATE/media/$f" ] && cp "$STATE/media/$f" "$CFG_DEST" && break
       done
       umount "$STATE/media"
@@ -81,6 +81,12 @@ fetch_config() {
       ;;
   esac
   [ -s "$CFG_DEST" ] || { say "FAIL empty configuration from ${source:-fw_cfg}"; return 1; }
+  # Configurations are Lua (they return a table). An older TOML one is kept
+  # under a .toml name so salt-setup reads it as TOML.
+  if ! grep -q '^[[:space:]]*return[[:space:]{]' "$CFG_DEST"; then
+    mv "$CFG_DEST" "$STATE/system.toml"
+    CFG_DEST=$STATE/system.toml
+  fi
   chmod 0600 "$CFG_DEST"
   return 0
 }

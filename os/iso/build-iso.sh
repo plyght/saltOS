@@ -97,7 +97,7 @@ if [ "$INSTALLER" = "salt-setup" ]; then
 		install -Dm755 "$SALTSETUP_BIN" "$LIVE_ROOT/usr/bin/salt-setup"
 	fi
 
-	cp -a "$REPO_ROOT"/strata/*.toml "$LIVE_ROOT/etc/salt/strata/" 2>/dev/null || true
+	cp -a "$REPO_ROOT"/strata/*.lua "$LIVE_ROOT/etc/salt/strata/" 2>/dev/null || true
 
 	cat > "$LIVE_ROOT/etc/runit/sv/agetty-tty1/run" <<'GETTY'
 #!/bin/sh

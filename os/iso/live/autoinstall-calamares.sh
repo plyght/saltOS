@@ -5,7 +5,7 @@ STATE=/run/saltos-autoinstall
 RESULT=$STATE/result
 LOG=$STATE/calamares-driver.log
 SHOTS=$STATE/shots
-CFG=$HOME/.cache/saltos-autoinstall.toml
+CFG=$HOME/.cache/saltos-autoinstall.lua
 
 say() { echo "SALTOS_GUI_AUTOINSTALL $*" | sudo tee -a "$LOG" | sudo tee /dev/console > /dev/null; }
 result() { echo "$1" | sudo tee "$RESULT" > /dev/null; }
@@ -14,23 +14,26 @@ sudo mkdir -p "$STATE" "$SHOTS"
 sudo chmod 0755 "$STATE" "$SHOTS"
 
 n=0
-while [ "$n" -lt 60 ] && ! sudo test -s "$STATE/system.toml"; do sleep 2; n=$((n + 1)); done
+while [ "$n" -lt 60 ] && ! sudo test -s "$STATE/system.lua"; do sleep 2; n=$((n + 1)); done
 mkdir -p "$HOME/.cache"
-(umask 077; sudo cat "$STATE/system.toml" > "$CFG" 2> /dev/null)
+(umask 077; sudo cat "$STATE/system.lua" > "$CFG" 2> /dev/null)
 [ -s "$CFG" ] || { say "FAIL no configuration for the GUI driver"; result FAIL; exit 1; }
 
-toml_get() {
-  awk -v sect="[$1]" -v key="$2" '
-    /^\[/ { insect = ($0 == sect) }
-    insect && $1 == key {
-      sub(/^[^=]*=[ \t]*/, ""); gsub(/^"|"$/, ""); print; exit
-    }' "$CFG"
+# conf_get KEY: KEY (dotted, or `stratum[1].name` as `salt eval` prints it) from the Lua config.
+conf_get() {
+  case "$1" in
+    *\[*) salt eval "$CFG" 2> /dev/null | while IFS= read -r line; do
+        [ "${line%% = *}" = "$1" ] && { printf '%s\n' "${line#* = }"; break; }
+      done ;;
+    *) salt eval "$CFG" "$1" 2> /dev/null ;;
+  esac
+  return 0
 }
-HOSTNAME_="$(toml_get system hostname)"
-USERNAME_="$(toml_get user name)"
-PASSWORD_="$(toml_get user password)"
-STRATUM_="$(awk '/^\[\[stratum\]\]/{s=1} s && $1=="name" {sub(/^[^=]*=[ \t]*/,""); gsub(/"/,""); print; exit}' "$CFG")"
-DESKTOP_="$(toml_get install desktop)"
+HOSTNAME_="$(conf_get system.hostname)"
+USERNAME_="$(conf_get user.name)"
+PASSWORD_="$(conf_get user.password)"
+STRATUM_="$(conf_get 'stratum[1].name')"
+DESKTOP_="$(conf_get install.desktop)"
 [ -n "$HOSTNAME_" ] || HOSTNAME_=saltos
 [ -n "$USERNAME_" ] || USERNAME_=salt
 [ -n "$PASSWORD_" ] || PASSWORD_=salt

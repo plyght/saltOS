@@ -38,7 +38,7 @@ def unobscure(text):
         return "".join(c if ord(c) <= 0x21 else chr(0x1001F - ord(c)) for c in text)
 
 
-def toml_str(value):
+def lua_str(value):
     out = ""
     for c in str(value):
         if c == '"':
@@ -49,15 +49,33 @@ def toml_str(value):
             out += "\\n"
         elif c == "\t":
             out += "\\t"
-        elif ord(c) < 0x20:
-            out += "\\u%04x" % ord(c)
+        elif ord(c) < 0x20 or ord(c) == 0x7f:
+            out += "\\%03d" % ord(c)
         else:
             out += c
     return '"' + out + '"'
 
 
-def toml_bool(value):
+def lua_bool(value):
     return "true" if value else "false"
+
+
+def lua_config(sections, stratum):
+    """Render [(table, [(key, lua_value), ...]), ...] plus the primary stratum
+    as a Lua config chunk for salt-setup --from."""
+    lines = ["-- saltOS system configuration (written by the Calamares saltos_setup module)",
+             "return {"]
+    for name, entries in sections:
+        lines.append("  {} = {{".format(name))
+        for key, value in entries:
+            lines.append("    {} = {},".format(key, value))
+        lines.append("  },")
+    lines.append("  stratum = {")
+    lines.append("    {{ name = {}, role = \"primary\", expose = true }},".format(lua_str(stratum)))
+    lines.append("  },")
+    lines.append("}")
+    lines.append("")
+    return "\n".join(lines)
 
 
 def kbd_model_map(layout, variant):
@@ -159,8 +177,8 @@ def build_config(conf, gs):
     stratum = gs.value("packagechooser_stratum") or conf.get("defaultStratum", "debian")
     stratum = stratum.split(",")[0].strip()
     strata_dir = conf.get("strataDir", "/etc/salt/strata")
-    if not os.path.exists(os.path.join(strata_dir, stratum + ".toml")):
-        raise ValueError("stratum definition {}/{}.toml is missing".format(strata_dir, stratum))
+    if not os.path.exists(os.path.join(strata_dir, stratum + ".lua")):
+        raise ValueError("stratum definition {}/{}.lua is missing".format(strata_dir, stratum))
 
     desktop = gs.value("packagechooser_desktop") or conf.get("desktop", "keep")
     desktop = desktop.split(",")[0].strip() or "keep"
@@ -189,66 +207,58 @@ def build_config(conf, gs):
     if ssid:
         network = "wifi"
 
-    lines = [
-        "[system]",
-        "hostname = " + toml_str(hostname),
-        "locale = " + toml_str(lang),
-        "timezone = " + toml_str(timezone),
-        "keymap = " + toml_str(console_keymap(gs)),
-        "xkb_layout = " + toml_str(gs.value("keyboardLayout") or "us"),
-        "xkb_variant = " + toml_str(gs.value("keyboardVariant") or ""),
-        "",
-        "[install]",
-        "mode = \"mounted\"",
-        "target = " + toml_str(root_mount_point),
-        "filesystem = " + toml_str(root.get("fs") or "btrfs"),
-        "encrypt = " + toml_bool(encrypt),
+    system = [
+        ("hostname", lua_str(hostname)),
+        ("locale", lua_str(lang)),
+        ("timezone", lua_str(timezone)),
+        ("keymap", lua_str(console_keymap(gs))),
+        ("xkb_layout", lua_str(gs.value("keyboardLayout") or "us")),
+        ("xkb_variant", lua_str(gs.value("keyboardVariant") or "")),
+    ]
+    install = [
+        ("mode", lua_str("mounted")),
+        ("target", lua_str(root_mount_point)),
+        ("filesystem", lua_str(root.get("fs") or "btrfs")),
+        ("encrypt", lua_bool(encrypt)),
     ]
     if encrypt:
-        lines.append("passphrase = " + toml_str(passphrase))
+        install.append(("passphrase", lua_str(passphrase)))
     if swap is not None:
-        lines.append("swap = \"partition\"")
-        lines.append("swap_device = " + toml_str(swap.get("device")))
+        install.append(("swap", lua_str("partition")))
+        install.append(("swap_device", lua_str(swap.get("device"))))
     else:
-        lines.append("swap = \"none\"")
-    lines += [
-        "desktop = " + toml_str(desktop),
-        "",
-        "[boot]",
-        "firmware = " + toml_str(firmware),
-        "os_prober = true",
-        "cmdline = " + toml_str(kernel_cmdline(conf)),
-        "shim = \"auto\"",
-        "",
-        "[user]",
-        "name = " + toml_str(username),
-        "password = " + toml_str(password),
+        install.append(("swap", lua_str("none")))
+    install.append(("desktop", lua_str(desktop)))
+    boot = [
+        ("firmware", lua_str(firmware)),
+        ("os_prober", "true"),
+        ("cmdline", lua_str(kernel_cmdline(conf))),
+        ("shim", lua_str("auto")),
+    ]
+    user = [
+        ("name", lua_str(username)),
+        ("password", lua_str(password)),
     ]
     if root_password:
-        lines.append("root_password = " + toml_str(root_password))
-    lines += [
-        "shell = " + toml_str(shell),
-        "sudo = true",
-        "autologin = " + toml_bool(autologin),
-        "create = true",
-        "",
-        "[network]",
-        "mode = " + toml_str(network),
+        user.append(("root_password", lua_str(root_password)))
+    user += [
+        ("shell", lua_str(shell)),
+        ("sudo", "true"),
+        ("autologin", lua_bool(autologin)),
+        ("create", "true"),
     ]
+    net = [("mode", lua_str(network))]
     if ssid:
-        lines.append("wifi_ssid = " + toml_str(ssid))
-    lines += [
-        "",
-        "[kernel]",
-        "source = " + toml_str(conf.get("kernelSource", "native")),
-        "",
-        "[[stratum]]",
-        "name = " + toml_str(stratum),
-        "role = \"primary\"",
-        "expose = true",
-        "",
-    ]
-    return "\n".join(lines)
+        net.append(("wifi_ssid", lua_str(ssid)))
+    kernel = [("source", lua_str(conf.get("kernelSource", "native")))]
+    return lua_config([
+        ("system", system),
+        ("install", install),
+        ("boot", boot),
+        ("user", user),
+        ("network", net),
+        ("kernel", kernel),
+    ], stratum)
 
 
 def run():
@@ -270,7 +280,7 @@ def run():
 
     config_dir = conf.get("configDir", "/run/saltos-installer")
     os.makedirs(config_dir, mode=0o700, exist_ok=True)
-    config_path = os.path.join(config_dir, "system.toml")
+    config_path = os.path.join(config_dir, "system.lua")
     log_path = os.path.join(config_dir, "salt-setup.log")
     fd = os.open(config_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as handle:

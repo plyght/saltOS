@@ -48,7 +48,8 @@ void dump(const salt_toml *v, const std::string &path) {
 }  // namespace
 
 /* salt eval FILE [KEY]: evaluate a configuration file (Lua, or TOML data) and
- * print it for shell scripts. With KEY (dotted path) a scalar prints as is, a
+ * print it for shell scripts. With KEY (dotted path; numeric segments index lists
+ * from 1, e.g. stratum.1.name) a scalar prints as is, a
  * list prints one element per line and a table prints its keys; without KEY
  * every leaf prints as `path = value`. Exit 1 if the key is absent. */
 int cmd_eval(const Options &o, const std::vector<std::string> &args) {
@@ -73,14 +74,14 @@ int cmd_eval(const Options &o, const std::vector<std::string> &args) {
       print_scalar(v);
       fputc('\n', stdout);
     } else if (salt_toml_typeof(v) == SALT_TOML_ARRAY) {
+      /* scalars one per line; a list of tables prints its indexes (1..n) so
+       * scripts can loop: for i in $(salt eval f list); do salt eval f list.$i.x */
       for (size_t i = 0; i < salt_toml_array_len(v); i++) {
         const salt_toml *e = salt_toml_array_at(v, i);
-        if (!is_scalar(e)) {
-          fprintf(stderr, "salt: %s[%zu] is not a scalar\n", args[1].c_str(), i + 1);
-          rc = 1;
-          break;
-        }
-        print_scalar(e);
+        if (is_scalar(e))
+          print_scalar(e);
+        else
+          printf("%zu", i + 1);
         fputc('\n', stdout);
       }
     } else {

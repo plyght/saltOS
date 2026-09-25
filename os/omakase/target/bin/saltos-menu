@@ -59,7 +59,7 @@ menu_install() {
     "Install"*) pkgs="$(gum input --placeholder "package names")"; pm_install "$pkgs"; pause ;;
     "Remove"*) pkgs="$(gum input --placeholder "package names")"; pm_remove "$pkgs"; pause ;;
     "Add another stratum")
-      pick="$(find /usr/share/salt/strata -name '*.toml' -printf '%f\n' 2>/dev/null | sed 's/\.toml$//' | gum choose --header "Stratum recipe" --cursor "▶ ")" || return 0
+      pick="$(find /usr/share/salt/strata -name '*.lua' -printf '%f\n' 2>/dev/null | sed 's/\.lua$//' | gum choose --header "Stratum recipe" --cursor "▶ ")" || return 0
       salt stratum add "$pick"; pause ;;
   esac
 }

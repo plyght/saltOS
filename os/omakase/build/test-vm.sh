@@ -164,28 +164,30 @@ build_rollback_repo() {
   rm -rf "$work" repo
   mkdir -p "$work/src" "$work/recipes/hello-1.0" "$work/keys" repo
   touch "$work/src/.keep"
-  cat >"$work/recipes/hello-1.0/recipe.toml" <<EOF
-name = "hello"
-version = "1.0"
-release = 1
-arch = ["x86_64", "aarch64"]
-summary = "omakase rollback test package"
-license = "MIT"
-
-[source]
-url = "file://$PWD/$work/src"
-sha256 = ""
-
-[build]
-system = "custom"
-script = """
+  cat >"$work/recipes/hello-1.0/recipe.lua" <<EOF
+return {
+  name = "hello",
+  version = "1.0",
+  release = 1,
+  arch = { "x86_64", "aarch64" },
+  summary = "omakase rollback test package",
+  license = "MIT",
+  source = {
+    url = "file://$PWD/$work/src",
+    sha256 = "",
+  },
+  build = {
+    system = "custom",
+    script = [[
 mkdir -p "\$SALT_DEST/usr/bin"
 { echo "#!/bin/sh"; echo "echo SALTOS_HELLO_1.0"; } >"\$SALT_DEST/usr/bin/hello"
 chmod +x "\$SALT_DEST/usr/bin/hello"
-"""
-
-[package]
-deps = []
+]],
+  },
+  package = {
+    deps = {},
+  },
+}
 EOF
   SALT_OUT="$PWD/$work/out" SALT_WORK="$PWD/$work/work" "$SALT_BIN" build "$work/recipes/hello-1.0" >"$work/build.log" 2>&1 \
     || { cat "$work/build.log"; echo "test-vm: salt build failed" >&2; exit 1; }
@@ -204,39 +206,38 @@ if [ "$MODE" = alongside ]; then
 else
   qemu-img create -q -f qcow2 target.qcow2 "$DISK_SIZE"
 fi
-cat >install.toml <<EOF
-[system]
-hostname = "saltos-omakase"
-locale = "en_US.UTF-8"
-timezone = "UTC"
-keymap = "us"
-
-[kernel]
-source = "native"
-
-[[stratum]]
-name = "$DISTRO"
-role = "primary"
-expose = true
-
-[user]
-username = "$USERNAME"
-full_name = "saltOS Tester"
-email = ""
-deferred = false
-
-[install]
-profile = "omakase"
-disk = "/dev/vda"
-mode = "$INSTALL_MODE"
-encrypt = $ENCRYPT
-serial_console = true
+cat >install.lua <<EOF
+return {
+  system = {
+    hostname = "saltos-omakase",
+    locale = "en_US.UTF-8",
+    timezone = "UTC",
+    keymap = "us",
+  },
+  kernel = { source = "native" },
+  stratum = {
+    { name = "$DISTRO", role = "primary", expose = true },
+  },
+  user = {
+    username = "$USERNAME",
+    full_name = "saltOS Tester",
+    email = "",
+    deferred = false,
+  },
+  install = {
+    profile = "omakase",
+    disk = "/dev/vda",
+    mode = "$INSTALL_MODE",
+    encrypt = $ENCRYPT,
+    serial_console = true,
+  },
+}
 EOF
 printf 'password=%s\n' "$PASSWORD" >credentials
 truncate -s 16M cidata.img
 mkfs.vfat -n cidata cidata.img >/dev/null
 if [ "$INTERACTIVE" = false ]; then
-  mcopy -i cidata.img install.toml ::install.toml
+  mcopy -i cidata.img install.lua ::install.lua
   mcopy -i cidata.img credentials ::credentials
 fi
 if [ "$ROLLBACK" = 1 ]; then
@@ -314,7 +315,7 @@ rc=$?
 if [ $rc -eq 0 ] && [ "$INTERACTIVE" = true ]; then
   gum_confirm_ready && serial_type "n"
   sleep 3
-  serial_send "grep -E '^(encrypt|serial_console|mode|disk) ' /run/saltos-install/install.toml | sed 's/^/SALTOS_CFG /'"
+  serial_send "salt eval /run/saltos-install/install.lua | grep -E '^install\\.(encrypt|serial_console|mode|disk) ' | sed 's/^install\\./SALTOS_CFG /'"
   if ! serial_expect 'SALTOS_CFG serial_console = true' 30 ||
      ! grep -a -q 'SALTOS_CFG encrypt = true' install-serial.log; then
     echo "CONFIGURATOR OUTPUT MISMATCH"; grep -a 'SALTOS_CFG' install-serial.log; rc=1

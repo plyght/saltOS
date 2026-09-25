@@ -3,9 +3,9 @@ set -uo pipefail
 
 . /usr/share/saltos-omakase/lib/omakase.sh
 
-hostname_="$(toml_get "$OMAKASE_CONFIG" system hostname)"
-distro="$(toml_get "$OMAKASE_CONFIG" stratum name)"
-disk="$(toml_get "$OMAKASE_CONFIG" install disk)"
+hostname_="$(conf_get "$OMAKASE_CONFIG" system.hostname)"
+distro="$(conf_get "$OMAKASE_CONFIG" "stratum[1].name")"
+disk="$(conf_get "$OMAKASE_CONFIG" install.disk)"
 unattended=false
 blkid -L cidata >/dev/null 2>&1 && unattended=true
 

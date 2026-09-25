@@ -12,18 +12,18 @@ mkdir -p "$OMAKASE_RUN"
 
 exec >>"$OMAKASE_LOG" 2>&1
 
-hostname_="$(toml_get "$OMAKASE_CONFIG" system hostname)"
-timezone="$(toml_get "$OMAKASE_CONFIG" system timezone)"
-locale="$(toml_get "$OMAKASE_CONFIG" system locale)"
-keymap="$(toml_get "$OMAKASE_CONFIG" system keymap)"
-distro="$(toml_get "$OMAKASE_CONFIG" stratum name)"
-username="$(toml_get "$OMAKASE_CONFIG" user username)"
-full_name="$(toml_get "$OMAKASE_CONFIG" user full_name)"
-email="$(toml_get "$OMAKASE_CONFIG" user email)"
-disk="$(toml_get "$OMAKASE_CONFIG" install disk)"
-mode="$(toml_get "$OMAKASE_CONFIG" install mode)"
-encrypt="$(toml_get "$OMAKASE_CONFIG" install encrypt)"
-serial_console="$(toml_get "$OMAKASE_CONFIG" install serial_console)"
+hostname_="$(conf_get "$OMAKASE_CONFIG" system.hostname)"
+timezone="$(conf_get "$OMAKASE_CONFIG" system.timezone)"
+locale="$(conf_get "$OMAKASE_CONFIG" system.locale)"
+keymap="$(conf_get "$OMAKASE_CONFIG" system.keymap)"
+distro="$(conf_get "$OMAKASE_CONFIG" "stratum[1].name")"
+username="$(conf_get "$OMAKASE_CONFIG" user.username)"
+full_name="$(conf_get "$OMAKASE_CONFIG" user.full_name)"
+email="$(conf_get "$OMAKASE_CONFIG" user.email)"
+disk="$(conf_get "$OMAKASE_CONFIG" install.disk)"
+mode="$(conf_get "$OMAKASE_CONFIG" install.mode)"
+encrypt="$(conf_get "$OMAKASE_CONFIG" install.encrypt)"
+serial_console="$(conf_get "$OMAKASE_CONFIG" install.serial_console)"
 [ "$serial_console" = true ] || serial_console=false
 password="$(credential_get password || true)"
 passphrase="$(credential_get passphrase || true)"
@@ -91,7 +91,7 @@ chroot_target() { chroot "$MNT" /usr/bin/env -i PATH=/usr/local/sbin:/usr/local/
 phase_preflight() {
   [ -b "$disk" ] || { log "not a block device: $disk"; return 1; }
   [ -n "$distro" ] || { log "no stratum selected"; return 1; }
-  [ -f "/etc/salt/strata/$distro.toml" ] || { log "no recipe for $distro"; return 1; }
+  [ -f "/etc/salt/strata/$distro.lua" ] || { log "no recipe for $distro"; return 1; }
   if [ "$deferred" = false ] && [ -z "$password" ]; then log "no password"; return 1; fi
   if [ "$encrypt" = true ] && [ -z "$passphrase" ]; then log "encryption needs a passphrase"; return 1; fi
   for t in salt salt-setup jq; do
@@ -117,7 +117,7 @@ phase_preflight() {
 
 stage_offline_recipe() {
   local url tarball
-  url="$(toml_get "/etc/salt/strata/$distro.toml" bootstrap url)"
+  url="$(conf_get "/etc/salt/strata/$distro.lua" bootstrap.url)"
   case "$url" in
     "file://$OMAKASE_RUN/offline/"*) ;;
     *) log "recipe for $distro is not pinned to the offline medium ($url)"; return 1 ;;
@@ -131,35 +131,36 @@ stage_offline_recipe() {
 
 restore_recipe() {
   [ "$OFFLINE" = true ] || return 0
-  [ -f "$OMAKASE_SHARE/strata/$distro.toml" ] || return 0
-  [ -d "$MNT/etc/salt/strata" ] && cp "$OMAKASE_SHARE/strata/$distro.toml" "$MNT/etc/salt/strata/$distro.toml"
+  [ -f "$OMAKASE_SHARE/strata/$distro.lua" ] || return 0
+  [ -d "$MNT/etc/salt/strata" ] && cp "$OMAKASE_SHARE/strata/$distro.lua" "$MNT/etc/salt/strata/$distro.lua"
   return 0
 }
 
 write_setup_config() {
-  SETUP_CONFIG="$OMAKASE_RUN/salt-setup.toml"
+  SETUP_CONFIG="$OMAKASE_RUN/salt-setup.lua"
   local setup_mode=erase cmdline=""
   [ "$mode" = free ] && setup_mode=alongside
   [ "$serial_console" = true ] && cmdline="console=tty0 console=$(serial_tty),115200"
   (
     umask 077
     {
-      printf '[system]\nhostname = %s\nlocale = %s\ntimezone = %s\nkeymap = %s\n\n' \
-        "$(toml_quote "$hostname_")" "$(toml_quote "$locale")" "$(toml_quote "$timezone")" "$(toml_quote "${keymap:-us}")"
-      printf '[install]\ndisk = %s\nmode = %s\nfilesystem = "btrfs"\nencrypt = %s\ndesktop = "none"\n' \
-        "$(toml_quote "$disk")" "$(toml_quote "$setup_mode")" "$encrypt"
-      [ "$encrypt" = true ] && printf 'passphrase = %s\n' "$(toml_quote "$passphrase")"
-      printf '\n[boot]\ncmdline = %s\n' "$(toml_quote "$cmdline")"
-      [ "$setup_mode" = alongside ] && printf 'os_prober = true\n'
-      printf '\n'
-      printf '[user]\nname = %s\nsudo = true\nautologin = false\n' "$(toml_quote "$username")"
+      printf 'return {\n'
+      printf '  system = {\n    hostname = %s,\n    locale = %s,\n    timezone = %s,\n    keymap = %s,\n  },\n' \
+        "$(lua_quote "$hostname_")" "$(lua_quote "$locale")" "$(lua_quote "$timezone")" "$(lua_quote "${keymap:-us}")"
+      printf '  install = {\n    disk = %s,\n    mode = %s,\n    filesystem = "btrfs",\n    encrypt = %s,\n    desktop = "none",\n' \
+        "$(lua_quote "$disk")" "$(lua_quote "$setup_mode")" "$encrypt"
+      [ "$encrypt" = true ] && printf '    passphrase = %s,\n' "$(lua_quote "$passphrase")"
+      printf '  },\n  boot = {\n    cmdline = %s,\n' "$(lua_quote "$cmdline")"
+      [ "$setup_mode" = alongside ] && printf '    os_prober = true,\n'
+      printf '  },\n'
+      printf '  user = {\n    name = %s,\n    sudo = true,\n    autologin = false,\n' "$(lua_quote "$username")"
       if [ "$deferred" = true ]; then
-        printf 'password_hash = "!"\n\n'
+        printf '    password_hash = "!",\n'
       else
-        printf 'password = %s\n\n' "$(toml_quote "$password")"
+        printf '    password = %s,\n' "$(lua_quote "$password")"
       fi
-      printf '[network]\nmode = "dhcp"\n\n[kernel]\nsource = "native"\n\n'
-      printf '[[stratum]]\nname = %s\nrole = "primary"\nexpose = true\n' "$(toml_quote "$distro")"
+      printf '  },\n  network = { mode = "dhcp" },\n  kernel = { source = "native" },\n'
+      printf '  stratum = {\n    { name = %s, role = "primary", expose = true },\n  },\n}\n' "$(lua_quote "$distro")"
     } >"$SETUP_CONFIG"
   )
 }
@@ -244,7 +245,7 @@ phase_mount() {
 
 stratum_root() {
   local r
-  r="$(toml_get "/etc/salt/strata/$distro.toml" "" root)"
+  r="$(conf_get "/etc/salt/strata/$distro.lua" root)"
   [ -n "$r" ] || r="/strata/$distro"
   echo "$MNT$r"
 }

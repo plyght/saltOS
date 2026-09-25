@@ -4,6 +4,9 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="${OUT:-$PWD/out-omakase/wallpapers}"
 CACHE="${WALLPAPER_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/saltos-omakase/wallpapers}"
+# The manifests are Lua (os/omakase/wallpapers/<theme>.lua), evaluated by salt.
+SALT_BIN="${SALT_BIN:-salt}"
+command -v "$SALT_BIN" >/dev/null 2>&1 || { echo "wallpapers: salt binary '$SALT_BIN' not found (set SALT_BIN)" >&2; exit 1; }
 
 mkdir -p "$OUT" "$CACHE"
 rm -rf "${OUT:?}"/*
@@ -23,8 +26,17 @@ fetch() {
   mv "$CACHE/$file.part" "$CACHE/$file"
 }
 
-toml_value() {
-  sed -n "s/^$1 = \"\(.*\)\"\$/\1/p" | head -1
+# wallpaper_field N KEY: KEY of the Nth wallpaper from the flattened
+# `salt eval` dump held in $dump ("wallpaper[N].KEY = value" lines).
+wallpaper_field() {
+  local prefix="wallpaper[$1].$2 = "
+  local line
+  while IFS= read -r line; do
+    if [ "${line:0:${#prefix}}" = "$prefix" ]; then
+      printf '%s\n' "${line:${#prefix}}"
+      return 0
+    fi
+  done <<<"$dump"
 }
 
 credits="$OUT/CREDITS"
@@ -38,23 +50,24 @@ credits="$OUT/CREDITS"
 } >"$credits"
 
 count=0
-for manifest in "$HERE"/wallpapers/*.toml; do
-  theme="$(toml_value theme <"$manifest")"
+for manifest in "$HERE"/wallpapers/*.lua; do
+  dump="$("$SALT_BIN" eval "$manifest")" || { echo "wallpapers: cannot evaluate $manifest" >&2; exit 1; }
+  theme="$("$SALT_BIN" eval "$manifest" theme 2>/dev/null || true)"
   [ -n "$theme" ] || { echo "wallpapers: $manifest has no theme" >&2; exit 1; }
   mkdir -p "$OUT/$theme"
   echo "[$theme]" >>"$credits"
   n=0
-  while IFS= read -r block; do
-    [ -n "$block" ] || continue
-    id="$(printf '%b' "$block" | toml_value id)"
-    title="$(printf '%b' "$block" | toml_value title)"
-    photographer="$(printf '%b' "$block" | toml_value photographer)"
-    profile="$(printf '%b' "$block" | toml_value profile)"
-    page="$(printf '%b' "$block" | toml_value page)"
-    url="$(printf '%b' "$block" | toml_value url)"
-    sha="$(printf '%b' "$block" | toml_value sha256)"
+  total="$(printf '%s\n' "$dump" | sed -n 's/^wallpaper\[\([0-9][0-9]*\)\]\..*/\1/p' | sort -n | tail -1)"
+  for ((i = 1; i <= ${total:-0}; i++)); do
+    id="$(wallpaper_field "$i" id)"
+    title="$(wallpaper_field "$i" title)"
+    photographer="$(wallpaper_field "$i" photographer)"
+    profile="$(wallpaper_field "$i" profile)"
+    page="$(wallpaper_field "$i" page)"
+    url="$(wallpaper_field "$i" url)"
+    sha="$(wallpaper_field "$i" sha256)"
     for v in id title photographer profile page url sha; do
-      [ -n "${!v}" ] || { echo "wallpapers: $manifest: wallpaper $((n + 1)) missing $v" >&2; exit 1; }
+      [ -n "${!v}" ] || { echo "wallpapers: $manifest: wallpaper $i missing $v" >&2; exit 1; }
     done
     fetch "$url" "$id.jpg" "$sha"
     n=$((n + 1))
@@ -62,10 +75,7 @@ for manifest in "$HERE"/wallpapers/*.toml; do
     install -m 0644 "$CACHE/$id.jpg" "$OUT/$theme/$file"
     printf '%s\n  "%s" by %s (%s)\n  %s\n' "$file" "$title" "$photographer" "$profile" "$page" >>"$credits"
     count=$((count + 1))
-  done < <(awk '
-    /^\[\[wallpaper\]\]/ { if (block != "") print block; block = ""; inblock = 1; next }
-    inblock && NF { block = block $0 "\\n" }
-    END { if (block != "") print block }' "$manifest")
+  done
   [ "$n" -gt 0 ] || { echo "wallpapers: $manifest lists no wallpapers" >&2; exit 1; }
   echo >>"$credits"
 done

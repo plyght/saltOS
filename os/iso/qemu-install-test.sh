@@ -3,11 +3,11 @@ set -euo pipefail
 
 usage() {
   cat >&2 <<EOF
-usage: $0 --iso FILE --config system.toml [--firmware bios|uefi] [--mode text|calamares]
+usage: $0 --iso FILE --config system.lua [--firmware bios|uefi] [--mode text|calamares]
           [--arch x86_64|aarch64] [--out DIR] [--disk-size 20G] [--mem MiB]
           [--install-timeout SEC] [--boot-timeout SEC]
 
-Boots the live ISO under QEMU, hands it the configuration through fw_cfg so the
+Boots the live ISO under QEMU, hands it the Lua configuration through fw_cfg so the
 autoinstall service runs salt-setup (text) or drives Calamares (calamares),
 then reboots the virtual disk alone and waits for the runit boot marker.
 Serial logs and screenshots land in --out.

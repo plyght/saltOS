@@ -34,7 +34,7 @@ def run():
         dest = os.path.normpath(root_mount_point + strata_conf_dir)
         os.makedirs(dest, exist_ok=True)
         for name in os.listdir(src_recipes):
-            if not name.endswith(".toml"):
+            if not name.endswith(".lua"):
                 continue
             target = os.path.join(dest, name)
             if not os.path.exists(target):

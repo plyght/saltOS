@@ -191,24 +191,26 @@ case "$(controlling_tty)" in
 esac
 
 {
-  printf '[system]\n'
-  printf 'hostname = %s\n' "$(toml_quote "$hostname")"
-  printf 'locale = "en_US.UTF-8"\n'
-  printf 'timezone = %s\n' "$(toml_quote "$timezone")"
-  printf 'keymap = %s\n\n' "$(toml_quote "$keymap")"
-  printf '[kernel]\nsource = "native"\n\n'
-  printf '[[stratum]]\nname = %s\nrole = "primary"\nexpose = true\n\n' "$(toml_quote "$distro")"
-  printf '[user]\n'
-  printf 'username = %s\n' "$(toml_quote "$username")"
-  printf 'full_name = %s\n' "$(toml_quote "$full_name")"
-  printf 'email = %s\n' "$(toml_quote "$email")"
-  printf 'deferred = %s\n\n' "$([ $deferred -eq 1 ] && echo true || echo false)"
-  printf '[install]\n'
-  printf 'profile = "omakase"\n'
-  printf 'disk = %s\n' "$(toml_quote "$disk")"
-  printf 'mode = %s\n' "$(toml_quote "$mode")"
-  printf 'encrypt = %s\n' "$encrypt"
-  printf 'serial_console = %s\n' "$serial_console"
+  printf 'return {\n'
+  printf '  system = {\n'
+  printf '    hostname = %s,\n' "$(lua_quote "$hostname")"
+  printf '    locale = "en_US.UTF-8",\n'
+  printf '    timezone = %s,\n' "$(lua_quote "$timezone")"
+  printf '    keymap = %s,\n  },\n' "$(lua_quote "$keymap")"
+  printf '  kernel = { source = "native" },\n'
+  printf '  stratum = {\n    { name = %s, role = "primary", expose = true },\n  },\n' "$(lua_quote "$distro")"
+  printf '  user = {\n'
+  printf '    username = %s,\n' "$(lua_quote "$username")"
+  printf '    full_name = %s,\n' "$(lua_quote "$full_name")"
+  printf '    email = %s,\n' "$(lua_quote "$email")"
+  printf '    deferred = %s,\n  },\n' "$([ $deferred -eq 1 ] && echo true || echo false)"
+  printf '  install = {\n'
+  printf '    profile = "omakase",\n'
+  printf '    disk = %s,\n' "$(lua_quote "$disk")"
+  printf '    mode = %s,\n' "$(lua_quote "$mode")"
+  printf '    encrypt = %s,\n' "$encrypt"
+  printf '    serial_console = %s,\n  },\n' "$serial_console"
+  printf '}\n'
 } >"$OMAKASE_CONFIG"
 printf 'password=%s\n' "$password" >"$OMAKASE_CREDENTIALS"
 chmod 600 "$OMAKASE_CREDENTIALS"
