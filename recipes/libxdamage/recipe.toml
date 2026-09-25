@@ -1,0 +1,26 @@
+name = "libxdamage"
+version = "1.1.6"
+release = 1
+summary = "X11 libXdamage library"
+license = "MIT"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://www.x.org/releases/individual/lib/libXdamage-1.1.6.tar.xz"
+sha256 = "52733c1f5262fca35f64e7d5060c6fcd81a880ba8e1e65c9621cf0727afb5d11"
+
+[build]
+system = "autotools"
+deps = ["pkgconf", "gcc", "make", "libx11", "libxfixes", "xorgproto"]
+script = """
+#!/bin/sh
+./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var --disable-static
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+"""
+
+[package]
+deps = ["glibc", "libx11", "libxfixes"]
+
+[reproducibility]
+status = "verified"

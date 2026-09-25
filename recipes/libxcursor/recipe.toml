@@ -1,0 +1,26 @@
+name = "libxcursor"
+version = "1.2.3"
+release = 1
+summary = "X11 libXcursor library"
+license = "MIT"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://www.x.org/releases/individual/lib/libXcursor-1.2.3.tar.xz"
+sha256 = "fde9402dd4cfe79da71e2d96bb980afc5e6ff4f8a7d74c159e1966afb2b2c2c0"
+
+[build]
+system = "autotools"
+deps = ["pkgconf", "gcc", "make", "libx11", "libxrender", "libxfixes"]
+script = """
+#!/bin/sh
+./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var --disable-static
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+"""
+
+[package]
+deps = ["glibc", "libx11", "libxrender", "libxfixes"]
+
+[reproducibility]
+status = "verified"

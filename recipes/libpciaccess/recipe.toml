@@ -1,0 +1,26 @@
+name = "libpciaccess"
+version = "0.18.1"
+release = 1
+summary = "Generic PCI access library"
+license = "MIT"
+arch = ["x86_64", "aarch64"]
+
+[source]
+url = "https://www.x.org/releases/individual/lib/libpciaccess-0.18.1.tar.xz"
+sha256 = "4af43444b38adb5545d0ed1c2ce46d9608cc47b31c2387fc5181656765a6fa76"
+
+[build]
+system = "meson"
+deps = ["meson", "ninja", "pkgconf", "gcc", "zlib"]
+script = """
+#!/bin/sh
+meson setup build --prefix=/usr --libdir=lib --buildtype=release -Ddefault_library=shared
+ninja -C build -j"$SALT_JOBS"
+DESTDIR="$SALT_DEST" ninja -C build install
+"""
+
+[package]
+deps = ["glibc", "zlib"]
+
+[reproducibility]
+status = "verified"

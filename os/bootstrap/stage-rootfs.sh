@@ -45,6 +45,12 @@ stage_packages() {
   ' "$ORDER"
 }
 
+# Identity files first: package hooks (e.g. sddm's system user) add to them.
+[ -f "$ROOTFS/etc/passwd" ] || printf 'root:x:0:0:root:/root:/bin/bash\n' > "$ROOTFS/etc/passwd"
+[ -f "$ROOTFS/etc/shadow" ] || { printf 'root:*:19000:0:99999:7:::\n' > "$ROOTFS/etc/shadow"; chmod 0600 "$ROOTFS/etc/shadow"; }
+[ -f "$ROOTFS/etc/group" ] || printf 'root:x:0:\nwheel:x:10:\naudio:x:63:\nvideo:x:78:\ninput:x:97:\nseat:x:99:\n' > "$ROOTFS/etc/group"
+[ -f "$ROOTFS/etc/gshadow" ] || { : > "$ROOTFS/etc/gshadow"; chmod 0600 "$ROOTFS/etc/gshadow"; }
+
 log "publishing local index"
 "$SALT" repo publish "$WORK"
 log "syncing index into $ROOTFS"
@@ -118,17 +124,7 @@ ANSI_COLOR="0;36"
 HOME_URL="https://salt.os"
 EOF
 
-cat > "$ROOTFS/etc/passwd" <<'EOF'
-root:x:0:0:root:/root:/bin/bash
-EOF
 
-cat > "$ROOTFS/etc/group" <<'EOF'
-root:x:0:
-wheel:x:10:
-audio:x:63:
-video:x:78:
-seat:x:99:
-EOF
 
 cat > "$ROOTFS/etc/shells" <<'EOF'
 /bin/sh

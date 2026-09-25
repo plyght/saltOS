@@ -202,6 +202,11 @@ run_stage() {
 
 STAGES="${STAGES:-cross-toolchain temp-tools base desktop}"
 
+# The sysroot is a build environment, not an image: packages go in with
+# --nodeps in build order, so install hooks (users, caches) would run before
+# their tools exist. stage-rootfs.sh runs them for real.
+export SALT_SKIP_HOOKS=1
+
 # BOOTSTRAP_DEADLINE (epoch seconds): do not start building another package
 # after this time; exit 3 instead so a time-boxed CI job can hand its grains
 # to the next job, which resumes where this one stopped.

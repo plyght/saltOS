@@ -1,7 +1,7 @@
 name = "libx11"
 version = "1.8.10"
-release = 1
-summary = "X11 client-side library"
+release = 2
+summary = "X11 client library"
 license = "MIT"
 arch = ["x86_64", "aarch64"]
 
@@ -11,7 +11,13 @@ sha256 = "2b3b3dad9347db41dca56beb7db5878f283bde1142f04d9f8e478af435dfdc53"
 
 [build]
 system = "autotools"
-deps = ["libxcb", "pkgconf", "gcc", "make"]
+deps = ["pkgconf", "gcc", "make", "libxcb", "xorgproto", "xtrans"]
+script = """
+#!/bin/sh
+./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var --disable-static --disable-specs
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+"""
 
 [package]
 deps = ["glibc", "libxcb"]

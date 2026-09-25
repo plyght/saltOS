@@ -1,0 +1,169 @@
+name: native-desktop
+
+# From-source desktop stage (Xorg, Mesa, Qt 6, LXQt, SDDM) on top of a green
+# native-base run, then a live desktop ISO that must boot under QEMU through
+# SDDM autologin into a running LXQt session.
+
+on:
+  workflow_run:
+    workflows: [native-base]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      base_run_id:
+        description: "native-base run to build on (default: latest successful on main)"
+        required: false
+        default: ""
+
+concurrency:
+  group: native-desktop-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  base:
+    name: pick native-base run
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      run_id: ${{ steps.pick.outputs.run_id }}
+    steps:
+      - id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FROM_EVENT: ${{ github.event.workflow_run.id }}
+          FROM_INPUT: ${{ inputs.base_run_id }}
+        run: |
+          id="${FROM_EVENT:-$FROM_INPUT}"
+          if [ -z "$id" ]; then
+            id=$(gh api "repos/${{ github.repository }}/actions/workflows/native-base.yml/runs?branch=main&status=success&per_page=1" --jq '.workflow_runs[0].id')
+          fi
+          [ -n "$id" ] || { echo "no successful native-base run found"; exit 1; }
+          echo "native-base run: $id"
+          echo "run_id=$id" >> "$GITHUB_OUTPUT"
+
+  slice1:
+    needs: base
+    uses: ./.github/workflows/native-desktop-chunk.yml
+    with: { chunk: 1, base_run_id: "${{ needs.base.outputs.run_id }}" }
+  slice2:
+    needs: [base, slice1]
+    if: needs.slice1.outputs.done == 'false'
+    uses: ./.github/workflows/native-desktop-chunk.yml
+    with: { chunk: 2, base_run_id: "${{ needs.base.outputs.run_id }}" }
+  slice3:
+    needs: [base, slice2]
+    if: needs.slice2.outputs.done == 'false'
+    uses: ./.github/workflows/native-desktop-chunk.yml
+    with: { chunk: 3, base_run_id: "${{ needs.base.outputs.run_id }}" }
+  slice4:
+    needs: [base, slice3]
+    if: needs.slice3.outputs.done == 'false'
+    uses: ./.github/workflows/native-desktop-chunk.yml
+    with: { chunk: 4, base_run_id: "${{ needs.base.outputs.run_id }}" }
+  slice5:
+    needs: [base, slice4]
+    if: needs.slice4.outputs.done == 'false'
+    uses: ./.github/workflows/native-desktop-chunk.yml
+    with: { chunk: 5, base_run_id: "${{ needs.base.outputs.run_id }}" }
+
+  iso:
+    name: assemble + boot-test native desktop ISO (x86_64)
+    needs: [slice1, slice2, slice3, slice4, slice5]
+    if: >-
+      always() && (needs.slice1.outputs.done == 'true' || needs.slice2.outputs.done == 'true' ||
+      needs.slice3.outputs.done == 'true' || needs.slice4.outputs.done == 'true' ||
+      needs.slice5.outputs.done == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet /usr/share/swift \
+            /opt/hostedtoolcache /usr/local/.ghcup 2>/dev/null || true
+          df -h /
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config build-essential \
+            libzstd-dev libsodium-dev libsqlite3-dev zstd \
+            xorriso squashfs-tools dosfstools mtools \
+            grub-pc-bin grub-efi-amd64-bin grub-common \
+            qemu-system-x86 netpbm socat
+      - name: Build salt
+        run: |
+          cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target salt salt-setup
+      - name: Download desktop stage output
+        uses: actions/download-artifact@v4
+        with:
+          name: saltos-desktop-x86_64
+      - name: Unpack
+        run: |
+          mkdir -p saltos-build
+          sudo tar -C saltos-build --zstd -xf saltos-desktop-x86_64.tar.zst
+          rm -f saltos-desktop-x86_64.tar.zst
+      - name: Assemble desktop rootfs and ISO
+        run: |
+          export PATH="$PWD/build/src/salt:$PATH"
+          ROOTFS="$PWD/saltos-build/x86_64/rootfs"
+          sudo rm -rf "$ROOTFS"
+          sudo --preserve-env=PATH ROOTFS="$ROOTFS" OUT="$PWD/saltos-build" \
+            ARCH=x86_64 STAGES="base desktop" os/bootstrap/stage-rootfs.sh
+          sudo os/desktop/live-session.sh "$ROOTFS" --check
+          mkdir -p out
+          sudo os/iso/build-iso.sh \
+            --arch x86_64 \
+            --rootfs "$ROOTFS" \
+            --installer salt-setup \
+            --salt-setup "$PWD/build/src/setup/salt-setup" \
+            --out out/saltos-native-desktop-x86_64.iso
+          sudo chown -R "$USER" out
+          ls -la out
+      - name: Boot test (QEMU, SDDM autologin into LXQt)
+        run: |
+          ISO=out/saltos-native-desktop-x86_64.iso
+          set +e
+          timeout 1500 qemu-system-x86_64 \
+            -machine pc -m 4096 -smp 2 -vga std -display none -no-reboot \
+            -serial file:qemu.log -monitor unix:qemu-mon.sock,server,nowait \
+            -cdrom "$ISO" -boot d &
+          QPID=$!
+          ok=0
+          for i in $(seq 1 140); do
+            sleep 10
+            if grep -q SALTOS_DESKTOP_OK qemu.log 2>/dev/null; then ok=1; break; fi
+            grep -q SALTOS_DESKTOP_FAIL qemu.log 2>/dev/null && break
+            kill -0 $QPID 2>/dev/null || break
+          done
+          sleep 15
+          echo "screendump screen.ppm" | socat - UNIX-CONNECT:qemu-mon.sock >/dev/null 2>&1 || true
+          sleep 3
+          kill $QPID 2>/dev/null || true
+          set -e
+          [ -f screen.ppm ] && pnmtopng screen.ppm > screen.png || true
+          tail -n 120 qemu.log || true
+          [ "$ok" = 1 ] || { echo "NATIVE DESKTOP BOOT FAILED"; exit 1; }
+          echo "NATIVE DESKTOP BOOT OK"
+      - name: Upload boot evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-desktop-boot
+          path: |
+            qemu.log
+            screen.png
+          if-no-files-found: ignore
+      - name: Upload ISO
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: saltos-native-desktop-iso-x86_64
+          path: out/*.iso
+          if-no-files-found: ignore
+          retention-days: 7

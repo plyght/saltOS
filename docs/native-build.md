@@ -33,10 +33,29 @@ job stays within one runner's time/disk budget:
    boot-tests it in QEMU, gating on the `SALTOS_BOOT_OK` marker.
 
 Each job hands its accumulated grain + sysroot output forward to the next via an
-uploaded artifact, so the pipeline populates itself within the run. The
-`toolchain` job additionally restores/saves an `actions/cache` keyed on a hash of
-`recipes/**` + `build-order.toml`; combined with `bootstrap.sh` reusing any grain
-already present, unchanged packages are not rebuilt on later runs.
+uploaded artifact, so the pipeline populates itself within the run. Both build
+jobs also restore and save an `actions/cache` of the grain directories (never the
+sysroot), per run with a prefix restore. `bootstrap.sh` writes a `.stamp` next to
+every grain (a hash of the recipe directory and of the builder sources) and
+reuses a grain only while its stamp matches, so a restored cache can never hand
+back a package built from an older recipe, and unchanged packages are not rebuilt.
+
+## Desktop stage
+
+The `[desktop]` stage (Xorg, Mesa, Qt 6, KF6 bits, LXQt 2.1, SDDM, ~100 recipes)
+runs in `native-desktop`, triggered by every green `native-base` run on `main`
+(or by hand with a `base_run_id`). It is far longer than one 6 h job, so it runs
+as up to five chained slices (`native-desktop-chunk.yml`): each slice resumes from
+the previous slice's sysroot and grains, builds until `BOOTSTRAP_DEADLINE`
+(`bootstrap.sh` then stops before starting another package and exits 3), and
+hands everything on. Desktop grains are cached the same way as the base.
+
+The final `iso` job stages `base desktop` into a rootfs, runs
+`os/desktop/live-session.sh --check` (a passwordless `live` user with SDDM
+autologin into LXQt, plus a runit check service), builds the ISO and boots it
+under QEMU with `-vga std`. It passes on `SALTOS_DESKTOP_OK`, printed once Xorg,
+`lxqt-session`, `lxqt-panel` and `openbox` are all running; a screenshot of the
+session is uploaded with the serial log.
 
 This mirrors the working `selfhost-iso` workflow, which already builds a
 from-source native ISO and passes a QEMU boot test on a free runner; splitting the

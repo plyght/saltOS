@@ -1,7 +1,7 @@
 name = "xorg-server"
 version = "21.1.13"
-release = 1
-summary = "X.Org X11 display server"
+release = 2
+summary = "X.org X server (modesetting, glamor)"
 license = "MIT"
 arch = ["x86_64", "aarch64"]
 
@@ -11,10 +11,16 @@ sha256 = "b45a02d5943f72236a360d3cc97e75134aa4f63039ff88c04686b508a3dc740c"
 
 [build]
 system = "meson"
-deps = ["mesa", "libxcb", "pixman", "openssl", "eudev", "meson", "ninja", "pkgconf", "gcc"]
+deps = ["meson", "ninja", "pkgconf", "gcc", "xorgproto", "xtrans", "libxau", "libxdmcp", "libxkbfile", "libxfont2", "libxcvt", "libpciaccess", "libdrm", "mesa", "libepoxy", "libxshmfence", "pixman", "openssl", "eudev", "libx11", "libxext", "xkbcomp", "xkeyboard-config", "font-util"]
+script = """
+#!/bin/sh
+meson setup build --prefix=/usr --libdir=lib --buildtype=release -Ddefault_library=shared -Dxorg=true -Dxephyr=false -Dxnest=false -Dxvfb=true -Dxwin=false -Dglamor=true -Dglx=true -Ddri1=false -Ddri2=true -Ddri3=true -Dudev=true -Dudev_kms=true -Dsystemd_logind=false -Dsuid_wrapper=false -Dsha1=libcrypto -Ddocs=false -Ddevel-docs=false -Dlibunwind=false -Dsecure-rpc=false -Dxkb_dir=/usr/share/X11/xkb -Dxkb_output_dir=/var/lib/xkb -Ddefault_font_path=/usr/share/fonts/X11/misc,built-ins
+ninja -C build -j"$SALT_JOBS"
+DESTDIR="$SALT_DEST" ninja -C build install
+"""
 
 [package]
-deps = ["glibc", "mesa", "libxcb", "pixman", "openssl", "eudev"]
+deps = ["glibc", "libxau", "libxdmcp", "libxfont2", "libxcvt", "libpciaccess", "libdrm", "mesa", "libepoxy", "libxshmfence", "pixman", "openssl", "eudev", "xkbcomp", "xkeyboard-config"]
 
 [reproducibility]
 status = "verified"

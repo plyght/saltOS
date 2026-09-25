@@ -1,0 +1,13 @@
+#!/bin/sh
+# SDDM session wrapper: a session D-Bus and an XDG runtime dir (there is no
+# logind to provide one), then SDDM's own Xsession script.
+if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
+	XDG_RUNTIME_DIR="/tmp/xdg-runtime-$(id -u)"
+	mkdir -p "$XDG_RUNTIME_DIR"
+	chmod 0700 "$XDG_RUNTIME_DIR"
+	export XDG_RUNTIME_DIR
+fi
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && command -v dbus-run-session >/dev/null 2>&1; then
+	exec dbus-run-session -- /usr/share/sddm/scripts/Xsession "$@"
+fi
+exec /usr/share/sddm/scripts/Xsession "$@"

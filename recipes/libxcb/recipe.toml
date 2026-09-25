@@ -1,7 +1,7 @@
 name = "libxcb"
 version = "1.17.0"
-release = 1
-summary = "X protocol C-language Binding library"
+release = 2
+summary = "X C Binding library"
 license = "MIT"
 arch = ["x86_64", "aarch64"]
 
@@ -11,10 +11,16 @@ sha256 = "599ebf9996710fea71622e6e184f3a8ad5b43d0e5fa8c4e407123c88a59a6d55"
 
 [build]
 system = "autotools"
-deps = ["pkgconf", "gcc", "make"]
+deps = ["pkgconf", "gcc", "make", "python", "xcb-proto", "libxau", "libxdmcp"]
+script = """
+#!/bin/sh
+./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var --disable-static --without-doxygen
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+"""
 
 [package]
-deps = ["glibc"]
+deps = ["glibc", "libxau", "libxdmcp"]
 
 [reproducibility]
 status = "verified"

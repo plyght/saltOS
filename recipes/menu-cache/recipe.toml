@@ -1,6 +1,6 @@
 name = "menu-cache"
 version = "1.1.0"
-release = 1
+release = 2
 summary = "Caching mechanism for freedesktop.org menus"
 license = "LGPL-2.1-or-later"
 arch = ["x86_64", "aarch64"]
@@ -11,10 +11,16 @@ sha256 = "ed02eb459dcb398f69b9fa5bf4dd813020405afc84331115469cdf7be9273ec7"
 
 [build]
 system = "autotools"
-deps = ["pkgconf", "gcc", "make", "glib"]
+deps = ["pkgconf", "gcc", "make", "glib", "libfm-extra"]
+script = """
+#!/bin/sh
+./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var --disable-static
+make -j"$SALT_JOBS"
+make DESTDIR="$SALT_DEST" install
+"""
 
 [package]
-deps = ["glibc", "glib"]
+deps = ["glibc", "glib", "libfm-extra"]
 
 [reproducibility]
 status = "verified"

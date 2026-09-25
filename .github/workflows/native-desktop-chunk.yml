@@ -1,0 +1,140 @@
+name: native-desktop-chunk
+
+# One time-boxed slice of the from-source desktop stage. The stage is far longer
+# than a single 6 h job (LLVM, Mesa, Qt 6), so native-desktop.yml chains several
+# of these: each resumes from the previous slice's sysroot + grains, builds until
+# its deadline, and hands everything on. Grains also go to a cache so a later run
+# with unchanged recipes skips them (bootstrap.sh reuses a grain only while its
+# recipe stamp matches).
+
+on:
+  workflow_call:
+    inputs:
+      chunk:
+        type: number
+        required: true
+      base_run_id:
+        type: string
+        required: true
+    outputs:
+      done:
+        description: "true when the desktop stage finished in this slice"
+        value: ${{ jobs.build.outputs.done }}
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    name: desktop stage, slice ${{ inputs.chunk }} (x86_64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    outputs:
+      done: ${{ steps.bootstrap.outputs.done }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet /usr/share/swift \
+            /opt/hostedtoolcache /usr/local/.ghcup /usr/local/share/powershell \
+            /usr/local/share/chromium /usr/local/lib/node_modules 2>/dev/null || true
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          df -h /
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config build-essential \
+            libzstd-dev libsodium-dev libsqlite3-dev xz-utils zstd curl ca-certificates
+      - name: Build salt
+        run: |
+          cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target salt
+      - name: Download base stage output (native-base run ${{ inputs.base_run_id }})
+        if: inputs.chunk == 1
+        uses: actions/download-artifact@v4
+        with:
+          name: saltos-build-x86_64
+          run-id: ${{ inputs.base_run_id }}
+          github-token: ${{ github.token }}
+      - name: Download previous slice
+        if: inputs.chunk > 1
+        uses: actions/download-artifact@v4
+        with:
+          name: saltos-desktop-x86_64
+      - name: Unpack
+        run: |
+          mkdir -p saltos-build
+          f=$(ls saltos-build-x86_64.tar.zst saltos-desktop-x86_64.tar.zst 2>/dev/null | head -1)
+          sudo tar -C saltos-build --zstd -xf "$f"
+          rm -f saltos-build-x86_64.tar.zst saltos-desktop-x86_64.tar.zst
+          df -h /
+      - name: Restore desktop grain cache
+        if: inputs.chunk == 1
+        uses: actions/cache/restore@v4
+        with:
+          path: desktop-grains
+          key: native-x86_64-desktop-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.chunk }}
+          restore-keys: native-x86_64-desktop-
+      - name: Seed cached desktop grains
+        if: inputs.chunk == 1
+        run: |
+          if [ -d desktop-grains ]; then
+            sudo cp -a desktop-grains/. saltos-build/x86_64/packages/
+            ls desktop-grains | wc -l
+          fi
+      - name: Build desktop stage until the slice deadline
+        id: bootstrap
+        run: |
+          export PATH="$PWD/build/src/salt:$PATH"
+          export SALT_ARCH=x86_64 OUT="$PWD/saltos-build" STAGES="desktop"
+          export BOOTSTRAP_BUILDER_REV="${{ hashFiles('src/salt/cmd_build.cpp', 'src/halite/src/archive.c', 'src/halite/src/pkg.c', 'src/halite/src/tar.c', 'src/halite/src/zst.c') }}"
+          # Leave room for the longest single package (LLVM) plus packing.
+          export BOOTSTRAP_DEADLINE=$(( $(date +%s) + 3 * 3600 + 30 * 60 ))
+          set +e
+          sudo --preserve-env=PATH,SALT_ARCH,OUT,STAGES,BOOTSTRAP_BUILDER_REV,BOOTSTRAP_DEADLINE \
+            os/bootstrap/bootstrap.sh
+          rc=$?
+          set -e
+          case "$rc" in
+            0) echo "done=true" >> "$GITHUB_OUTPUT" ;;
+            3) echo "done=false" >> "$GITHUB_OUTPUT"; echo "::notice::slice deadline reached; the next slice resumes" ;;
+            *) exit "$rc" ;;
+          esac
+      - name: Collect desktop grains
+        if: always()
+        run: |
+          mkdir -p desktop-grains
+          for p in $(awk '/^\[desktop\]/{f=1;next} /^\[/{f=0} f' os/bootstrap/build-order.toml | tr -d ' ",' | grep -v '^packages=\[\|^\]$'); do
+            sudo cp -a saltos-build/x86_64/packages/"$p"-*-x86_64.grain* desktop-grains/ 2>/dev/null || true
+          done
+          sudo chown -R "$USER" desktop-grains
+          ls desktop-grains | wc -l
+      - name: Save desktop grain cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: desktop-grains
+          key: native-x86_64-desktop-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.chunk }}
+      - name: Upload bootstrap logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-desktop-logs-${{ inputs.chunk }}
+          path: saltos-build/x86_64/logs/*.log
+          if-no-files-found: ignore
+      - name: Pack slice output
+        run: |
+          sudo rm -rf saltos-build/x86_64/sysroot/var/tmp/salt-build desktop-grains
+          sudo tar -C saltos-build --zstd -cf saltos-desktop-x86_64.tar.zst .
+          sudo chown "$USER" saltos-desktop-x86_64.tar.zst
+          ls -la saltos-desktop-x86_64.tar.zst
+      - name: Upload slice output
+        uses: actions/upload-artifact@v4
+        with:
+          name: saltos-desktop-x86_64
+          path: saltos-desktop-x86_64.tar.zst
+          compression-level: 0
+          overwrite: true
+          retention-days: 3
