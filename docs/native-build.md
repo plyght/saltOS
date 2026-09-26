@@ -57,6 +57,12 @@ under QEMU with `-vga std`. It passes on `SALTOS_DESKTOP_OK`, printed once Xorg,
 `lxqt-session`, `lxqt-panel` and `openbox` are all running; a screenshot of the
 session is uploaded with the serial log.
 
+Mesa is built with the Gallium `swrast` (llvmpipe/softpipe), `virgl`, `zink`,
+AMD (`radeonsi`), `nouveau` and, on x86_64, `crocus` drivers; aarch64 adds the
+common ARM SoC drivers. `iris` (Intel gen8 and newer) is left out for now: it
+needs `intel-clc`, i.e. clang, libclc and SPIRV-LLVM-Translator, which the native
+stack does not build yet, so those GPUs fall back to llvmpipe.
+
 This mirrors the working `selfhost-iso` workflow, which already builds a
 from-source native ISO and passes a QEMU boot test on a free runner; splitting the
 larger recipe graph across staged jobs keeps each within the same limits.
