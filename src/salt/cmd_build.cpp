@@ -312,7 +312,7 @@ int cmd_build(const Options &o, const std::vector<std::string> &args) {
   }
 
   /* files/ is copied into the source tree (so it is reachable from a chrooted
-   * build too) and exported as $SALT_FILES; patches/*.patch are applied with
+   * build too) and exported as $SALT_FILES; patches/NAME.patch are applied with
    * patch -p1 in name order before the build runs. */
   std::string files_dir = path_join(rdir, "files");
   if (salt_is_dir(files_dir.c_str())) {

@@ -8,3 +8,6 @@ target_include_directories(saltlua PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(saltlua PRIVATE LUA_USE_POSIX)
 set_target_properties(saltlua PROPERTIES C_STANDARD 99 POSITION_INDEPENDENT_CODE ON)
 target_compile_options(saltlua PRIVATE -w)
+# lmathlib needs libm; the host build gets it via the static dependency list,
+# the native (dynamically linked) build does not.
+target_link_libraries(saltlua PUBLIC m)
