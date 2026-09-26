@@ -45,10 +45,10 @@ return {
     script = [[
 #!/bin/sh
 case "$SALT_ARCH" in
-  x86_64) gallium="llvmpipe,softpipe,virgl,iris,crocus,radeonsi,nouveau,zink" ;;
-  *) gallium="llvmpipe,softpipe,virgl,radeonsi,nouveau,v3d,vc4,panfrost,freedreno,lima,zink" ;;
+  x86_64) gallium="swrast,virgl,iris,crocus,radeonsi,nouveau,zink" ;;
+  *) gallium="swrast,virgl,radeonsi,nouveau,v3d,vc4,panfrost,freedreno,lima,zink" ;;
 esac
-meson setup build --prefix=/usr --libdir=lib --buildtype=release -Dplatforms=x11,wayland -Dgallium-drivers="$gallium" -Dvulkan-drivers= -Dglx=dri -Degl=enabled -Dgbm=enabled -Dgles1=disabled -Dgles2=enabled -Dshared-glapi=enabled -Dllvm=enabled -Dshared-llvm=enabled -Dvalgrind=disabled -Dlibunwind=disabled -Dlmsensors=disabled -Dbuild-tests=false -Dvideo-codecs= -Dgallium-va=disabled -Dgallium-vdpau=disabled -Dgallium-xa=disabled -Dgallium-nine=false -Dgallium-opencl=disabled -Dgallium-rusticl=false -Dintel-clc=disabled -Dmicrosoft-clc=disabled -Dosmesa=false
+meson setup build --prefix=/usr --libdir=lib --buildtype=release -Dplatforms=x11,wayland -Dgallium-drivers="$gallium" -Dvulkan-drivers= -Dglx=dri -Degl=enabled -Dgbm=enabled -Dgles1=disabled -Dgles2=enabled -Dshared-glapi=enabled -Dllvm=enabled -Dshared-llvm=enabled -Dvalgrind=disabled -Dlibunwind=disabled -Dlmsensors=disabled -Dbuild-tests=false -Dvideo-codecs= -Dgallium-va=disabled -Dgallium-vdpau=disabled -Dgallium-xa=disabled -Dgallium-nine=false -Dgallium-opencl=disabled -Dgallium-rusticl=false -Dmicrosoft-clc=disabled -Dosmesa=false
 ninja -C build -j"$SALT_JOBS"
 DESTDIR="$SALT_DEST" ninja -C build install
 ]],
