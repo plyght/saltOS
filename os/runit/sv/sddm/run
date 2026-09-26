@@ -1,5 +1,7 @@
 #!/bin/sh
 exec 2>&1
-sv check /etc/runit/runsvdir/current/dbus >/dev/null || exit 1
+# Wait for the system bus. (Not 'sv check dbus': sv resolves names against
+# $SVDIR, and runs check scripts with stdout closed.)
+[ -S /run/dbus/system_bus_socket ] || exit 1
 [ -d /run/sddm ] || mkdir -p /run/sddm
 exec sddm

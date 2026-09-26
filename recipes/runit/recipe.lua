@@ -3,7 +3,7 @@ local version = "2.1.2"
 return {
   name = "runit",
   version = version,
-  release = 3,
+  release = 4,
   summary = "UNIX init scheme with service supervision",
   license = "BSD-3-Clause",
   arch = { "x86_64", "aarch64" },
@@ -18,10 +18,18 @@ return {
 #!/bin/sh
 cd "$(find . -maxdepth 2 -type d -name runit-2.1.2 | head -n 1)"
 sed -i 's/ -static$//' src/Makefile
-echo "gcc -O2 -Wall -Wno-parentheses -Wno-incompatible-pointer-types -Wno-implicit-function-declaration -D_GNU_SOURCE" > src/conf-cc
+# runit's feature probes (trywaitp.c, trysgact.c, ...) are K&R C ('main()').
+# GCC 14 rejects implicit int, so without -fpermissive every probe "fails" and
+# runit silently falls back: wait_pid() then calls wait(), which in sv binds to
+# sv's own 'wait' variable and crashes 'sv check' / 'sv start' on any service
+# with a check script.
+echo "gcc -O2 -Wall -Wno-parentheses -fpermissive -D_GNU_SOURCE" > src/conf-cc
 echo "gcc -Wl,-z,relro" > src/conf-ld
 cd src
 make -j"$SALT_JOBS"
+for h in haswaitp.h hassgact.h hassgprm.h hasflock.h; do
+    grep -q 'sysdep: +' "$h" || { echo "runit: feature probe for $h failed" >&2; exit 1; }
+done
 make check
 cd ..
 install -d "$SALT_DEST/usr/bin"

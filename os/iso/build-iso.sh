@@ -83,6 +83,20 @@ ISO_ROOT="$WORK/iso"
 LIVE_ROOT="$WORK/rootfs"
 mkdir -p "$ISO_ROOT/live" "$ISO_ROOT/boot/grub" "$ISO_ROOT/EFI/BOOT"
 
+# Link a runit service into the live runsvdir when its daemon is installed;
+# runsv would otherwise restart a run script that cannot exec anything.
+enable_svc() {
+	svc=$1 bin=$2
+	[ -d "$LIVE_ROOT/etc/runit/sv/$svc" ] || return 0
+	for d in usr/bin usr/sbin bin sbin; do
+		if [ -x "$LIVE_ROOT/$d/$bin" ]; then
+			ln -sf "/etc/runit/sv/$svc" "$LIVE_ROOT/etc/runit/runsvdir/current/$svc"
+			return 0
+		fi
+	done
+	echo "Not enabling $svc: $bin is not installed"
+}
+
 echo "Copying base rootfs"
 cp -a "$ROOTFS" "$LIVE_ROOT"
 
@@ -112,10 +126,8 @@ if [ "$(tty)" = /dev/tty1 ]; then
 fi
 PROFILE
 
-	for svc in udevd dbus socklog dhcpcd agetty-tty1; do
-		if [ -d "$LIVE_ROOT/etc/runit/sv/$svc" ]; then
-			ln -sf "/etc/runit/sv/$svc" "$LIVE_ROOT/etc/runit/runsvdir/current/$svc"
-		fi
+	for svc in udevd:udevd dbus:dbus-daemon socklog:socklog dhcpcd:dhcpcd agetty-tty1:agetty; do
+		enable_svc "${svc%%:*}" "${svc#*:}"
 	done
 else
 	echo "Installing installer assets into live rootfs"
@@ -138,10 +150,9 @@ else
 	cp -a "$SELF_DIR/live/sv/live-setup/run" "$LIVE_ROOT/etc/runit/sv/live-setup/run"
 	chmod 0755 "$LIVE_ROOT/etc/runit/sv/live-setup/run"
 
-	for svc in udevd dbus seatd socklog dhcpcd chronyd sddm agetty-tty1 live-setup; do
-		if [ -d "$LIVE_ROOT/etc/runit/sv/$svc" ]; then
-			ln -sf "/etc/runit/sv/$svc" "$LIVE_ROOT/etc/runit/runsvdir/current/$svc"
-		fi
+	for svc in udevd:udevd dbus:dbus-daemon seatd:seatd socklog:socklog dhcpcd:dhcpcd chronyd:chronyd \
+		sddm:sddm agetty-tty1:agetty live-setup:sh; do
+		enable_svc "${svc%%:*}" "${svc#*:}"
 	done
 fi
 
