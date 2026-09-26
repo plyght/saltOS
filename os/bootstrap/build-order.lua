@@ -212,6 +212,7 @@ return {
       "qterminal",
       "hunspell",
       "featherpad",
+      "linux-pam",
       "sddm",
       "helium",
       "libxdamage",

@@ -3,7 +3,7 @@ local version = "0.21.0"
 return {
   name = "sddm",
   version = version,
-  release = 2,
+  release = 3,
   summary = "QML-based X11 display manager",
   license = "GPL-2.0-or-later",
   arch = { "x86_64", "aarch64" },
@@ -28,12 +28,16 @@ return {
       "libxcrypt",
       "shadow",
       "dbus",
+      "linux-pam",
     },
     script = [[
 #!/bin/sh
-cmake -G Ninja -S "$SALT_SRC" -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_INSTALL_SYSCONFDIR=/etc -DBUILD_WITH_QT6=ON -DNO_PAM=ON -DNO_SYSTEMD=ON -DENABLE_JOURNALD=OFF -DBUILD_MAN_PAGES=OFF -DRUNTIME_DIR=/run/sddm -DSTATE_DIR=/var/lib/sddm -DDBUS_CONFIG_DIR=/usr/share/dbus-1/system.d -DHALT_COMMAND=/sbin/poweroff -DREBOOT_COMMAND=/sbin/reboot -DUID_MIN=1000 -DUID_MAX=60000
+cmake -G Ninja -S "$SALT_SRC" -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_INSTALL_SYSCONFDIR=/etc -DBUILD_WITH_QT6=ON -DINSTALL_PAM_CONFIGURATION=OFF -DNO_SYSTEMD=ON -DENABLE_JOURNALD=OFF -DBUILD_MAN_PAGES=OFF -DRUNTIME_DIR=/run/sddm -DSTATE_DIR=/var/lib/sddm -DDBUS_CONFIG_DIR=/usr/share/dbus-1/system.d -DHALT_COMMAND=/sbin/poweroff -DREBOOT_COMMAND=/sbin/reboot -DUID_MIN=1000 -DUID_MAX=60000
 cmake --build build -j"$SALT_JOBS"
 DESTDIR="$SALT_DEST" cmake --install build
+# Upstream PAM files include distro stacks (system-login); ship ours on system-auth.
+install -d "$SALT_DEST/etc/pam.d"
+install -m644 "$SALT_FILES/sddm" "$SALT_FILES/sddm-autologin" "$SALT_FILES/sddm-greeter" "$SALT_DEST/etc/pam.d/"
 ]],
   },
   package = {
@@ -49,6 +53,7 @@ DESTDIR="$SALT_DEST" cmake --install build
       "xauth",
       "dbus",
       "shadow",
+      "linux-pam",
     },
   },
   hooks = {
