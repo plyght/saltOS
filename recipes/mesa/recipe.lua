@@ -3,7 +3,7 @@ local version = "24.1.5"
 return {
   name = "mesa",
   version = version,
-  release = 2,
+  release = 3,
   summary = "OpenGL, EGL and GBM implementation (Gallium drivers)",
   license = "MIT",
   arch = { "x86_64", "aarch64" },
@@ -45,9 +45,11 @@ return {
     script = [[
 #!/bin/sh
 case "$SALT_ARCH" in
-  x86_64) gallium="swrast,virgl,iris,crocus,radeonsi,nouveau,zink" ;;
+  x86_64) gallium="swrast,virgl,crocus,radeonsi,nouveau,zink" ;;
   *) gallium="swrast,virgl,radeonsi,nouveau,v3d,vc4,panfrost,freedreno,lima,zink" ;;
 esac
+# iris needs intel-clc (clang + libclc + SPIRV-LLVM-Translator), which the
+# native stack does not build yet; gen8+ Intel uses llvmpipe until it does.
 meson setup build --prefix=/usr --libdir=lib --buildtype=release -Dplatforms=x11,wayland -Dgallium-drivers="$gallium" -Dvulkan-drivers= -Dglx=dri -Degl=enabled -Dgbm=enabled -Dgles1=disabled -Dgles2=enabled -Dshared-glapi=enabled -Dllvm=enabled -Dshared-llvm=enabled -Dvalgrind=disabled -Dlibunwind=disabled -Dlmsensors=disabled -Dbuild-tests=false -Dvideo-codecs= -Dgallium-va=disabled -Dgallium-vdpau=disabled -Dgallium-xa=disabled -Dgallium-nine=false -Dgallium-opencl=disabled -Dgallium-rusticl=false -Dmicrosoft-clc=disabled -Dosmesa=false
 ninja -C build -j"$SALT_JOBS"
 DESTDIR="$SALT_DEST" ninja -C build install
