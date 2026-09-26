@@ -191,6 +191,8 @@ return {
       "extra-cmake-modules",
       "kwindowsystem",
       "liblxqt",
+      "perl-xml-parser",
+      "intltool",
       "libfm-extra",
       "menu-cache",
       "libexif",

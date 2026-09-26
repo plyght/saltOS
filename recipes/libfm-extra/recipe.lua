@@ -3,7 +3,7 @@ local version = "1.3.2"
 return {
   name = "libfm-extra",
   version = version,
-  release = 1,
+  release = 2,
   summary = "libfm-extra (used by menu-cache)",
   license = "LGPL-2.1-or-later",
   arch = { "x86_64", "aarch64" },
@@ -13,7 +13,7 @@ return {
   },
   build = {
     system = "autotools",
-    deps = { "pkgconf", "gcc", "make", "glib", "gettext" },
+    deps = { "pkgconf", "gcc", "make", "glib", "gettext", "intltool" },
     script = [[
 #!/bin/sh
 ./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var --disable-static --with-extra-only --with-gtk=no --disable-static
