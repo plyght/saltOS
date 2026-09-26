@@ -30,7 +30,7 @@ return {
     },
     script = [[
 #!/bin/sh
-meson setup build --prefix=/usr --libdir=lib --buildtype=release -Ddefault_library=shared -Dxft=enabled -Dcairo=enabled -Dfontconfig=enabled -Dfreetype=enabled -Dintrospection=disabled -Dbuild-testsuite=false -Dbuild-examples=false -Ddocumentation=false -Dman-pages=false
+meson setup build --prefix=/usr --libdir=lib --buildtype=release -Ddefault_library=shared -Dxft=enabled -Dcairo=enabled -Dfontconfig=enabled -Dfreetype=enabled -Dintrospection=disabled -Dbuild-testsuite=false -Dbuild-examples=false -Ddocumentation=false
 ninja -C build -j"$SALT_JOBS"
 DESTDIR="$SALT_DEST" ninja -C build install
 ]],
