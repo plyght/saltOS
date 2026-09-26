@@ -3,7 +3,7 @@ local version = "1.5.1"
 return {
   name = "featherpad",
   version = version,
-  release = 2,
+  release = 3,
   summary = "Lightweight Qt plain text editor",
   license = "GPL-3.0-or-later",
   arch = { "x86_64", "aarch64" },
@@ -13,16 +13,16 @@ return {
   },
   build = {
     system = "cmake",
-    deps = { "cmake", "ninja", "pkgconf", "gcc", "qt6-base", "qt6-svg", "qt6-tools", "libx11" },
+    deps = { "cmake", "ninja", "pkgconf", "gcc", "qt6-base", "qt6-svg", "qt6-tools", "libx11", "hunspell" },
     script = [[
 #!/bin/sh
-cmake -G Ninja -S "$SALT_SRC" -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib -DENABLE_QT5=OFF -DWITH_HUNSPELL=OFF
+cmake -G Ninja -S "$SALT_SRC" -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib -DENABLE_QT5=OFF
 cmake --build build -j"$SALT_JOBS"
 DESTDIR="$SALT_DEST" cmake --install build
 ]],
   },
   package = {
-    deps = { "glibc", "qt6-base", "qt6-svg", "libx11" },
+    deps = { "glibc", "qt6-base", "qt6-svg", "libx11", "hunspell" },
   },
   reproducibility = {
     status = "verified",

@@ -210,6 +210,7 @@ return {
       "pcmanfm-qt",
       "qtermwidget",
       "qterminal",
+      "hunspell",
       "featherpad",
       "sddm",
       "helium",
