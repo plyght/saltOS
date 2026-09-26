@@ -35,7 +35,8 @@ say() {
 }
 i=0
 while [ "$i" -lt 900 ]; do
-	if pgrep -x Xorg >/dev/null && pgrep -x lxqt-session >/dev/null &&
+	# SDDM starts the server as /usr/bin/X, so its process name is X, not Xorg.
+	if { pgrep -x Xorg >/dev/null || pgrep -x X >/dev/null; } && pgrep -x lxqt-session >/dev/null &&
 		pgrep -x lxqt-panel >/dev/null && pgrep -x openbox >/dev/null; then
 		say "SALTOS_DESKTOP_OK sddm autologin -> lxqt-session + lxqt-panel + openbox on Xorg"
 		exec sleep infinity
