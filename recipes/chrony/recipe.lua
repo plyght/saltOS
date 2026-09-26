@@ -3,7 +3,7 @@ local version = "4.6"
 return {
   name = "chrony",
   version = version,
-  release = 1,
+  release = 2,
   summary = "Versatile NTP client and server implementation",
   license = "GPL-2.0-only",
   arch = { "x86_64", "aarch64" },
@@ -24,6 +24,7 @@ return {
     --with-sendmail=/usr/sbin/sendmail
 make -j"$SALT_JOBS"
 make DESTDIR="$SALT_DEST" install
+install -Dm644 "$SALT_FILES/chrony.conf" "$SALT_DEST/etc/chrony.conf"
 ]],
   },
   package = {

@@ -3,7 +3,7 @@ local version = "9.8p1"
 return {
   name = "openssh",
   version = version,
-  release = 2,
+  release = 3,
   summary = "Secure shell client and server",
   license = "BSD-2-Clause",
   arch = { "x86_64", "aarch64" },
@@ -26,7 +26,15 @@ make DESTDIR="$SALT_DEST" install-nokeys
 ]],
   },
   package = {
-    deps = { "glibc", "openssl", "zlib", "libxcrypt" },
+    deps = { "glibc", "openssl", "zlib", "libxcrypt", "shadow" },
+  },
+  hooks = {
+    post_install = [[
+getent group sshd >/dev/null || groupadd -r sshd
+getent passwd sshd >/dev/null || useradd -r -g sshd -d /var/lib/sshd -s /sbin/nologin -c "sshd privilege separation" sshd
+mkdir -p /var/lib/sshd
+chmod 0755 /var/lib/sshd
+]],
   },
   reproducibility = {
     status = "verified",

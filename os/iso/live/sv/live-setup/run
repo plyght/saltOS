@@ -4,5 +4,5 @@ if [ ! -e /run/live-setup.done ]; then
 	/usr/lib/saltos/live-setup.sh
 	touch /run/live-setup.done
 fi
-sv check udevd >/dev/null 2>&1
+sv check /etc/runit/runsvdir/current/udevd >/dev/null 2>&1
 exec sleep infinity

@@ -80,8 +80,18 @@ chmod 0755 "$ROOTFS/etc/runit/sv/boot-check/run"
 ln -sf /etc/runit/sv/boot-check "$ROOTFS/etc/runit/runsvdir/current/boot-check"
 if [ -d "$RUNIT_SRC" ]; then
   cp -a "$RUNIT_SRC/." "$ROOTFS/etc/runit/sv/"
-  for svc in udevd dbus seatd socklog sshd chronyd dhcpcd agetty-tty1 agetty-tty2 sddm; do
+  # Enable a service only when its daemon is installed; runsv would otherwise
+  # restart a run script that cannot exec anything once a second forever.
+  for svc in udevd:udevd dbus:dbus-daemon seatd:seatd socklog:socklog sshd:sshd chronyd:chronyd \
+    dhcpcd:dhcpcd agetty-tty1:agetty agetty-tty2:agetty sddm:sddm; do
+    bin=${svc#*:} svc=${svc%%:*}
     [ -d "$ROOTFS/etc/runit/sv/$svc" ] || continue
+    found=
+    for d in usr/bin usr/sbin bin sbin; do [ -x "$ROOTFS/$d/$bin" ] && found=1; done
+    if [ -z "$found" ]; then
+      log "not enabling $svc: $bin is not installed"
+      continue
+    fi
     ln -sf "/etc/runit/sv/$svc" "$ROOTFS/etc/runit/runsvdir/current/$svc"
   done
 fi
