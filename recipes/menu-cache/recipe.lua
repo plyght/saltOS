@@ -16,7 +16,8 @@ return {
     deps = { "pkgconf", "gcc", "make", "glib", "libfm-extra" },
     script = [[
 #!/bin/sh
-./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var --disable-static
+# menu-tags.h defines (not declares) globals; GCC >= 10 defaults to -fno-common.
+CFLAGS="${CFLAGS:--O2} -fcommon" ./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var --disable-static
 make -j"$SALT_JOBS"
 make DESTDIR="$SALT_DEST" install
 ]],
