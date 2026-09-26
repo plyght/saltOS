@@ -3,7 +3,7 @@ local version = "6.12.30"
 return {
   name = "linux",
   version = version,
-  release = 3,
+  release = 4,
   summary = "Linux kernel",
   license = "GPL-2.0-only",
   arch = { "x86_64", "aarch64" },
@@ -18,7 +18,8 @@ return {
 #!/bin/sh
 if [ "$SALT_ARCH" = "aarch64" ]; then
   karch=arm64
-  kimage=arch/arm64/boot/Image.gz
+  # uncompressed: GRUB's arm64 EFI loader needs the PE (EFI stub) image
+  kimage=arch/arm64/boot/Image
 else
   karch=x86_64
   kimage=arch/x86/boot/bzImage
