@@ -1,27 +1,28 @@
 local version = "0.13.5.1"
+local appimage = {
+  x86_64 = { file = "x86_64", sha256 = "5409dc2fbf27c974513543d9d9cd10b9dc45adfc72eed5c4d8d14de2d79e7b39" },
+  aarch64 = { file = "arm64", sha256 = "c449988e9523adb552cf7f5094beff7c9391bca5a75e435751790f02512fc048" },
+}
+local src = appimage[salt.arch] or appimage.x86_64
 
 return {
   name = "helium",
   version = version,
-  release = 1,
+  release = 2,
   summary = "Helium privacy-focused Chromium-derived web browser (prebuilt)",
   license = "BSD-3-Clause",
   arch = { "x86_64", "aarch64" },
   source = {
-    url = "https://github.com/imputnet/helium-linux/releases/download/" .. version .. "/helium-" .. version .. "-x86_64.AppImage",
-    sha256 = "5409dc2fbf27c974513543d9d9cd10b9dc45adfc72eed5c4d8d14de2d79e7b39",
+    url = "https://github.com/imputnet/helium-linux/releases/download/" .. version .. "/helium-" .. version .. "-" .. src.file .. ".AppImage",
+    sha256 = src.sha256,
   },
   build = {
     system = "custom",
     deps = { "coreutils", "tar", "zstd" },
     script = [[
 #!/bin/sh
-if [ "$SALT_ARCH" = "aarch64" ]; then
-  appimage="$SALT_SRC/helium-${SALT_ARCH}.AppImage"
-else
-  appimage="$SALT_SRC/helium-x86_64.AppImage"
-fi
-[ -f "$appimage" ] || appimage=$(ls "$SALT_SRC"/helium-*.AppImage | head -n1)
+set -e
+appimage=$(ls "$SALT_SRC"/helium-*.AppImage | head -n1)
 chmod +x "$appimage"
 "$appimage" --appimage-extract
 install -d "$SALT_DEST/opt/helium"
@@ -35,7 +36,31 @@ fi
 ]],
   },
   package = {
-    deps = { "glibc", "mesa", "fontconfig", "freetype", "libx11", "nss", "alsa-lib" },
+    deps = {
+      "glibc",
+      "glib",
+      "nspr",
+      "nss",
+      "dbus",
+      "expat",
+      "at-spi2-core",
+      "libcups",
+      "cairo",
+      "pango",
+      "mesa",
+      "fontconfig",
+      "freetype",
+      "alsa-lib",
+      "eudev",
+      "libx11",
+      "libxext",
+      "libxcb",
+      "libxcomposite",
+      "libxdamage",
+      "libxfixes",
+      "libxrandr",
+      "libxkbcommon",
+    },
   },
   reproducibility = {
     status = "unverified",
