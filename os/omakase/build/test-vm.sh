@@ -268,7 +268,9 @@ if [ "$INTERACTIVE" = true ]; then
   gum_ready() { serial_expect 'enter submit' 60 && sleep "$GUM_SETTLE"; }
   gum_confirm_ready() { serial_expect 'y Yes' 60 && sleep "$GUM_SETTLE"; }
   drive_configurator() {
-    serial_expect 'saltos-live login: salt' 300 || return 1
+    # Not 'saltos-live login: salt': boot services write to the same serial
+    # console and can land between the hostname and the login prompt.
+    serial_expect 'login: salt' 300 || return 1
     sleep 4
     serial_send "sudo saltos-live-install"
     serial_expect 'Press Return to Start Install' 60 || return 1
