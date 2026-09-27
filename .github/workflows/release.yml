@@ -105,29 +105,39 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Download edition images
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-      - name: Collect, rename and checksum
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet /usr/share/swift \
+            /opt/hostedtoolcache /usr/local/.ghcup /usr/local/share/powershell \
+            /usr/local/share/chromium /usr/local/lib/node_modules 2>/dev/null || true
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          df -h /
+      - name: Download, rename and checksum edition images
         env:
           VERSION: ${{ needs.meta.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
           mkdir -p dist
+          # Fetch only the image artifacts, one at a time, moving each image into
+          # dist/ before the next: the run also holds multi-GB build trees, and
+          # downloading everything at once fills the runner's disk.
           # artifact name -> release file stem (edition-arch); the extension is kept
           while read -r artifact stem; do
             d="artifacts/$artifact"
-            [ -d "$d" ] || { echo "::error::missing artifact $artifact"; exit 1; }
+            gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" -n "$artifact" -D "$d" ||
+              { echo "::error::missing artifact $artifact"; exit 1; }
             n=0
             for f in "$d"/*.iso "$d"/*.img.zst; do
               [ -f "$f" ] || continue
               case "$f" in *.img.zst) ext=img.zst ;; *) ext=iso ;; esac
               out="dist/saltos-$VERSION-$stem.$ext"
-              cp "$f" "$out"
+              mv "$f" "$out"
               n=$((n + 1))
             done
             [ "$n" = 1 ] || { echo "::error::$artifact: expected one image, found $n"; ls -la "$d"; exit 1; }
+            rm -rf "$d"
+            df -h / | tail -1
           done <<'MAP'
           saltos-base-x86_64 base-x86_64
           saltos-installer-x86_64 installer-x86_64
